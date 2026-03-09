@@ -5,12 +5,12 @@ import static org.telegram.messenger.AndroidUtilities.dp;
 import android.content.Context;
 import android.os.Bundle;
 import android.os.Parcelable;
+import android.text.TextUtils;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.TextView;
-import android.text.TextUtils;
 
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -20,10 +20,10 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessageObject;
+import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
-import org.telegram.messenger.MessagesController;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBar;
@@ -34,10 +34,10 @@ import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.ItemOptions;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.RecyclerListView;
+import org.telegram.ui.Components.ShareAlert;
 import org.telegram.ui.DialogsActivity;
 import org.telegram.ui.MainTabsActivity;
 import org.telegram.ui.PhotoViewer;
-import org.telegram.ui.Components.ShareAlert;
 
 import java.util.ArrayList;
 
@@ -134,7 +134,8 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
             }
             @Override public void onScrollStateChanged(@NonNull RecyclerView rv, int state) {
                 if (state == RecyclerView.SCROLL_STATE_IDLE) {
-                    cancelScheduledMark(); markVisibleAsRead();
+                    cancelScheduledMark();
+                    markVisibleAsRead();
                 }
             }
         });
@@ -251,7 +252,10 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
     }
 
     private void cancelScheduledMark() {
-        if (markReadRunnable != null) { AndroidUtilities.cancelRunOnUIThread(markReadRunnable); markReadRunnable = null; }
+        if (markReadRunnable != null) {
+            AndroidUtilities.cancelRunOnUIThread(markReadRunnable);
+            markReadRunnable = null;
+        }
     }
 
     private void markVisibleAsRead() {
@@ -265,62 +269,40 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
         }
     }
 
-    @Override public void onResume() {
+    @Override
+    public void onResume() {
         super.onResume();
-        if (hasScrollState && feedController.hasCachedFeed()) {
+        if (feedController.hasCachedFeed()) {
             adapter.setItems(feedController.getCachedFeed());
-            if (savedScrollState != null && layoutManager != null)
+            if (hasScrollState && savedScrollState != null && layoutManager != null) {
                 layoutManager.onRestoreInstanceState(savedScrollState);
-            updateEmpty();
-        } else if (feedController.hasCachedFeed()) {
-            adapter.setItems(feedController.getCachedFeed());
+            }
             updateEmpty();
         } else {
-            loadFeedStreaming();
+            loadFeed(false);
         }
     }
 
-    @Override public void onPause() {
+    @Override
+    public void onPause() {
         super.onPause();
-        cancelScheduledMark(); markVisibleAsRead();
+        cancelScheduledMark();
+        markVisibleAsRead();
         if (layoutManager != null) {
             savedScrollState = layoutManager.onSaveInstanceState();
             hasScrollState = true;
         }
     }
 
-    private void loadFeedStreaming() {
+    private void loadFeed(boolean force) {
         swipeRefreshLayout.setRefreshing(true);
         emptyView.setVisibility(View.GONE);
 
-        feedController.loadFeedStreaming(true,
-                (batch, isLast) -> {
-                    adapter.addItems(batch);
-                    if (isLast) {
-                        swipeRefreshLayout.setRefreshing(false);
-                        updateEmpty();
-                    }
-                },
-                (items, hasMore) -> {
-                    adapter.setItems(items);
-                    swipeRefreshLayout.setRefreshing(false);
-                    updateEmpty();
-                }
-        );
-    }
-
-    private void loadFeed(boolean force) {
-        if (force) {
-            adapter.setItems(new ArrayList<>());
-            loadFeedStreaming();
-        } else {
-            swipeRefreshLayout.setRefreshing(true);
-            feedController.loadFeed(false, (items, hasMore) -> {
-                swipeRefreshLayout.setRefreshing(false);
-                adapter.setItems(items);
-                updateEmpty();
-            });
-        }
+        feedController.loadFeed(force, (items, hasMore) -> {
+            adapter.setItems(items);
+            swipeRefreshLayout.setRefreshing(false);
+            updateEmpty();
+        });
     }
 
     private void updateEmpty() {
@@ -335,13 +317,18 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
     }
 
     private void saveScroll() {
-        if (layoutManager != null) { savedScrollState = layoutManager.onSaveInstanceState(); hasScrollState = true; }
+        if (layoutManager != null) {
+            savedScrollState = layoutManager.onSaveInstanceState();
+            hasScrollState = true;
+        }
     }
 
-    @Override public boolean canParentTabsSlide(MotionEvent ev, boolean forward) { return true; }
-    @Override public void onParentScrollToTop() {
+    @Override
+    public boolean canParentTabsSlide(MotionEvent ev, boolean forward) { return true; }
+
+    @Override
+    public void onParentScrollToTop() {
         if (listView != null) listView.smoothScrollToPosition(0);
-        swipeRefreshLayout.setRefreshing(true);
         loadFeed(true);
     }
 }

@@ -6,10 +6,10 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
+import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.UserConfig;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
-import org.telegram.messenger.NotificationCenter;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -23,11 +23,6 @@ public class FeedController {
     @FunctionalInterface
     public interface FeedLoadCallback {
         void onLoaded(List<FeedItem> items, boolean hasMore);
-    }
-
-    @FunctionalInterface
-    public interface FeedStreamCallback {
-        void onBatch(List<FeedItem> batch, boolean isLast);
     }
 
     public static class FeedItem {
@@ -113,11 +108,9 @@ public class FeedController {
         item.isRead = true;
 
         int maxId = 0;
-        int messageCount = 0;
         for (MessageObject msg : item.messages) {
             localReadIds.add(item.channelId + "_" + msg.getId());
             maxId = Math.max(maxId, msg.getId());
-            messageCount++;
         }
         localReadIds.add(uid);
         scheduleSave();
@@ -147,9 +140,7 @@ public class FeedController {
 
                 int actuallyRead = 0;
                 for (MessageObject msg : item.messages) {
-                    if (msg.getId() > oldMaxId) {
-                        actuallyRead++;
-                    }
+                    if (msg.getId() > oldMaxId) actuallyRead++;
                 }
                 if (actuallyRead > 0) {
                     dialog.unread_count = Math.max(0, dialog.unread_count - actuallyRead);
@@ -157,11 +148,9 @@ public class FeedController {
 
                 NotificationCenter.getInstance(currentAccount).postNotificationName(
                         NotificationCenter.updateInterfaces,
-                        MessagesController.UPDATE_MASK_READ_DIALOG_MESSAGE
-                );
+                        MessagesController.UPDATE_MASK_READ_DIALOG_MESSAGE);
                 NotificationCenter.getInstance(currentAccount).postNotificationName(
-                        NotificationCenter.dialogsNeedReload
-                );
+                        NotificationCenter.dialogsNeedReload);
             }
         });
     }
@@ -171,9 +160,6 @@ public class FeedController {
     }
 
     public boolean isBookmarked(String uid) { return bookmarkedIds.contains(uid); }
-
-    public void trackClick(FeedItem item) {}
-    public void trackCommentClick(FeedItem item) {}
 
     public boolean hasCachedFeed() { return feedLoaded && !cachedFeed.isEmpty(); }
     public List<FeedItem> getCachedFeed() { return cachedFeed; }
@@ -186,13 +172,6 @@ public class FeedController {
             return;
         }
         isLoading = true;
-        loadFeedStreaming(force, null, callback);
-    }
-
-    public void loadFeedStreaming(boolean force, FeedStreamCallback streamCb, FeedLoadCallback finalCb) {
-        if (!force && !isLoading) {
-            isLoading = true;
-        }
 
         new Thread(() -> {
             MessagesController controller = MessagesController.getInstance(currentAccount);
@@ -211,7 +190,7 @@ public class FeedController {
                 AndroidUtilities.runOnUIThread(() -> {
                     if (force) { cachedFeed.clear(); feedLoaded = true; }
                     isLoading = false;
-                    if (finalCb != null) finalCb.onLoaded(new ArrayList<>(), false);
+                    callback.onLoaded(new ArrayList<>(), false);
                 });
                 return;
             }
@@ -257,14 +236,8 @@ public class FeedController {
                     allItems.addAll(channelItems);
 
                     int done = completed.incrementAndGet();
-                    boolean isLast = done >= totalChannels;
 
-                    if (streamCb != null && !channelItems.isEmpty()) {
-                        Collections.sort(channelItems, (a, b) -> Long.compare(a.sortDate, b.sortDate));
-                        AndroidUtilities.runOnUIThread(() -> streamCb.onBatch(channelItems, isLast));
-                    }
-
-                    if (isLast) {
+                    if (done >= totalChannels) {
                         List<FeedItem> sorted = new ArrayList<>(allItems);
                         Collections.sort(sorted, (a, b) -> Long.compare(a.sortDate, b.sortDate));
 
@@ -273,7 +246,7 @@ public class FeedController {
                             cachedFeed.addAll(sorted);
                             feedLoaded = true;
                             isLoading = false;
-                            if (finalCb != null) finalCb.onLoaded(sorted, false);
+                            callback.onLoaded(sorted, false);
                         });
                     }
                 });
