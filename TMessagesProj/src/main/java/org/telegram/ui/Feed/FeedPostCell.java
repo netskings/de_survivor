@@ -29,6 +29,7 @@ import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.R;
+import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.AnimatedEmojiSpan;
@@ -53,6 +54,7 @@ public class FeedPostCell extends LinearLayout {
     private final LinearLayout replyContainer;
     private final TextView replyNameView;
     private final TextView replyTextView;
+    private final BackupImageView replyImageView;
 
     private final LinearLayout forwardContainer;
     private final TextView forwardNameView;
@@ -61,6 +63,10 @@ public class FeedPostCell extends LinearLayout {
     private final TextView readMoreView;
 
     private final TextView pollTextView;
+
+    private final LinearLayout documentContainer;
+    private final TextView documentNameView;
+    private final TextView documentSizeView;
 
     private final android.widget.FrameLayout mediaContainer;
     private final BackupImageView mediaImageView1;
@@ -77,7 +83,6 @@ public class FeedPostCell extends LinearLayout {
 
     private FeedController.FeedItem currentItem;
     private boolean textExpanded = false;
-    private boolean needsReadMore = false;
     private CharSequence fullText = null;
     private int collapsedEndOffset = -1;
     private final int currentAccount;
@@ -86,14 +91,8 @@ public class FeedPostCell extends LinearLayout {
 
     private long fwdChannelId = 0;
     private int fwdMessageId = 0;
-
-    public boolean isNeedsReadMore() {
-        return needsReadMore;
-    }
-
-    public void setNeedsReadMore(boolean needsReadMore) {
-        this.needsReadMore = needsReadMore;
-    }
+    private long replyChannelId = 0;
+    private int replyMessageId = 0;
 
     public interface Callback {
         void onHeaderClick(FeedController.FeedItem item);
@@ -102,6 +101,7 @@ public class FeedPostCell extends LinearLayout {
         void onCommentsClick(FeedController.FeedItem item);
         void onShareClick(FeedController.FeedItem item);
         void onForwardClick(long channelId, int messageId);
+        void onReplyClick(long channelId, int messageId);
     }
 
     private Callback callback;
@@ -188,6 +188,11 @@ public class FeedPostCell extends LinearLayout {
         replyContainer.setVisibility(GONE);
         replyContainer.setPadding(0, dp(8), 0, 0);
         replyContainer.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector, resourceProvider), 2));
+        replyContainer.setOnClickListener(v -> {
+            if (callback != null && replyChannelId != 0 && replyMessageId != 0) {
+                callback.onReplyClick(replyChannelId, replyMessageId);
+            }
+        });
 
         View replyBorder = new View(context);
         replyBorder.setBackgroundColor(accentColor);
@@ -213,6 +218,12 @@ public class FeedPostCell extends LinearLayout {
         replyContent.addView(replyTextView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
         replyContainer.addView(replyContent, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
+
+        replyImageView = new BackupImageView(context);
+        replyImageView.setRoundRadius(dp(4));
+        replyImageView.setVisibility(GONE);
+        replyContainer.addView(replyImageView, LayoutHelper.createLinear(36, 36, Gravity.CENTER_VERTICAL, 4, 0, 0, 0));
+
         addView(replyContainer, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
         forwardContainer = new LinearLayout(context);
@@ -254,7 +265,7 @@ public class FeedPostCell extends LinearLayout {
         messageTextView = new AnimatedEmojiSpan.TextViewEmojis(context);
         messageTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
         messageTextView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourceProvider));
-        messageTextView.setLinkTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlueText2, resourceProvider));
+        messageTextView.setLinkTextColor(accentColor);
         messageTextView.setLineSpacing(dp(2), 1f);
         messageTextView.setMovementMethod(LinkMovementMethod.getInstance());
         messageTextView.setVisibility(GONE);
@@ -275,6 +286,37 @@ public class FeedPostCell extends LinearLayout {
         pollTextView.setVisibility(GONE);
         pollTextView.setPadding(0, dp(8), 0, 0);
         addView(pollTextView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+
+        documentContainer = new LinearLayout(context);
+        documentContainer.setOrientation(HORIZONTAL);
+        documentContainer.setGravity(Gravity.CENTER_VERTICAL);
+        documentContainer.setVisibility(GONE);
+        documentContainer.setPadding(0, dp(8), 0, dp(4));
+
+        ImageView documentIcon = new ImageView(context);
+        documentIcon.setImageResource(R.drawable.msg_round_file_s);
+        documentIcon.setColorFilter(new PorterDuffColorFilter(accentColor, PorterDuff.Mode.SRC_IN));
+        documentContainer.addView(documentIcon, LayoutHelper.createLinear(40, 40, Gravity.CENTER_VERTICAL));
+
+        LinearLayout docTextCol = new LinearLayout(context);
+        docTextCol.setOrientation(VERTICAL);
+        docTextCol.setPadding(dp(10), 0, 0, 0);
+
+        documentNameView = new TextView(context);
+        documentNameView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
+        documentNameView.setTypeface(AndroidUtilities.bold());
+        documentNameView.setTextColor(accentColor);
+        documentNameView.setMaxLines(1);
+        documentNameView.setEllipsize(TextUtils.TruncateAt.END);
+        docTextCol.addView(documentNameView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+
+        documentSizeView = new TextView(context);
+        documentSizeView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+        documentSizeView.setTextColor(grayColor);
+        docTextCol.addView(documentSizeView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 2, 0, 0));
+
+        documentContainer.addView(docTextCol, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
+        addView(documentContainer, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
         mediaContainer = new android.widget.FrameLayout(context);
         mediaContainer.setVisibility(GONE);
@@ -375,15 +417,17 @@ public class FeedPostCell extends LinearLayout {
     public void setPost(FeedController.FeedItem item) {
         currentItem = item;
         textExpanded = false;
-        needsReadMore = false;
         fullText = null;
         collapsedEndOffset = -1;
         fwdChannelId = 0;
         fwdMessageId = 0;
+        replyChannelId = 0;
+        replyMessageId = 0;
         pollTextView.setVisibility(GONE);
         readMoreView.setVisibility(GONE);
         replyContainer.setVisibility(GONE);
         forwardContainer.setVisibility(GONE);
+        documentContainer.setVisibility(GONE);
 
         if (item == null) return;
 
@@ -430,6 +474,8 @@ public class FeedPostCell extends LinearLayout {
             setupMedia(item);
         }
 
+        setupDocuments(item);
+
         CharSequence text = getFormattedText(item);
         if (text != null && text.length() > 0) {
             fullText = text;
@@ -470,9 +516,18 @@ public class FeedPostCell extends LinearLayout {
 
     @SuppressLint("SetTextI18n")
     private void setupReply(TLRPC.Message raw, MessagesController controller) {
+        replyImageView.setVisibility(GONE);
+
         if (raw.reply_to == null || raw.reply_to.reply_to_msg_id == 0) {
             replyContainer.setVisibility(GONE);
             return;
+        }
+
+        replyMessageId = raw.reply_to.reply_to_msg_id;
+        if (raw.reply_to.reply_to_peer_id != null && raw.reply_to.reply_to_peer_id.channel_id != 0) {
+            replyChannelId = raw.reply_to.reply_to_peer_id.channel_id;
+        } else if (raw.peer_id != null && raw.peer_id.channel_id != 0) {
+            replyChannelId = raw.peer_id.channel_id;
         }
 
         String replyName = null;
@@ -480,42 +535,158 @@ public class FeedPostCell extends LinearLayout {
         if (raw.reply_to.reply_to_peer_id != null) {
             replyName = getPeerName(raw.reply_to.reply_to_peer_id, controller);
         }
-
-        if (replyName == null) {
-            try {
-                TLRPC.MessageFwdHeader replyFrom = raw.reply_to.reply_from;
-                if (replyFrom != null) {
-                    if (replyFrom.from_id != null) {
-                        replyName = getPeerName(replyFrom.from_id, controller);
-                    }
-                    if (replyName == null && replyFrom.from_name != null) {
-                        replyName = replyFrom.from_name;
-                    }
-                }
-            } catch (Exception e) { /* field might not exist in some versions */ }
+        try {
+            TLRPC.MessageFwdHeader replyFrom = raw.reply_to.reply_from;
+            if (replyFrom != null) {
+                if (replyName == null && replyFrom.from_id != null)
+                    replyName = getPeerName(replyFrom.from_id, controller);
+                if (replyName == null && replyFrom.from_name != null)
+                    replyName = replyFrom.from_name;
+            }
+        } catch (Exception e) { /* field might not exist */ }
+        if (replyName == null && replyChannelId != 0) {
+            TLRPC.Chat c = controller.getChat(replyChannelId);
+            if (c != null) replyName = c.title;
         }
-
-        if (replyName == null) {
-            long chatId = -raw.peer_id.channel_id;
-            TLRPC.Chat chat = controller.getChat(-chatId);
-            if (chat != null) replyName = chat.title;
-            else replyName = "Message";
-        }
-
+        if (replyName == null) replyName = "Message";
         replyNameView.setText(replyName);
 
-        String quoteText = null;
+        String replyText = null;
+
         try {
-            quoteText = raw.reply_to.quote_text;
+            replyText = raw.reply_to.quote_text;
         } catch (Exception e) { /* field might not exist */ }
 
-        if (quoteText != null && !quoteText.isEmpty()) {
-            replyTextView.setText("💬 " + quoteText);
+        if (replyText == null || replyText.isEmpty()) {
+            TLRPC.Message replyMsg = raw.replyMessage;
+            if (replyMsg != null) {
+                if (replyMsg.message != null && !replyMsg.message.isEmpty()) {
+                    replyText = replyMsg.message;
+                }
+                if (replyMsg.media != null && !(replyMsg.media instanceof TLRPC.TL_messageMediaEmpty)) {
+                    setupReplyImage(replyMsg);
+
+                    if (replyText == null || replyText.isEmpty()) {
+                        replyText = getMediaTypeLabel(replyMsg.media);
+                    }
+                }
+            }
+        }
+
+        if (replyText == null || replyText.isEmpty()) {
+            replyText = "...";
+            loadReplyMessage(raw);
+        }
+
+        boolean isQuote = false;
+        try {
+            isQuote = raw.reply_to.quote;
+        } catch (Exception e) { /* field might not exist */ }
+
+        if (isQuote && raw.reply_to.quote_text != null && !raw.reply_to.quote_text.isEmpty()) {
+            replyTextView.setText("💬 " + replyText);
         } else {
-            replyTextView.setText("↩ Reply to message");
+            replyTextView.setText(replyText);
         }
 
         replyContainer.setVisibility(VISIBLE);
+    }
+
+    private void setupReplyImage(TLRPC.Message replyMsg) {
+        if (replyMsg.media instanceof TLRPC.TL_messageMediaPhoto && replyMsg.media.photo != null) {
+            TLRPC.PhotoSize thumb = getSmallThumb(replyMsg.media.photo.sizes);
+            if (thumb != null) {
+                replyImageView.setImage(
+                        ImageLocation.getForPhoto(thumb, replyMsg.media.photo),
+                        "36_36", (ImageLocation) null, null, 0, replyMsg.media.photo);
+                replyImageView.setVisibility(VISIBLE);
+            }
+        } else if (replyMsg.media instanceof TLRPC.TL_messageMediaDocument && replyMsg.media.document != null) {
+            TLRPC.Document doc = replyMsg.media.document;
+            if (doc.thumbs != null && !doc.thumbs.isEmpty()) {
+                TLRPC.PhotoSize thumb = getSmallThumb(doc.thumbs);
+                if (thumb != null) {
+                    replyImageView.setImage(
+                            ImageLocation.getForDocument(thumb, doc),
+                            "36_36", (ImageLocation) null, null, 0, doc);
+                    replyImageView.setVisibility(VISIBLE);
+                }
+            }
+        }
+    }
+
+    private TLRPC.PhotoSize getSmallThumb(List<TLRPC.PhotoSize> sizes) {
+        if (sizes == null) return null;
+        for (TLRPC.PhotoSize s : sizes) {
+            if (s instanceof TLRPC.TL_photoSizeEmpty) continue;
+            if (s.type != null && (s.type.equals("s") || s.type.equals("m"))) return s;
+        }
+        TLRPC.PhotoSize smallest = null;
+        int smallestArea = Integer.MAX_VALUE;
+        for (TLRPC.PhotoSize s : sizes) {
+            if (s instanceof TLRPC.TL_photoSizeEmpty) continue;
+            int area = s.w * s.h;
+            if (area > 0 && area < smallestArea) {
+                smallestArea = area;
+                smallest = s;
+            }
+        }
+        return smallest;
+    }
+
+    private void loadReplyMessage(TLRPC.Message raw) {
+        if (raw.peer_id == null || raw.peer_id.channel_id == 0) return;
+
+        TLRPC.TL_channels_getMessages req = new TLRPC.TL_channels_getMessages();
+        TLRPC.Chat chat = MessagesController.getInstance(currentAccount).getChat(raw.peer_id.channel_id);
+        if (chat == null) return;
+        req.channel = MessagesController.getInputChannel(chat);
+        req.id = new ArrayList<>();
+        req.id.add(raw.reply_to.reply_to_msg_id);
+
+        ConnectionsManager.getInstance(currentAccount).sendRequest(req, (response, error) -> {
+            if (response instanceof TLRPC.messages_Messages) {
+                TLRPC.messages_Messages msgs = (TLRPC.messages_Messages) response;
+                if (!msgs.messages.isEmpty()) {
+                    TLRPC.Message replyMsg = msgs.messages.get(0);
+                    AndroidUtilities.runOnUIThread(() -> {
+                        String text = replyMsg.message;
+                        if (text == null || text.isEmpty()) {
+                            if (replyMsg.media != null) {
+                                text = getMediaTypeLabel(replyMsg.media);
+                            }
+                        }
+                        if (text != null && !text.isEmpty()) {
+                            replyTextView.setText(text);
+                        }
+                        if (replyMsg.media != null && !(replyMsg.media instanceof TLRPC.TL_messageMediaEmpty)) {
+                            setupReplyImage(replyMsg);
+                        }
+                    });
+                }
+            }
+        });
+    }
+
+    private String getMediaTypeLabel(TLRPC.MessageMedia media) {
+        if (media instanceof TLRPC.TL_messageMediaPhoto) return "📷 Photo";
+        if (media instanceof TLRPC.TL_messageMediaDocument && media.document != null) {
+            for (TLRPC.DocumentAttribute attr : media.document.attributes) {
+                if (attr instanceof TLRPC.TL_documentAttributeVideo) return "📹 Video";
+                if (attr instanceof TLRPC.TL_documentAttributeAnimated) return "GIF";
+                if (attr instanceof TLRPC.TL_documentAttributeAudio) {
+                    if (attr.voice) return "🎤 Voice message";
+                    return "🎵 Audio";
+                }
+                if (attr instanceof TLRPC.TL_documentAttributeSticker) return "Sticker";
+            }
+            return "📎 Document";
+        }
+        if (media instanceof TLRPC.TL_messageMediaPoll) return "📊 Poll";
+        if (media instanceof TLRPC.TL_messageMediaGeo) return "📍 Location";
+        if (media instanceof TLRPC.TL_messageMediaGeoLive) return "📍 Live location";
+        if (media instanceof TLRPC.TL_messageMediaContact) return "👤 Contact";
+        return "Attachment";
     }
 
     private void setupForward(TLRPC.Message raw, MessagesController controller) {
@@ -538,9 +709,8 @@ public class FeedPostCell extends LinearLayout {
                 TLRPC.User user = controller.getUser(fwd.from_id.user_id);
                 if (user != null) {
                     fwdName = user.first_name;
-                    if (user.last_name != null && !user.last_name.isEmpty()) {
+                    if (user.last_name != null && !user.last_name.isEmpty())
                         fwdName += " " + user.last_name;
-                    }
                 }
             } else if (fwd.from_id.chat_id != 0) {
                 TLRPC.Chat fwdChat = controller.getChat(fwd.from_id.chat_id);
@@ -564,6 +734,65 @@ public class FeedPostCell extends LinearLayout {
         }
     }
 
+    @SuppressLint("SetTextI18n")
+    private void setupDocuments(FeedController.FeedItem item) {
+        List<TLRPC.Document> docs = getDocuments(item);
+
+        if (docs.isEmpty()) {
+            documentContainer.setVisibility(GONE);
+            return;
+        }
+
+        TLRPC.Document doc = docs.get(0);
+        String fileName = null;
+        for (TLRPC.DocumentAttribute attr : doc.attributes) {
+            if (attr instanceof TLRPC.TL_documentAttributeFilename) {
+                fileName = attr.file_name;
+                break;
+            }
+        }
+        if (fileName == null || fileName.isEmpty()) {
+            fileName = "Document";
+        }
+
+        documentNameView.setText(fileName);
+        documentSizeView.setText(formatFileSize(doc.size));
+
+        if (docs.size() > 1) {
+            documentSizeView.setText(formatFileSize(doc.size) + " · +" + (docs.size() - 1) + " more");
+        }
+
+        documentContainer.setVisibility(VISIBLE);
+    }
+
+    @NonNull
+    private static List<TLRPC.Document> getDocuments(FeedController.FeedItem item) {
+        List<TLRPC.Document> docs = new ArrayList<>();
+        for (MessageObject msg : item.messages) {
+            TLRPC.MessageMedia media = msg.messageOwner.media;
+            if (media instanceof TLRPC.TL_messageMediaDocument && media.document != null) {
+                TLRPC.Document doc = media.document;
+                boolean isVisualMedia = false;
+                for (TLRPC.DocumentAttribute attr : doc.attributes) {
+                    if (attr instanceof TLRPC.TL_documentAttributeVideo) isVisualMedia = true;
+                    if (attr instanceof TLRPC.TL_documentAttributeAnimated) isVisualMedia = true;
+                    if (attr instanceof TLRPC.TL_documentAttributeSticker) isVisualMedia = true;
+                }
+                if (!isVisualMedia) {
+                    docs.add(doc);
+                }
+            }
+        }
+        return docs;
+    }
+
+    private String formatFileSize(long size) {
+        if (size < 1024) return size + " B";
+        if (size < 1024 * 1024) return String.format(Locale.US, "%.1f KB", size / 1024f);
+        if (size < 1024L * 1024 * 1024) return String.format(Locale.US, "%.1f MB", size / (1024f * 1024f));
+        return String.format(Locale.US, "%.1f GB", size / (1024f * 1024f * 1024f));
+    }
+
     private String getPeerName(TLRPC.Peer peer, MessagesController controller) {
         if (peer == null) return null;
         if (peer.channel_id != 0) {
@@ -576,12 +805,19 @@ public class FeedPostCell extends LinearLayout {
             TLRPC.User user = controller.getUser(peer.user_id);
             if (user == null) return null;
             String name = user.first_name;
-            if (user.last_name != null && !user.last_name.isEmpty()) {
+            if (user.last_name != null && !user.last_name.isEmpty())
                 name += " " + user.last_name;
-            }
             return name;
         }
         return null;
+    }
+
+    private boolean isReallyEdited(TLRPC.Message msg) {
+        if (msg.edit_date == 0) return false;
+        if (msg.edit_hide) return false;
+        if (msg.fwd_from != null) return false;
+        if (msg.media instanceof TLRPC.TL_messageMediaGeoLive) return false;
+        return !(msg.media instanceof TLRPC.TL_messageMediaPoll);
     }
 
     private void measureAndTruncate() {
@@ -592,15 +828,11 @@ public class FeedPostCell extends LinearLayout {
         }
 
         if (layout.getLineCount() > MAX_LINES_COLLAPSED) {
-            needsReadMore = true;
             collapsedEndOffset = layout.getLineEnd(MAX_LINES_COLLAPSED - 1);
-            if (!textExpanded) {
-                setCollapsedText();
-            }
+            if (!textExpanded) setCollapsedText();
             readMoreView.setVisibility(VISIBLE);
             readMoreView.setText(LocaleController.getString("FeedReadMore", R.string.FeedReadMore));
         } else {
-            needsReadMore = false;
             collapsedEndOffset = -1;
             readMoreView.setVisibility(GONE);
         }
@@ -610,9 +842,8 @@ public class FeedPostCell extends LinearLayout {
         if (fullText == null || collapsedEndOffset <= 0) return;
         int end = Math.min(collapsedEndOffset, fullText.length());
         SpannableStringBuilder truncated = new SpannableStringBuilder(fullText, 0, end);
-        while (truncated.length() > 0 && Character.isWhitespace(truncated.charAt(truncated.length() - 1))) {
+        while (truncated.length() > 0 && Character.isWhitespace(truncated.charAt(truncated.length() - 1)))
             truncated.delete(truncated.length() - 1, truncated.length());
-        }
         truncated.append("…");
         messageTextView.setText(truncated);
     }
@@ -663,12 +894,8 @@ public class FeedPostCell extends LinearLayout {
         if (text == null || text.length() == 0) return null;
         if (isPlaceholderText(text.toString().trim())) return null;
 
-        if (!(text instanceof Spannable)) {
-            text = new SpannableStringBuilder(text);
-        }
-
+        if (!(text instanceof Spannable)) text = new SpannableStringBuilder(text);
         text = Emoji.replaceEmoji(text, messageTextView.getPaint().getFontMetricsInt(), false);
-
         return text;
     }
 
@@ -704,23 +931,9 @@ public class FeedPostCell extends LinearLayout {
                     || text.equals(LocaleController.getString(R.string.AttachLocation))
                     || text.equals(LocaleController.getString(R.string.AttachLiveLocation))
                     || text.equals(LocaleController.getString(R.string.Poll))
-            ) {
-                return true;
-            }
-        } catch (Exception e) { /* ignore missing resources */ }
-
+            ) return true;
+        } catch (Exception e) { /* ignore */ }
         return false;
-    }
-
-    private boolean isReallyEdited(TLRPC.Message msg) {
-        if (msg.edit_date == 0) return false;
-        if (msg.edit_hide) return false;
-
-        if (msg.fwd_from != null) return false;
-
-        if (msg.media instanceof TLRPC.TL_messageMediaGeoLive) return false;
-
-        return !(msg.media instanceof TLRPC.TL_messageMediaPoll);
     }
 
     @SuppressLint("SetTextI18n")
@@ -755,7 +968,7 @@ public class FeedPostCell extends LinearLayout {
 
         int h = setupSingleMedia(mediaMessages.get(0), mediaImageView1, mediaOverlayLabel);
         mediaContainer.setVisibility(VISIBLE);
-        LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) mediaContainer.getLayoutParams();
+        LayoutParams lp = (LayoutParams) mediaContainer.getLayoutParams();
         lp.height = h;
         mediaContainer.setLayoutParams(lp);
 
@@ -832,7 +1045,7 @@ public class FeedPostCell extends LinearLayout {
             if (doc.thumbs != null && !doc.thumbs.isEmpty()) {
                 TLRPC.PhotoSize thumb = bestSize(doc.thumbs);
                 if (thumb != null)
-                    iv.setImage(ImageLocation.getForDocument(thumb, doc), height + "_" + height, null, null, 0, doc);
+                    iv.setImage(ImageLocation.getForDocument(thumb, doc), height + "_" + height, (ImageLocation) null, null, 0, doc);
             }
             if (isGif) {
                 overlay.setText("GIF");
@@ -871,10 +1084,7 @@ public class FeedPostCell extends LinearLayout {
         for (TLRPC.PhotoSize s : sizes) {
             if (s instanceof TLRPC.TL_photoSizeEmpty) continue;
             int a = s.w * s.h;
-            if (a > bestA) {
-                bestA = a;
-                best = s;
-            }
+            if (a > bestA) { bestA = a; best = s; }
         }
         return best;
     }

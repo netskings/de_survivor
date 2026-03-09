@@ -82,16 +82,16 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
         adapter = new FeedAdapter(context, currentAccount, resourceProvider);
         adapter.setCellCallback(new FeedPostCell.Callback() {
             @Override public void onHeaderClick(FeedController.FeedItem item) {
-                saveScroll(); feedController.trackClick(item); openChannel(item);
+                saveScroll(); openChannel(item);
             }
             @Override public void onMediaClick(FeedController.FeedItem item, int idx) {
-                feedController.trackClick(item); openMedia(item, idx);
+                openMedia(item, idx);
             }
             @Override public void onMenuClick(View anchor, FeedController.FeedItem item) {
                 showMenu(anchor, item);
             }
             @Override public void onCommentsClick(FeedController.FeedItem item) {
-                saveScroll(); feedController.trackCommentClick(item);
+                saveScroll();
                 MessageObject msg = item.getPrimaryMessage();
                 TLRPC.MessageReplies replies = msg.messageOwner.replies;
                 if (replies != null && replies.channel_id != 0) {
@@ -105,6 +105,13 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
                 sharePost(item);
             }
             @Override public void onForwardClick(long channelId, int messageId) {
+                saveScroll();
+                Bundle args = new Bundle();
+                args.putLong("chat_id", channelId);
+                if (messageId > 0) args.putInt("message_id", messageId);
+                presentFragment(new ChatActivity(args));
+            }
+            @Override public void onReplyClick(long channelId, int messageId) {
                 saveScroll();
                 Bundle args = new Bundle();
                 args.putLong("chat_id", channelId);
