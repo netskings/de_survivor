@@ -115,6 +115,11 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
                 if (messageId > 0) args.putInt("message_id", messageId);
                 presentFragment(new ChatActivity(args));
             }
+            @Override
+            public void onInlineButtonClick(FeedController.FeedItem item, TLRPC.KeyboardButton button) {
+                saveScroll();
+                openChannel(item);
+            }
         });
 
         layoutManager = new LinearLayoutManager(context);

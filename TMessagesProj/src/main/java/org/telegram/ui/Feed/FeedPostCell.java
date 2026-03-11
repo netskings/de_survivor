@@ -23,6 +23,7 @@ import android.widget.TextView;
 import android.graphics.RectF;
 import android.text.Spanned;
 import android.text.style.ClickableSpan;
+import android.view.MotionEvent;
 
 import androidx.annotation.NonNull;
 
@@ -40,13 +41,16 @@ import org.telegram.ui.Components.AvatarDrawable;
 import org.telegram.ui.Components.BackupImageView;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.spoilers.SpoilerEffect;
+import org.telegram.messenger.browser.Browser;
+import org.telegram.messenger.MediaController;
+import org.telegram.messenger.NotificationCenter;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 
 @SuppressLint("ViewConstructor")
-public class FeedPostCell extends LinearLayout {
+public class FeedPostCell extends LinearLayout implements NotificationCenter.NotificationCenterDelegate {
 
     private static final int MAX_LINES_COLLAPSED = 8;
 
@@ -108,6 +112,89 @@ public class FeedPostCell extends LinearLayout {
 
     private final android.graphics.Path spoilerClipPath = new android.graphics.Path();
 
+    private final LinearLayout buttonsContainer;
+
+    private final BackupImageView forwardAvatarView;
+    private final AvatarDrawable forwardAvatarDrawable;
+
+    private final LinearLayout voiceContainer;
+    private final PlayPauseButton voicePlayButton;
+    private final VoiceWaveformView voiceWaveformView;
+    private final TextView voiceLabelView;
+    private final TextView voiceDurationView;
+    private MessageObject currentVoiceMessage;
+
+    private int currentVoiceTotalDuration = 0;
+
+    private void updateVoiceDuration(float progress) {
+        if (currentVoiceMessage == null) return;
+        int total = getVoiceDuration(currentVoiceMessage);
+        updateVoiceDuration(progress, total);
+    }
+
+    @SuppressLint("SetTextI18n")
+    private void updateVoiceDuration(float progress, int totalDuration) {
+        currentVoiceTotalDuration = totalDuration;
+        if (totalDuration <= 0) return;
+        int current = (int) (progress * totalDuration);
+        voiceDurationView.setText(formatVoiceDuration(current) + " / " + formatVoiceDuration(totalDuration));
+    }
+
+    private int getVoiceDuration(MessageObject msg) {
+        if (msg == null || msg.messageOwner == null || msg.messageOwner.media == null) return 0;
+        if (!(msg.messageOwner.media instanceof TLRPC.TL_messageMediaDocument)) return 0;
+        TLRPC.Document doc = msg.messageOwner.media.document;
+        if (doc == null) return 0;
+        for (TLRPC.DocumentAttribute attr : doc.attributes) {
+            if (attr instanceof TLRPC.TL_documentAttributeAudio) {
+                return (int) ((TLRPC.TL_documentAttributeAudio) attr).duration;
+            }
+        }
+        return 0;
+    }
+
+    @Override
+    public void didReceivedNotification(int id, int account, Object... args) {
+        if (account != currentAccount) return;
+        if (id == NotificationCenter.messagePlayingDidReset) {
+            updateVoicePlayButton();
+            voiceWaveformView.setProgress(0);
+            updateVoiceDuration(0);
+        } else if (id == NotificationCenter.messagePlayingPlayStateChanged) {
+            updateVoicePlayButton();
+        } else if (id == NotificationCenter.messagePlayingProgressDidChanged) {
+            if (currentVoiceMessage == null) return;
+            MediaController mc = MediaController.getInstance();
+            if (mc.isPlayingMessage(currentVoiceMessage)) {
+                MessageObject playingMsg = mc.getPlayingMessageObject();
+                if (playingMsg != null) {
+                    float prog = playingMsg.audioProgress;
+                    voiceWaveformView.setProgress(prog);
+                    updateVoiceDuration(prog);
+                }
+            }
+        }
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        NotificationCenter nc = NotificationCenter.getInstance(currentAccount);
+        nc.addObserver(this, NotificationCenter.messagePlayingDidReset);
+        nc.addObserver(this, NotificationCenter.messagePlayingPlayStateChanged);
+        nc.addObserver(this, NotificationCenter.messagePlayingProgressDidChanged);
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        super.onDetachedFromWindow();
+        cancelPendingTruncate();
+        NotificationCenter nc = NotificationCenter.getInstance(currentAccount);
+        nc.removeObserver(this, NotificationCenter.messagePlayingDidReset);
+        nc.removeObserver(this, NotificationCenter.messagePlayingPlayStateChanged);
+        nc.removeObserver(this, NotificationCenter.messagePlayingProgressDidChanged);
+    }
+
     public interface Callback {
         void onHeaderClick(FeedController.FeedItem item);
         void onMediaClick(FeedController.FeedItem item, int mediaIndex);
@@ -116,6 +203,7 @@ public class FeedPostCell extends LinearLayout {
         void onShareClick(FeedController.FeedItem item);
         void onForwardClick(long channelId, int messageId);
         void onReplyClick(long channelId, int messageId);
+        void onInlineButtonClick(FeedController.FeedItem item, TLRPC.KeyboardButton button);
     }
 
     private Callback callback;
@@ -265,13 +353,25 @@ public class FeedPostCell extends LinearLayout {
         forwardLabel.setText("Forwarded from");
         forwardContent.addView(forwardLabel, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT));
 
+        LinearLayout forwardNameRow = new LinearLayout(context);
+        forwardNameRow.setOrientation(HORIZONTAL);
+        forwardNameRow.setGravity(Gravity.CENTER_VERTICAL);
+
+        forwardAvatarDrawable = new AvatarDrawable();
+        forwardAvatarView = new BackupImageView(context);
+        forwardAvatarView.setRoundRadius(dp(9));
+        forwardAvatarView.setVisibility(GONE);
+        forwardNameRow.addView(forwardAvatarView, LayoutHelper.createLinear(18, 18, Gravity.CENTER_VERTICAL, 0, 0, 6, 0));
+
         forwardNameView = new TextView(context);
         forwardNameView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
         forwardNameView.setTypeface(AndroidUtilities.bold());
         forwardNameView.setTextColor(greenColor);
         forwardNameView.setMaxLines(1);
         forwardNameView.setEllipsize(TextUtils.TruncateAt.END);
-        forwardContent.addView(forwardNameView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+        forwardNameRow.addView(forwardNameView, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
+
+        forwardContent.addView(forwardNameRow, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
         forwardContainer.addView(forwardContent, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
         addView(forwardContainer, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
@@ -299,10 +399,13 @@ public class FeedPostCell extends LinearLayout {
 
             @Override
             public void setText(CharSequence text, BufferType type) {
-                super.setText(text, type);
-                spoilersRevealed = false;
-                invalidateSpoilers();
+                super.setText(text, type);          // ← super ПЕРВЫМ
+                if (spoilerEffects != null) {       // ← проверка на null
+                    spoilersRevealed = false;
+                    invalidateSpoilers();
+                }
             }
+
 
             @Override
             protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
@@ -311,6 +414,7 @@ public class FeedPostCell extends LinearLayout {
             }
 
             private void invalidateSpoilers() {
+                if (spoilerEffects == null) return;  // ← проверка на null
                 spoilerEffects.clear();
                 if (spoilersRevealed) return;
                 Layout layout = getLayout();
@@ -553,6 +657,41 @@ public class FeedPostCell extends LinearLayout {
         documentContainer.addView(docTextCol, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
         addView(documentContainer, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
+        voiceContainer = new LinearLayout(context);
+        voiceContainer.setOrientation(HORIZONTAL);
+        voiceContainer.setGravity(Gravity.CENTER_VERTICAL);
+        voiceContainer.setVisibility(GONE);
+        voiceContainer.setPadding(0, dp(8), 0, dp(4));
+
+        voicePlayButton = new PlayPauseButton(context, accentColor);
+        voicePlayButton.setOnClickListener(v -> toggleVoicePlayback());
+        voiceContainer.addView(voicePlayButton, LayoutHelper.createLinear(36, 36, Gravity.CENTER_VERTICAL));
+
+        LinearLayout voiceMiddle = new LinearLayout(context);
+        voiceMiddle.setOrientation(VERTICAL);
+        voiceMiddle.setPadding(dp(10), 0, 0, 0);
+
+        voiceLabelView = new TextView(context);
+        voiceLabelView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+        voiceLabelView.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourceProvider));
+        voiceLabelView.setTypeface(AndroidUtilities.bold());
+        voiceLabelView.setMaxLines(1);
+        voiceLabelView.setEllipsize(TextUtils.TruncateAt.END);
+        voiceMiddle.addView(voiceLabelView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+
+        voiceWaveformView = new VoiceWaveformView(context, accentColor);
+        voiceMiddle.addView(voiceWaveformView, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 24, 0, 2, 0, 0));
+
+        voiceContainer.addView(voiceMiddle, LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
+
+        voiceDurationView = new TextView(context);
+        voiceDurationView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+        voiceDurationView.setTextColor(grayColor);
+        voiceDurationView.setPadding(dp(8), 0, 0, 0);
+        voiceContainer.addView(voiceDurationView, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.CENTER_VERTICAL));
+
+        addView(voiceContainer, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+
         mediaContainer = new android.widget.FrameLayout(context);
         mediaContainer.setVisibility(GONE);
 
@@ -584,6 +723,11 @@ public class FeedPostCell extends LinearLayout {
         albumLabel.setTextColor(grayColor);
         albumLabel.setVisibility(GONE);
         addView(albumLabel, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, 0, 4, 0, 0));
+
+        buttonsContainer = new LinearLayout(context);
+        buttonsContainer.setOrientation(VERTICAL);
+        buttonsContainer.setVisibility(GONE);
+        addView(buttonsContainer, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 6, 0, 0));
 
         LinearLayout engRow = new LinearLayout(context);
         engRow.setOrientation(HORIZONTAL);
@@ -668,6 +812,10 @@ public class FeedPostCell extends LinearLayout {
         replyContainer.setVisibility(GONE);
         forwardContainer.setVisibility(GONE);
         documentContainer.setVisibility(GONE);
+        buttonsContainer.setVisibility(GONE);
+        voiceContainer.setVisibility(GONE);
+        currentVoiceMessage = null;
+        currentVoiceTotalDuration = 0;
 
         if (item == null) return;
 
@@ -721,6 +869,8 @@ public class FeedPostCell extends LinearLayout {
         }
 
         setupDocuments(item);
+        setupVoiceMessages(item);
+        setupButtons(raw);
 
         CharSequence text = textFormatter.format(item,
                 messageTextView.getPaint().getFontMetricsInt());
@@ -848,6 +998,128 @@ public class FeedPostCell extends LinearLayout {
         replyContainer.setVisibility(VISIBLE);
     }
 
+    @SuppressLint("SetTextI18n")
+    private void setupVoiceMessages(FeedController.FeedItem item) {
+        currentVoiceMessage = null;
+
+        MessageObject voiceMsg = null;
+        boolean isVoice = false;
+        String title = null;
+        String performer = null;
+        int duration = 0;
+        byte[] waveform = null;
+
+        for (MessageObject msg : item.messages) {
+            TLRPC.MessageMedia media = msg.messageOwner.media;
+            if (!(media instanceof TLRPC.TL_messageMediaDocument) || media.document == null) continue;
+
+            for (TLRPC.DocumentAttribute attr : media.document.attributes) {
+                if (attr instanceof TLRPC.TL_documentAttributeAudio) {
+                    TLRPC.TL_documentAttributeAudio audio = (TLRPC.TL_documentAttributeAudio) attr;
+                    voiceMsg = msg;
+                    isVoice = audio.voice;
+                    duration = (int) audio.duration;
+                    title = audio.title;
+                    performer = audio.performer;
+                    waveform = audio.waveform;
+                    break;
+                }
+            }
+            if (voiceMsg != null) break;
+        }
+
+        if (voiceMsg == null) {
+            voiceContainer.setVisibility(GONE);
+            return;
+        }
+
+        currentVoiceMessage = voiceMsg;
+        final int totalDuration = duration;
+
+        if (isVoice) {
+            voiceLabelView.setText("Voice message");
+            voiceWaveformView.setWaveform(waveform);
+            voiceWaveformView.setVisibility(VISIBLE);
+        } else {
+            String label = (title != null && !title.isEmpty()) ? title : "Audio";
+            if (performer != null && !performer.isEmpty()) {
+                label += " — " + performer;
+            }
+            voiceLabelView.setText("🎵 " + label);
+            voiceWaveformView.setWaveform(null);
+            voiceWaveformView.setVisibility(VISIBLE);
+        }
+
+        voiceDurationView.setText(formatVoiceDuration(duration));
+
+        voiceWaveformView.setSeekListener(new VoiceWaveformView.SeekListener() {
+            @Override
+            public void onSeekStart() {
+            }
+
+            @Override
+            public void onSeek(float progress) {
+                updateVoiceDuration(progress, totalDuration);
+            }
+
+            @Override
+            public void onSeekEnd(float progress) {
+                if (currentVoiceMessage == null) return;
+                MediaController mc = MediaController.getInstance();
+                if (mc.isPlayingMessage(currentVoiceMessage)) {
+                    mc.seekToProgress(currentVoiceMessage, progress);
+                } else {
+                    mc.playMessage(currentVoiceMessage);
+                    AndroidUtilities.runOnUIThread(() -> {
+                        mc.seekToProgress(currentVoiceMessage, progress);
+                    }, 300);
+                }
+                updateVoicePlayButton();
+            }
+        });
+
+       MediaController mc = MediaController.getInstance();
+        if (mc.isPlayingMessage(currentVoiceMessage)) {
+            MessageObject playingMsg = mc.getPlayingMessageObject();
+            if (playingMsg != null) {
+                voiceWaveformView.setProgress(playingMsg.audioProgress);
+                updateVoiceDuration(playingMsg.audioProgress);
+            }
+        }
+
+        updateVoicePlayButton();
+        voiceContainer.setVisibility(VISIBLE);
+    }
+
+    private String formatVoiceDuration(int seconds) {
+        if (seconds < 3600) {
+            return String.format(Locale.US, "%d:%02d", seconds / 60, seconds % 60);
+        }
+        return String.format(Locale.US, "%d:%02d:%02d", seconds / 3600, (seconds % 3600) / 60, seconds % 60);
+    }
+
+    private void toggleVoicePlayback() {
+        if (currentVoiceMessage == null) return;
+        MediaController mc = MediaController.getInstance();
+        if (mc.isPlayingMessage(currentVoiceMessage)) {
+            if (mc.isMessagePaused()) {
+                mc.playMessage(currentVoiceMessage);
+            } else {
+                mc.pauseMessage(currentVoiceMessage);
+            }
+        } else {
+            mc.playMessage(currentVoiceMessage);
+        }
+        updateVoicePlayButton();
+    }
+
+    private void updateVoicePlayButton() {
+        if (currentVoiceMessage == null || voicePlayButton == null) return;
+        MediaController mc = MediaController.getInstance();
+        boolean playing = mc.isPlayingMessage(currentVoiceMessage) && !mc.isMessagePaused();
+        voicePlayButton.setPlaying(playing);
+    }
+
     private void setupReplyImage(TLRPC.Message replyMsg) {
         if (replyMsg.media instanceof TLRPC.TL_messageMediaPhoto && replyMsg.media.photo != null) {
             TLRPC.PhotoSize thumb = smallestThumb(replyMsg.media.photo.sizes);
@@ -965,8 +1237,46 @@ public class FeedPostCell extends LinearLayout {
 
         if (fwdName != null) {
             forwardNameView.setText(fwdName);
+
+            TLRPC.Chat fwdChat = null;
+            TLRPC.User fwdUser = null;
+            if (fwd.from_id != null) {
+                if (fwd.from_id.channel_id != 0) {
+                    fwdChat = controller.getChat(fwd.from_id.channel_id);
+                } else if (fwd.from_id.chat_id != 0) {
+                    fwdChat = controller.getChat(fwd.from_id.chat_id);
+                } else if (fwd.from_id.user_id != 0) {
+                    fwdUser = controller.getUser(fwd.from_id.user_id);
+                }
+            }
+
+            if (fwdChat != null) {
+                forwardAvatarDrawable.setInfo(fwdChat);
+                if (fwdChat.photo != null && fwdChat.photo.photo_small != null) {
+                    forwardAvatarView.setImage(
+                            ImageLocation.getForChat(fwdChat, ImageLocation.TYPE_SMALL),
+                            "18_18", forwardAvatarDrawable, fwdChat);
+                } else {
+                    forwardAvatarView.setImageDrawable(forwardAvatarDrawable);
+                }
+                forwardAvatarView.setVisibility(VISIBLE);
+            } else if (fwdUser != null) {
+                forwardAvatarDrawable.setInfo(fwdUser);
+                if (fwdUser.photo != null && fwdUser.photo.photo_small != null) {
+                    forwardAvatarView.setImage(
+                            ImageLocation.getForUser(fwdUser, ImageLocation.TYPE_SMALL),
+                            "18_18", forwardAvatarDrawable, fwdUser);
+                } else {
+                    forwardAvatarView.setImageDrawable(forwardAvatarDrawable);
+                }
+                forwardAvatarView.setVisibility(VISIBLE);
+            } else {
+                forwardAvatarView.setVisibility(GONE);
+            }
+
             forwardContainer.setVisibility(VISIBLE);
         } else {
+            forwardAvatarView.setVisibility(GONE);
             forwardContainer.setVisibility(GONE);
         }
     }
@@ -1002,6 +1312,118 @@ public class FeedPostCell extends LinearLayout {
         documentContainer.setVisibility(VISIBLE);
     }
 
+    @SuppressLint("SetTextI18n")
+    private void setupButtons(TLRPC.Message raw) {
+        buttonsContainer.removeAllViews();
+
+        if (!(raw.reply_markup instanceof TLRPC.TL_replyInlineMarkup)) {
+            buttonsContainer.setVisibility(GONE);
+            return;
+        }
+
+        TLRPC.TL_replyInlineMarkup markup = (TLRPC.TL_replyInlineMarkup) raw.reply_markup;
+        if (markup.rows == null || markup.rows.isEmpty()) {
+            buttonsContainer.setVisibility(GONE);
+            return;
+        }
+
+        int accentColor = Theme.getColor(Theme.key_windowBackgroundWhiteBlueText2, resourceProvider);
+        int bgColor = (accentColor & 0x00FFFFFF) | 0x1A000000;
+        int pressedColor = (accentColor & 0x00FFFFFF) | 0x33000000;
+
+        for (int r = 0; r < markup.rows.size(); r++) {
+            TLRPC.TL_keyboardButtonRow row = markup.rows.get(r);
+            if (row.buttons == null || row.buttons.isEmpty()) continue;
+
+            LinearLayout rowLayout = new LinearLayout(getContext());
+            rowLayout.setOrientation(LinearLayout.HORIZONTAL);
+
+            for (int i = 0; i < row.buttons.size(); i++) {
+                TLRPC.KeyboardButton button = row.buttons.get(i);
+
+                TextView btn = new TextView(getContext());
+                btn.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+                btn.setTypeface(AndroidUtilities.bold());
+                btn.setTextColor(accentColor);
+                btn.setGravity(Gravity.CENTER);
+                btn.setPadding(dp(12), dp(8), dp(12), dp(8));
+                btn.setMaxLines(1);
+                btn.setEllipsize(TextUtils.TruncateAt.END);
+
+                String label = button.text;
+                if (button instanceof TLRPC.TL_keyboardButtonUrl
+                        || button instanceof TLRPC.TL_keyboardButtonUrlAuth) {
+                    btn.setText(label + " ↗");
+                } else if (button instanceof TLRPC.TL_keyboardButtonWebView) {
+                    btn.setText(label + " ↗");
+                } else if (button instanceof TLRPC.TL_keyboardButtonCopy) {
+                    btn.setText("📋 " + label);
+                } else {
+                    btn.setText(label);
+                }
+
+                btn.setBackground(Theme.createSimpleSelectorRoundRectDrawable(
+                        dp(6), bgColor, pressedColor));
+
+                btn.setOnClickListener(v -> handleButtonClick(button));
+
+                LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                        0, LayoutHelper.WRAP_CONTENT, 1f);
+                if (i > 0) lp.leftMargin = dp(4);
+                rowLayout.addView(btn, lp);
+            }
+
+            LinearLayout.LayoutParams rowLp = new LinearLayout.LayoutParams(
+                    LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT);
+            if (r > 0) rowLp.topMargin = dp(4);
+            buttonsContainer.addView(rowLayout, rowLp);
+        }
+
+        buttonsContainer.setVisibility(VISIBLE);
+    }
+
+    private void handleButtonClick(TLRPC.KeyboardButton button) {
+        if (button instanceof TLRPC.TL_keyboardButtonUrl) {
+            String url = ((TLRPC.TL_keyboardButtonUrl) button).url;
+            if (url != null && !url.isEmpty()) {
+                Browser.openUrl(getContext(), url);
+            }
+            return;
+        }
+        if (button instanceof TLRPC.TL_keyboardButtonUrlAuth) {
+            String url = ((TLRPC.TL_keyboardButtonUrlAuth) button).url;
+            if (url != null && !url.isEmpty()) {
+                Browser.openUrl(getContext(), url);
+            }
+            return;
+        }
+        if (button instanceof TLRPC.TL_keyboardButtonWebView) {
+            String url = ((TLRPC.TL_keyboardButtonWebView) button).url;
+            if (url != null && !url.isEmpty()) {
+                Browser.openUrl(getContext(), url);
+            }
+            return;
+        }
+        if (button instanceof TLRPC.TL_keyboardButtonCopy) {
+            try {
+                String copyText = ((TLRPC.TL_keyboardButtonCopy) button).copy_text;
+                if (copyText != null) {
+                    android.content.ClipboardManager clipboard =
+                            (android.content.ClipboardManager) getContext()
+                                    .getSystemService(Context.CLIPBOARD_SERVICE);
+                    if (clipboard != null) {
+                        clipboard.setPrimaryClip(
+                                android.content.ClipData.newPlainText("", copyText));
+                    }
+                }
+            } catch (Exception ignored) {}
+            return;
+        }
+        if (callback != null && currentItem != null) {
+            callback.onInlineButtonClick(currentItem, button);
+        }
+    }
+
     @NonNull
     private static List<TLRPC.Document> getDocuments(FeedController.FeedItem item) {
         List<TLRPC.Document> docs = new ArrayList<>();
@@ -1009,13 +1431,14 @@ public class FeedPostCell extends LinearLayout {
             TLRPC.MessageMedia media = msg.messageOwner.media;
             if (media instanceof TLRPC.TL_messageMediaDocument && media.document != null) {
                 TLRPC.Document doc = media.document;
-                boolean isVisualMedia = false;
+                boolean skip = false;
                 for (TLRPC.DocumentAttribute attr : doc.attributes) {
-                    if (attr instanceof TLRPC.TL_documentAttributeVideo) isVisualMedia = true;
-                    if (attr instanceof TLRPC.TL_documentAttributeAnimated) isVisualMedia = true;
-                    if (attr instanceof TLRPC.TL_documentAttributeSticker) isVisualMedia = true;
+                    if (attr instanceof TLRPC.TL_documentAttributeVideo) skip = true;
+                    if (attr instanceof TLRPC.TL_documentAttributeAnimated) skip = true;
+                    if (attr instanceof TLRPC.TL_documentAttributeSticker) skip = true;
+                    if (attr instanceof TLRPC.TL_documentAttributeAudio) skip = true;  // ← ADD
                 }
-                if (!isVisualMedia) {
+                if (!skip) {
                     docs.add(doc);
                 }
             }
@@ -1062,6 +1485,10 @@ public class FeedPostCell extends LinearLayout {
 
         pendingTruncateListener = () -> {
             if (messageTextView.getWidth() <= 0) {
+                return true;
+            }
+            Layout layout = messageTextView.getLayout();
+            if (layout == null) {
                 return true;
             }
             cancelPendingTruncate();
@@ -1204,5 +1631,212 @@ public class FeedPostCell extends LinearLayout {
         readMoreView.setVisibility(GONE);
         scheduleMeasureAndTruncate();
         requestLayout();
+    }
+
+    private static class PlayPauseButton extends View {
+        private boolean playing;
+        private float animProgress = 0f;
+        private final Paint bgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint iconPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final android.graphics.Path iconPath = new android.graphics.Path();
+        private android.animation.ValueAnimator animator;
+
+        PlayPauseButton(Context context, int bgColor) {
+            super(context);
+            bgPaint.setColor(bgColor);
+            iconPaint.setColor(0xFFFFFFFF);
+            iconPaint.setStyle(Paint.Style.FILL);
+        }
+
+        void setPlaying(boolean p) {
+            if (playing == p) return;
+            playing = p;
+            if (animator != null) animator.cancel();
+            animator = android.animation.ValueAnimator.ofFloat(animProgress, playing ? 1f : 0f);
+            animator.setDuration(200);
+            animator.addUpdateListener(a -> {
+                animProgress = (float) a.getAnimatedValue();
+                invalidate();
+            });
+            animator.start();
+        }
+
+        @Override
+        protected void onDraw(@NonNull Canvas canvas) {
+            float cx = getWidth() / 2f;
+            float cy = getHeight() / 2f;
+            float r = Math.min(cx, cy);
+            canvas.drawCircle(cx, cy, r, bgPaint);
+
+            float t = animProgress;
+
+            float px1 = cx - dp(3), py1 = cy - dp(6);
+            float px2 = cx + dp(7), py2 = cy;
+            float px3 = cx - dp(3), py3 = cy + dp(6);
+
+            float bw = dp(2.5f);
+            float bh = dp(10);
+            float gap = dp(1.5f);
+
+            float l1x1 = lerp(px1, cx - gap - bw, t);
+            float l1y1 = lerp(py1, cy - bh / 2, t);
+            float l1x2 = lerp(px2, cx - gap, t);
+            float l1y2 = lerp(py2, cy + bh / 2, t);
+
+            float r1x1 = lerp(px1, cx + gap, t);
+            float r1y1 = lerp(py3, cy - bh / 2, t);
+            float r1x2 = lerp(px2, cx + gap + bw, t);
+            float r1y2 = lerp(py2, cy + bh / 2, t);
+
+            if (t < 0.5f) {
+                iconPath.reset();
+                iconPath.moveTo(l1x1, l1y1);
+                iconPath.lineTo(l1x2, (l1y2 + l1y1) / 2f);
+                iconPath.lineTo(r1x1, r1y1);
+                iconPath.close();
+                canvas.drawPath(iconPath, iconPaint);
+            } else {
+                canvas.drawRoundRect(l1x1, l1y1, lerp(px1 + dp(4), cx - gap, t),
+                        l1y2, dp(1), dp(1), iconPaint);
+                canvas.drawRoundRect(lerp(px1 + dp(4), cx + gap, t), r1y1,
+                        r1x2, r1y2, dp(1), dp(1), iconPaint);
+            }
+        }
+
+        private float lerp(float a, float b, float t) {
+            return a + (b - a) * t;
+        }
+    }
+
+    private static class VoiceWaveformView extends View {
+        private float[] bars;
+        private float progress = 0f;
+        private boolean seeking = false;
+        private final Paint barPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final Paint barPlayedPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+        private final RectF barRect = new RectF();
+
+        interface SeekListener {
+            void onSeek(float progress);
+            void onSeekStart();
+            void onSeekEnd(float progress);
+        }
+
+        private SeekListener seekListener;
+
+        VoiceWaveformView(Context context, int accentColor) {
+            super(context);
+            barPaint.setColor((accentColor & 0x00FFFFFF) | 0x44000000);
+            barPlayedPaint.setColor(accentColor);
+        }
+
+        void setSeekListener(SeekListener l) {
+            seekListener = l;
+        }
+
+        void setProgress(float p) {
+            if (!seeking) {
+                progress = Math.max(0, Math.min(1, p));
+                invalidate();
+            }
+        }
+
+        void setWaveform(byte[] waveform) {
+            progress = 0;
+            if (waveform == null || waveform.length == 0) {
+                bars = null;
+            } else {
+                int count = waveform.length * 8 / 5;
+                bars = new float[count];
+                for (int i = 0; i < count; i++) {
+                    int byteIndex = i * 5 / 8;
+                    int bitShift = i * 5 % 8;
+                    int val = (waveform[byteIndex] & 0xFF) >> bitShift;
+                    if (bitShift > 3 && byteIndex + 1 < waveform.length) {
+                        val |= (waveform[byteIndex + 1] & 0xFF) << (8 - bitShift);
+                    }
+                    bars[i] = (val & 0x1F) / 31f;
+                }
+            }
+            invalidate();
+        }
+
+        @Override
+        @SuppressLint("ClickableViewAccessibility")
+        public boolean onTouchEvent(MotionEvent event) {
+            if (bars == null || bars.length == 0) return false;
+            float w = getWidth();
+            if (w <= 0) return false;
+
+            switch (event.getAction()) {
+                case MotionEvent.ACTION_DOWN:
+                    seeking = true;
+                    getParent().requestDisallowInterceptTouchEvent(true);
+                    progress = Math.max(0, Math.min(1, event.getX() / w));
+                    invalidate();
+                    if (seekListener != null) seekListener.onSeekStart();
+                    return true;
+
+                case MotionEvent.ACTION_MOVE:
+                    if (seeking) {
+                        progress = Math.max(0, Math.min(1, event.getX() / w));
+                        invalidate();
+                        if (seekListener != null) seekListener.onSeek(progress);
+                    }
+                    return true;
+
+                case MotionEvent.ACTION_UP:
+                case MotionEvent.ACTION_CANCEL:
+                    if (seeking) {
+                        seeking = false;
+                        getParent().requestDisallowInterceptTouchEvent(false);
+                        progress = Math.max(0, Math.min(1, event.getX() / w));
+                        invalidate();
+                        if (seekListener != null) seekListener.onSeekEnd(progress);
+                    }
+                    return true;
+            }
+            return false;
+        }
+
+        @Override
+        protected void onDraw(@NonNull Canvas canvas) {
+            float w = getWidth();
+            float h = getHeight();
+
+            if (bars == null || bars.length == 0 || w <= 0) {
+                float cy = h / 2f;
+                float playedW = w * progress;
+                if (playedW > 0) {
+                    canvas.drawRect(0, cy - dp(1), playedW, cy + dp(1), barPlayedPaint);
+                }
+                if (playedW < w) {
+                    canvas.drawRect(playedW, cy - dp(1), w, cy + dp(1), barPaint);
+                }
+                return;
+            }
+
+            float barW = dp(2);
+            float gap = dp(1.5f);
+            float step = barW + gap;
+            int visibleBars = Math.max(1, (int) (w / step));
+            float minH = dp(2);
+            float maxH = h - dp(4);
+            float progressX = w * progress;
+
+            for (int i = 0; i < visibleBars; i++) {
+                int di = i * bars.length / visibleBars;
+                if (di >= bars.length) di = bars.length - 1;
+
+                float barH = Math.max(minH, bars[di] * maxH);
+                float x = i * step;
+                float top = (h - barH) / 2f;
+
+                barRect.set(x, top, x + barW, top + barH);
+                float barCenter = x + barW / 2f;
+                canvas.drawRoundRect(barRect, barW / 2f, barW / 2f,
+                        barCenter <= progressX ? barPlayedPaint : barPaint);
+            }
+        }
     }
 }
