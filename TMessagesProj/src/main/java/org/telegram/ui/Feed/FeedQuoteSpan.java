@@ -125,7 +125,7 @@ public class FeedQuoteSpan implements LineBackgroundSpan, LeadingMarginSpan {
         final int topPad;
         final int bottomPad;
 
-        LineHeight(int topPad, int bottomPad) {
+        public LineHeight(int topPad, int bottomPad) {
             this.topPad = topPad;
             this.bottomPad = bottomPad;
         }
@@ -146,9 +146,10 @@ public class FeedQuoteSpan implements LineBackgroundSpan, LeadingMarginSpan {
                 fm.descent += bottomPad;
                 fm.bottom  += bottomPad;
             }
-            if (!((end >= spanEnd))) {
-                fm.descent -= dp(1);
-                fm.bottom  -= dp(1);
+            if (end < spanEnd) {
+                int compensation = dp(2);
+                fm.descent -= compensation;
+                fm.bottom  -= compensation;
             }
         }
     }

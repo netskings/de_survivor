@@ -39,6 +39,7 @@ import org.telegram.ui.Components.AnimatedEmojiSpan;
 import org.telegram.ui.Components.AvatarDrawable;
 import org.telegram.ui.Components.BackupImageView;
 import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.ui.Components.spoilers.SpoilerEffect;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -61,6 +62,9 @@ public class FeedPostCell extends LinearLayout {
 
     private final LinearLayout forwardContainer;
     private final TextView forwardNameView;
+
+    private boolean messageHasSpoilers = false;
+    private Runnable spoilerRevealer = null;
 
     private final AnimatedEmojiSpan.TextViewEmojis messageTextView;
     private final TextView readMoreView;
@@ -101,6 +105,8 @@ public class FeedPostCell extends LinearLayout {
 
     private final java.util.HashSet<Integer> expandedQuoteOffsets = new java.util.HashSet<>();
     private final FeedTextFormatter textFormatter;
+
+    private final android.graphics.Path spoilerClipPath = new android.graphics.Path();
 
     public interface Callback {
         void onHeaderClick(FeedController.FeedItem item);
@@ -279,6 +285,10 @@ public class FeedPostCell extends LinearLayout {
             private final RectF extRect      = new RectF();
             private final android.graphics.Path extPath = new android.graphics.Path();
 
+            private final java.util.List<SpoilerEffect> spoilerEffects = new java.util.ArrayList<>();
+            private final java.util.Stack<SpoilerEffect> spoilerPool = new java.util.Stack<>();
+            private boolean spoilersRevealed = false;
+
             {
                 extArrowPaint.setStyle(Paint.Style.STROKE);
                 extArrowPaint.setStrokeWidth(dp(1.6f));
@@ -288,9 +298,81 @@ public class FeedPostCell extends LinearLayout {
             }
 
             @Override
+            public void setText(CharSequence text, BufferType type) {
+                super.setText(text, type);
+                spoilersRevealed = false;
+                invalidateSpoilers();
+            }
+
+            @Override
+            protected void onLayout(boolean changed, int left, int top, int right, int bottom) {
+                super.onLayout(changed, left, top, right, bottom);
+                invalidateSpoilers();
+            }
+
+            private void invalidateSpoilers() {
+                spoilerEffects.clear();
+                if (spoilersRevealed) return;
+                Layout layout = getLayout();
+                if (layout != null && getText() instanceof Spanned) {
+                    SpoilerEffect.addSpoilers(this, spoilerPool, spoilerEffects);
+                }
+                messageHasSpoilers = !spoilerEffects.isEmpty();
+                spoilerRevealer = this::revealSpoilers;
+            }
+
+            public void revealSpoilers() {
+                spoilersRevealed = true;
+                spoilerEffects.clear();
+                invalidate();
+            }
+
+            @Override
             protected void onDraw(@NonNull Canvas canvas) {
+                boolean hasSpoilers = !spoilerEffects.isEmpty() && !spoilersRevealed;
+
+                if (hasSpoilers) {
+                    canvas.save();
+                    spoilerClipPath.rewind();
+                    int pl = getCompoundPaddingLeft();
+                    int pt = getExtendedPaddingTop();
+                    for (SpoilerEffect eff : spoilerEffects) {
+                        android.graphics.Rect b = eff.getBounds();
+                        spoilerClipPath.addRect(
+                                pl + b.left, pt + b.top,
+                                pl + b.right, pt + b.bottom,
+                                android.graphics.Path.Direction.CW
+                        );
+                    }
+                    canvas.clipPath(spoilerClipPath, android.graphics.Region.Op.DIFFERENCE);
+                }
+
                 super.onDraw(canvas);
+
+                if (hasSpoilers) {
+                    canvas.restore();
+                }
+
                 drawQuoteDecorations(canvas);
+
+                drawSpoilerEffects(canvas);
+            }
+
+            private void drawSpoilerEffects(Canvas canvas) {
+                if (spoilerEffects.isEmpty() || spoilersRevealed) return;
+
+                int pl = getCompoundPaddingLeft();
+                int pt = getExtendedPaddingTop();
+
+                canvas.save();
+                canvas.translate(pl, pt);
+                for (SpoilerEffect eff : spoilerEffects) {
+                    eff.setColor(getCurrentTextColor());
+                    eff.draw(canvas);
+                }
+                canvas.restore();
+
+                invalidate();
             }
 
             private void drawQuoteDecorations(Canvas canvas) {
@@ -413,6 +495,12 @@ public class FeedPostCell extends LinearLayout {
                             spans[0].onClick(widget);
                             return true;
                         }
+                    }
+
+                    if (messageHasSpoilers && spoilerRevealer != null) {
+                        spoilerRevealer.run();
+                        messageHasSpoilers = false;
+                        return true;
                     }
                 }
                 return super.onTouchEvent(widget, buffer, event);
