@@ -1,6 +1,7 @@
 package org.telegram.ui.Feed;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
+import static org.telegram.ui.Feed.FeedMediaHelper.smallestThumb;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
@@ -21,15 +22,11 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 import android.graphics.RectF;
 import android.text.Spanned;
-import android.text.style.LeadingMarginSpan;
-import android.text.style.LineBackgroundSpan;
-import android.text.TextPaint;
 import android.text.style.ClickableSpan;
 
 import androidx.annotation.NonNull;
 
 import org.telegram.messenger.AndroidUtilities;
-import org.telegram.messenger.Emoji;
 import org.telegram.messenger.ImageLocation;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessageObject;
@@ -45,7 +42,6 @@ import org.telegram.ui.Components.LayoutHelper;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Collections;
 import java.util.Locale;
 
 @SuppressLint("ViewConstructor")
@@ -104,6 +100,7 @@ public class FeedPostCell extends LinearLayout {
     private ViewTreeObserver.OnPreDrawListener pendingTruncateListener;
 
     private final java.util.HashSet<Integer> expandedQuoteOffsets = new java.util.HashSet<>();
+    private final FeedTextFormatter textFormatter;
 
     public interface Callback {
         void onHeaderClick(FeedController.FeedItem item);
@@ -304,7 +301,7 @@ public class FeedPostCell extends LinearLayout {
 
                 int pr = getPaddingRight();
                 Spanned sp = (Spanned) text;
-                QuoteBlockSpan[] quotes = sp.getSpans(0, text.length(), QuoteBlockSpan.class);
+                FeedQuoteSpan[] quotes = sp.getSpans(0, text.length(), FeedQuoteSpan.class);
                 if (quotes == null || quotes.length == 0) return;
 
                 int layoutW = layout.getWidth();
@@ -312,7 +309,7 @@ public class FeedPostCell extends LinearLayout {
                 int pl = getCompoundPaddingLeft();
                 int pt = getExtendedPaddingTop();
 
-                for (QuoteBlockSpan q : quotes) {
+                for (FeedQuoteSpan q : quotes) {
                     int start = sp.getSpanStart(q);
                     int end   = sp.getSpanEnd(q);
                     if (start < 0 || end <= start) continue;
@@ -408,7 +405,7 @@ public class FeedPostCell extends LinearLayout {
                         ClickableSpan[] spans = buffer.getSpans(off, off, ClickableSpan.class);
                         if (spans.length > 0) {
                             for (ClickableSpan span : spans) {
-                                if (!(span instanceof QuoteClickableSpan)) {
+                                if (!(span instanceof FeedQuoteSpan.Clickable)) {
                                     span.onClick(widget);
                                     return true;
                                 }
@@ -552,6 +549,9 @@ public class FeedPostCell extends LinearLayout {
 
         addView(engRow, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
+        textFormatter = new FeedTextFormatter(resourceProvider, expandedQuoteOffsets);
+        textFormatter.setRebuildCallback(this::rebuildMessageText);
+
         View divider = new View(context);
         divider.setBackgroundColor(Theme.getColor(Theme.key_divider, resourceProvider));
         addView(divider, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 1));
@@ -617,21 +617,34 @@ public class FeedPostCell extends LinearLayout {
             mediaOverlayLabel.setVisibility(GONE);
         } else {
             pollView.setVisibility(GONE);
-            setupMedia(item);
+            FeedMediaHelper.setupMedia(
+                    item,
+                    getContext(),
+                    mediaContainer,
+                    mediaImageView1,
+                    mediaOverlayLabel,
+                    mediaRow,
+                    albumLabel,
+                    (feedItem, index) -> {
+                        if (callback != null) callback.onMediaClick(feedItem, index);
+                    },
+                    resourceProvider
+            );
         }
 
         setupDocuments(item);
 
-        CharSequence text = getFormattedText(item);
+        CharSequence text = textFormatter.format(item,
+                messageTextView.getPaint().getFontMetricsInt());
         if (text != null && text.length() > 0) {
             fullText = text;
 
             boolean hasQuotes = false;
             if (text instanceof Spanned) {
-                QuoteBlockSpan[] qs = ((Spanned) text).getSpans(0, text.length(), QuoteBlockSpan.class);
+                FeedQuoteSpan[] qs = ((Spanned) text).getSpans(0, text.length(), FeedQuoteSpan.class);
                 hasQuotes = qs != null && qs.length > 0;
             }
-            messageTextView.setPadding(0, 0, hasQuotes ? QuoteBlockSpan.ICON_ZONE : 0, 0);
+            messageTextView.setPadding(0, 0, hasQuotes ? FeedQuoteSpan.ICON_ZONE : 0, 0);
 
             messageTextView.setMaxLines(Integer.MAX_VALUE);
             messageTextView.setText(fullText);
@@ -749,7 +762,7 @@ public class FeedPostCell extends LinearLayout {
 
     private void setupReplyImage(TLRPC.Message replyMsg) {
         if (replyMsg.media instanceof TLRPC.TL_messageMediaPhoto && replyMsg.media.photo != null) {
-            TLRPC.PhotoSize thumb = getSmallThumb(replyMsg.media.photo.sizes);
+            TLRPC.PhotoSize thumb = smallestThumb(replyMsg.media.photo.sizes);
             if (thumb != null) {
                 replyImageView.setImage(
                         ImageLocation.getForPhoto(thumb, replyMsg.media.photo),
@@ -759,7 +772,7 @@ public class FeedPostCell extends LinearLayout {
         } else if (replyMsg.media instanceof TLRPC.TL_messageMediaDocument && replyMsg.media.document != null) {
             TLRPC.Document doc = replyMsg.media.document;
             if (doc.thumbs != null && !doc.thumbs.isEmpty()) {
-                TLRPC.PhotoSize thumb = getSmallThumb(doc.thumbs);
+                TLRPC.PhotoSize thumb = smallestThumb(doc.thumbs);
                 if (thumb != null) {
                     replyImageView.setImage(
                             ImageLocation.getForDocument(thumb, doc),
@@ -768,25 +781,6 @@ public class FeedPostCell extends LinearLayout {
                 }
             }
         }
-    }
-
-    private TLRPC.PhotoSize getSmallThumb(List<TLRPC.PhotoSize> sizes) {
-        if (sizes == null) return null;
-        for (TLRPC.PhotoSize s : sizes) {
-            if (s instanceof TLRPC.TL_photoSizeEmpty) continue;
-            if (s.type != null && (s.type.equals("s") || s.type.equals("m"))) return s;
-        }
-        TLRPC.PhotoSize smallest = null;
-        int smallestArea = Integer.MAX_VALUE;
-        for (TLRPC.PhotoSize s : sizes) {
-            if (s instanceof TLRPC.TL_photoSizeEmpty) continue;
-            int area = s.w * s.h;
-            if (area > 0 && area < smallestArea) {
-                smallestArea = area;
-                smallest = s;
-            }
-        }
-        return smallest;
     }
 
     private void loadReplyMessage(TLRPC.Message raw) {
@@ -1041,347 +1035,8 @@ public class FeedPostCell extends LinearLayout {
         requestLayout();
     }
 
-    private CharSequence getFormattedText(FeedController.FeedItem item) {
-        MessageObject primary = item.getPrimaryMessage();
-        CharSequence text = null;
-        MessageObject sourceMsg = null;                       // ← отслеживаем источник
-
-        if (item.isAlbum()) {
-            for (MessageObject msg : item.messages) {
-                if (msg.caption != null && msg.caption.length() > 0) {
-                    text = msg.caption;
-                    sourceMsg = msg;
-                    break;
-                }
-            }
-            if (text == null || text.length() == 0) {
-                for (MessageObject msg : item.messages) {
-                    CharSequence mt = msg.messageText;
-                    if (mt != null && mt.length() > 0
-                            && !isPlaceholderText(mt.toString().trim())) {
-                        text = mt;
-                        sourceMsg = msg;
-                        break;
-                    }
-                }
-            }
-        } else {
-            if (primary.caption != null && primary.caption.length() > 0) {
-                text = primary.caption;
-                sourceMsg = primary;
-            } else {
-                CharSequence mt = primary.messageText;
-                if (mt != null && mt.length() > 0
-                        && !isPlaceholderText(mt.toString().trim())) {
-                    text = mt;
-                    sourceMsg = primary;
-                }
-            }
-        }
-
-        if (text == null || text.length() == 0) return null;
-        if (isPlaceholderText(text.toString().trim())) return null;
-
-        SpannableStringBuilder ssb = new SpannableStringBuilder(text);
-
-        applyQuoteSpans(ssb, sourceMsg);
-
-        text = Emoji.replaceEmoji(ssb, messageTextView.getPaint().getFontMetricsInt(), false);
-        return text;
-    }
-
-    private boolean isPlaceholderText(String text) {
-        if (text == null || text.isEmpty()) return true;
-
-        switch (text) {
-            case "Photo":
-            case "Video":
-            case "GIF":
-            case "Document":
-            case "Sticker":
-            case "Audio":
-            case "Voice message":
-            case "Video message":
-            case "Contact":
-            case "Location":
-            case "Live location":
-            case "Poll":
-            case "Quiz":
-                return true;
-        }
-
-        try {
-            if (text.equals(LocaleController.getString(R.string.AttachPhoto))
-                    || text.equals(LocaleController.getString(R.string.AttachVideo))
-                    || text.equals(LocaleController.getString(R.string.AttachGif))
-                    || text.equals(LocaleController.getString(R.string.AttachDocument))
-                    || text.equals(LocaleController.getString(R.string.AttachSticker))
-                    || text.equals(LocaleController.getString(R.string.AttachAudio))
-                    || text.equals(LocaleController.getString(R.string.AttachRound))
-                    || text.equals(LocaleController.getString(R.string.AttachContact))
-                    || text.equals(LocaleController.getString(R.string.AttachLocation))
-                    || text.equals(LocaleController.getString(R.string.AttachLiveLocation))
-                    || text.equals(LocaleController.getString(R.string.Poll))
-            ) return true;
-        } catch (Exception e) { /* ignore */ }
-        return false;
-    }
-
-    @SuppressLint("SetTextI18n")
-    private void setupMedia(FeedController.FeedItem item) {
-        List<MessageObject> mediaMessages = new ArrayList<>();
-        for (MessageObject msg : item.messages) {
-            TLRPC.MessageMedia media = msg.messageOwner.media;
-            if (media == null) continue;
-            if (media instanceof TLRPC.TL_messageMediaEmpty) continue;
-            if (media instanceof TLRPC.TL_messageMediaWebPage) continue;
-            if (media instanceof TLRPC.TL_messageMediaPoll) continue;
-
-            if (media instanceof TLRPC.TL_messageMediaPhoto) {
-                mediaMessages.add(msg);
-            } else if (media instanceof TLRPC.TL_messageMediaDocument && media.document != null) {
-                boolean isVisualMedia = false;
-                for (TLRPC.DocumentAttribute attr : media.document.attributes) {
-                    if (attr instanceof TLRPC.TL_documentAttributeVideo) isVisualMedia = true;
-                    if (attr instanceof TLRPC.TL_documentAttributeAnimated) isVisualMedia = true;
-                }
-                if (isVisualMedia) mediaMessages.add(msg);
-            }
-        }
-
-        if (mediaMessages.isEmpty()) {
-            mediaContainer.setVisibility(GONE);
-            mediaOverlayLabel.setVisibility(GONE);
-            mediaRow.setVisibility(GONE);
-            albumLabel.setVisibility(GONE);
-            return;
-        }
-
-        int h = setupSingleMedia(mediaMessages.get(0), mediaImageView1, mediaOverlayLabel);
-        mediaContainer.setVisibility(VISIBLE);
-        LayoutParams lp = (LayoutParams) mediaContainer.getLayoutParams();
-        lp.height = h;
-        mediaContainer.setLayoutParams(lp);
-
-        if (mediaMessages.size() >= 2) {
-            mediaRow.removeAllViews();
-            int show = Math.min(mediaMessages.size() - 1, 3);
-            for (int i = 0; i < show; i++) {
-                final int idx = i + 1;
-                BackupImageView thumb = new BackupImageView(getContext());
-                thumb.setRoundRadius(dp(8));
-                thumb.setOnClickListener(v -> {
-                    if (callback != null && currentItem != null) callback.onMediaClick(currentItem, idx);
-                });
-                setupMediaThumb(mediaMessages.get(idx), thumb);
-                mediaRow.addView(thumb, LayoutHelper.createLinear(80, 80, 0, 0, 4, 0));
-            }
-            if (mediaMessages.size() > 4) {
-                TextView more = new TextView(getContext());
-                more.setText("+" + (mediaMessages.size() - 4));
-                more.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText3, resourceProvider));
-                more.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
-                more.setGravity(Gravity.CENTER);
-                mediaRow.addView(more, LayoutHelper.createLinear(48, 80, Gravity.CENTER_VERTICAL));
-            }
-            mediaRow.setVisibility(VISIBLE);
-
-            int photos = 0, videos = 0;
-            for (MessageObject m : mediaMessages) {
-                if (m.isVideo() || m.isRoundVideo()) videos++;
-                else photos++;
-            }
-            StringBuilder sb = new StringBuilder("Album • ");
-            if (photos > 0) sb.append(photos).append(photos == 1 ? " photo" : " photos");
-            if (photos > 0 && videos > 0) sb.append(", ");
-            if (videos > 0) sb.append(videos).append(videos == 1 ? " video" : " videos");
-            albumLabel.setText(sb.toString());
-            albumLabel.setVisibility(VISIBLE);
-        } else {
-            mediaRow.setVisibility(GONE);
-            albumLabel.setVisibility(GONE);
-        }
-    }
-
-    @SuppressLint("SetTextI18n")
-    private int setupSingleMedia(MessageObject msg, BackupImageView iv, TextView overlay) {
-        TLRPC.Message raw = msg.messageOwner;
-        int height = dp(200);
-
-        if (raw.media instanceof TLRPC.TL_messageMediaPhoto && raw.media.photo != null) {
-            TLRPC.PhotoSize best = bestSize(raw.media.photo.sizes);
-            if (best != null) {
-                if (best.w > 0 && best.h > 0) {
-                    int w = AndroidUtilities.displaySize.x - dp(32);
-                    height = Math.max(dp(150), Math.min(dp(400), (int) (w * ((float) best.h / best.w))));
-                }
-                iv.setImage(ImageLocation.getForPhoto(best, raw.media.photo), height + "_" + height, (ImageLocation) null, null, 0, raw.media.photo);
-            }
-            overlay.setVisibility(GONE);
-        } else if (raw.media instanceof TLRPC.TL_messageMediaDocument && raw.media.document != null) {
-            TLRPC.Document doc = raw.media.document;
-            boolean isGif = false, isVideo = false;
-            double duration = 0;
-            int videoW = 0, videoH = 0;
-            for (TLRPC.DocumentAttribute attr : doc.attributes) {
-                if (attr instanceof TLRPC.TL_documentAttributeVideo) {
-                    isVideo = true;
-                    duration = ((TLRPC.TL_documentAttributeVideo) attr).duration;
-                    videoW = attr.w;
-                    videoH = attr.h;
-                    if (attr.w > 0 && attr.h > 0) {
-                        int w = AndroidUtilities.displaySize.x - dp(32);
-                        height = Math.max(dp(150), Math.min(dp(400), (int) (w * ((float) attr.h / attr.w))));
-                    }
-                }
-                if (attr instanceof TLRPC.TL_documentAttributeAnimated) isGif = true;
-            }
-
-            if (isGif) {
-                if (videoW > 0 && videoH > 0) {
-                    int w = AndroidUtilities.displaySize.x - dp(32);
-                    height = Math.max(dp(150), Math.min(dp(400), (int) (w * ((float) videoH / videoW))));
-                }
-
-                String thumbFilter = height + "_" + height;
-                ImageLocation thumbLocation = null;
-                if (doc.thumbs != null && !doc.thumbs.isEmpty()) {
-                    TLRPC.PhotoSize thumb = bestSize(doc.thumbs);
-                    if (thumb != null) {
-                        thumbLocation = ImageLocation.getForDocument(thumb, doc);
-                    }
-                }
-
-                iv.setImage(
-                        ImageLocation.getForDocument(doc),
-                        height + "_" + height,
-                        thumbLocation,
-                        thumbFilter,
-                        (int) doc.size,
-                        doc
-                );
-
-                iv.getImageReceiver().setAutoRepeat(1);
-                iv.getImageReceiver().setAllowStartAnimation(true);
-
-                overlay.setText("GIF");
-                overlay.setVisibility(VISIBLE);
-            } else {
-                if (doc.thumbs != null && !doc.thumbs.isEmpty()) {
-                    TLRPC.PhotoSize thumb = bestSize(doc.thumbs);
-                    if (thumb != null)
-                        iv.setImage(ImageLocation.getForDocument(thumb, doc), height + "_" + height, null, null, 0, doc);
-                }
-                if (isVideo) {
-                    int d = (int) duration;
-                    overlay.setText(String.format(Locale.US, "▶ %d:%02d", d / 60, d % 60));
-                    overlay.setVisibility(VISIBLE);
-                } else {
-                    overlay.setVisibility(GONE);
-                }
-            }
-        }
-        return height;
-    }
-
-    private void setupMediaThumb(MessageObject msg, BackupImageView v) {
-        TLRPC.Message raw = msg.messageOwner;
-        if (raw.media instanceof TLRPC.TL_messageMediaPhoto && raw.media.photo != null) {
-            TLRPC.PhotoSize best = bestSize(raw.media.photo.sizes);
-            if (best != null)
-                v.setImage(ImageLocation.getForPhoto(best, raw.media.photo), "80_80", (ImageLocation) null, null, 0, raw.media.photo);
-        } else if (raw.media instanceof TLRPC.TL_messageMediaDocument && raw.media.document != null) {
-            TLRPC.Document doc = raw.media.document;
-
-            boolean isGif = false;
-            for (TLRPC.DocumentAttribute attr : doc.attributes) {
-                if (attr instanceof TLRPC.TL_documentAttributeAnimated) {
-                    isGif = true;
-                    break;
-                }
-            }
-
-            if (isGif) {
-                ImageLocation thumbLocation = null;
-                if (doc.thumbs != null && !doc.thumbs.isEmpty()) {
-                    TLRPC.PhotoSize thumb = bestSize(doc.thumbs);
-                    if (thumb != null) {
-                        thumbLocation = ImageLocation.getForDocument(thumb, doc);
-                    }
-                }
-                v.setImage(
-                        ImageLocation.getForDocument(doc),
-                        "80_80",
-                        thumbLocation,
-                        "80_80",
-                        (int) doc.size,
-                        doc
-                );
-                v.getImageReceiver().setAutoRepeat(1);
-                v.getImageReceiver().setAllowStartAnimation(true);
-            } else {
-                if (doc.thumbs != null && !doc.thumbs.isEmpty()) {
-                    TLRPC.PhotoSize thumb = bestSize(doc.thumbs);
-                    if (thumb != null)
-                        v.setImage(ImageLocation.getForDocument(thumb, doc), "80_80", null, null, 0, doc);
-                }
-            }
-        }
-    }
-
-    private TLRPC.PhotoSize bestSize(List<TLRPC.PhotoSize> sizes) {
-        if (sizes == null) return null;
-        TLRPC.PhotoSize best = null;
-        int bestA = 0;
-        for (TLRPC.PhotoSize s : sizes) {
-            if (s instanceof TLRPC.TL_photoSizeEmpty) continue;
-            int a = s.w * s.h;
-            if (a > bestA) { bestA = a; best = s; }
-        }
-        return best;
-    }
-
     public FeedController.FeedItem getCurrentItem() {
         return currentItem;
-    }
-
-    private static abstract class QuoteClickableSpan extends ClickableSpan {
-        @Override
-        public void updateDrawState(@NonNull TextPaint ds) {
-            ds.setUnderlineText(false);
-        }
-    }
-
-    private static class QuoteLineHeightSpan implements android.text.style.LineHeightSpan {
-        final int topPad;
-        final int bottomPad;
-
-        QuoteLineHeightSpan(int topPad, int bottomPad) {
-            this.topPad = topPad;
-            this.bottomPad = bottomPad;
-        }
-
-        @Override
-        public void chooseHeight(CharSequence text, int start, int end,
-                                 int spanstartv, int lineHeight,
-                                 Paint.FontMetricsInt fm) {
-            Spanned sp = (Spanned) text;
-            int spanStart = sp.getSpanStart(this);
-            int spanEnd = sp.getSpanEnd(this);
-
-            if (start <= spanStart) {
-                fm.ascent -= topPad;
-                fm.top    -= topPad;
-            }
-            if (end >= spanEnd) {
-                fm.descent += bottomPad;
-                fm.bottom  += bottomPad;
-            }
-            if (!((end >= spanEnd))) {
-                fm.descent -= dp(1);
-                fm.bottom  -= dp(1);
-            }
-        }
     }
 
     private void updateQuoteWidths() {
@@ -1392,11 +1047,11 @@ public class FeedPostCell extends LinearLayout {
         if (!(text instanceof Spanned)) return;
 
         Spanned spanned = (Spanned) text;
-        QuoteBlockSpan[] quotes = spanned.getSpans(0, text.length(), QuoteBlockSpan.class);
+        FeedQuoteSpan[] quotes = spanned.getSpans(0, text.length(), FeedQuoteSpan.class);
         if (quotes == null || quotes.length == 0) return;
 
         boolean changed = false;
-        for (QuoteBlockSpan q : quotes) {
+        for (FeedQuoteSpan q : quotes) {
             int start = spanned.getSpanStart(q);
             int end   = spanned.getSpanEnd(q);
             if (start < 0 || end <= start) continue;
@@ -1409,7 +1064,7 @@ public class FeedPostCell extends LinearLayout {
                 maxLineWidth = Math.max(maxLineWidth, layout.getLineWidth(line));
             }
 
-            float boxW = maxLineWidth + QuoteBlockSpan.ICON_ZONE;
+            float boxW = maxLineWidth + FeedQuoteSpan.ICON_ZONE;
             boxW = Math.max(boxW, dp(60));
 
             if (q.boxWidth != boxW) {
@@ -1435,235 +1090,23 @@ public class FeedPostCell extends LinearLayout {
                 });
     }
 
-    private static class QuoteBlockSpan implements LineBackgroundSpan, LeadingMarginSpan {
 
-        final Paint bgPaint      = new Paint(Paint.ANTI_ALIAS_FLAG);
-        final Paint stripePaint  = new Paint(Paint.ANTI_ALIAS_FLAG);
-        private final RectF tmpRect = new RectF();
-        private final android.graphics.Path tmpPath = new android.graphics.Path();
-
-        private final int stripeWidth = dp(3);
-        private final int gapWidth    = dp(7);
-        final int cornerRadius        = dp(6);
-
-        static final int ICON_ZONE = dp(24);
-
-        boolean collapsible = false;
-        boolean expanded    = false;
-        float boxWidth      = -1;
-
-        int topPad    = 0;
-        int bottomPad = 0;
-
-        QuoteBlockSpan(int stripeColor, int bgColor) {
-            stripePaint.setColor(stripeColor);
-            bgPaint.setColor(bgColor);
-        }
-
-        void setCollapsible(boolean collapsible, boolean expanded) {
-            this.collapsible = collapsible;
-            this.expanded = expanded;
-        }
-
-        void setPadding(int top, int bottom) {
-            this.topPad = top;
-            this.bottomPad = bottom;
-        }
-
-        @Override
-        public int getLeadingMargin(boolean first) {
-            return stripeWidth + gapWidth;
-        }
-
-        @Override
-        public void drawLeadingMargin(Canvas c, Paint p, int x, int dir,
-                                      int top, int baseline, int bottom,
-                                      CharSequence text, int start, int end,
-                                      boolean first, Layout layout) { }
-
-        @Override
-        public void drawBackground(@NonNull Canvas canvas, @NonNull Paint paint,
-                                   int left, int right,
-                                   int top, int baseline, int bottom,
-                                   @NonNull CharSequence text,
-                                   int start, int end, int lineNumber) {
-
-            Spanned sp    = (Spanned) text;
-            int spanStart = sp.getSpanStart(this);
-            int spanEnd   = sp.getSpanEnd(this);
-
-            boolean isFirst = (start <= spanStart);
-            boolean isLast  = (end >= spanEnd);
-
-            float t = isFirst ? top + topPad : top;
-            float b = isLast  ? bottom - bottomPad : bottom;
-
-            float effectiveRight;
-            boolean roundRight;
-
-            if (boxWidth > 0 && left + boxWidth <= right) {
-                effectiveRight = left + boxWidth;
-                roundRight = true;
-            } else {
-                effectiveRight = right;
-                roundRight = (boxWidth <= 0); // до первого измерения — скругляем
-            }
-
-            drawBlock(canvas, left, effectiveRight, t, b,
-                    isFirst, isLast, roundRight, bgPaint, cornerRadius);
-
-            drawBlock(canvas, left, left + stripeWidth, t, b,
-                    isFirst, isLast, false, stripePaint, stripeWidth / 2f);
-        }
-
-        private void drawBlock(Canvas canvas,
-                               float left, float right, float top, float bottom,
-                               boolean roundTop, boolean roundBottom, boolean roundRight,
-                               Paint paint, float radius) {
-
-            tmpRect.set(left, top, right, bottom);
-
-            boolean anyRound = roundTop || roundBottom;
-            if (!anyRound) {
-                canvas.drawRect(tmpRect, paint);
-                return;
-            }
-
-            float tl = roundTop    ? radius : 0;
-            float tr = (roundTop && roundRight)    ? radius : 0;
-            float br = (roundBottom && roundRight)  ? radius : 0;
-            float bl = roundBottom ? radius : 0;
-
-            tmpPath.reset();
-            tmpPath.addRoundRect(tmpRect, new float[]{
-                    tl, tl, tr, tr, br, br, bl, bl
-            }, android.graphics.Path.Direction.CW);
-            canvas.drawPath(tmpPath, paint);
-        }
-    }
-
-    private void applyQuoteSpans(SpannableStringBuilder ssb, MessageObject sourceMsg) {
-        if (sourceMsg == null || sourceMsg.messageOwner == null
-                || sourceMsg.messageOwner.entities == null) return;
-
-        int accentColor = Theme.getColor(Theme.key_windowBackgroundWhiteBlueText2, resourceProvider);
-        int bgColor = (accentColor & 0x00FFFFFF) | 0x1A000000;
-        int quotePadTop    = dp(6);
-        int quotePadBottom = dp(6);
-
-        List<TLRPC.MessageEntity> quoteEntities = new ArrayList<>();
-        for (TLRPC.MessageEntity entity : sourceMsg.messageOwner.entities) {
-            if (entity instanceof TLRPC.TL_messageEntityBlockquote) {
-                quoteEntities.add(entity);
-            }
-        }
-        if (quoteEntities.isEmpty()) return;
-
-        Collections.sort(quoteEntities, (a, b) -> b.offset - a.offset);
-
-        for (TLRPC.MessageEntity entity : quoteEntities) {
-            int start = entity.offset;
-            int end = Math.min(entity.offset + entity.length, ssb.length());
-            if (start < 0 || start >= end) continue;
-
-            boolean isCollapsible = false;
-            try {
-                isCollapsible = ((TLRPC.TL_messageEntityBlockquote) entity).collapsed;
-            } catch (Throwable ignored) {}
-
-            boolean isExpanded = expandedQuoteOffsets.contains(entity.offset);
-            final int key = entity.offset;
-
-            if (isCollapsible) {
-                if (!isExpanded) {
-                    CharSequence quoteContent = ssb.subSequence(start, end);
-                    int cutoff = findQuoteCutoff(quoteContent, 3, 150);
-                    if (cutoff < quoteContent.length()) {
-                        while (cutoff > 0 && Character.isWhitespace(ssb.charAt(start + cutoff - 1))) {
-                            cutoff--;
-                        }
-                        ssb.delete(start + cutoff, end);
-                        ssb.insert(start + cutoff, "…");
-                        end = start + cutoff + 1;
-                    }
-                    ssb.setSpan(new QuoteClickableSpan() {
-                        @Override public void onClick(@NonNull View w) {
-                            expandedQuoteOffsets.add(key);
-                            rebuildMessageText();
-                        }
-                    }, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                } else {
-                    ssb.setSpan(new QuoteClickableSpan() {
-                        @Override public void onClick(@NonNull View w) {
-                            expandedQuoteOffsets.remove(key);
-                            rebuildMessageText();
-                        }
-                    }, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-                }
-            }
-
-            if (end < ssb.length() && ssb.charAt(end) != '\n') {
-                ssb.insert(end, "\n");
-            }
-            if (start > 0 && ssb.charAt(start - 1) != '\n') {
-                ssb.insert(start, "\n");
-                start++;
-                end++;
-            }
-
-            LeadingMarginSpan[] existing = ssb.getSpans(start, end, LeadingMarginSpan.class);
-            for (LeadingMarginSpan span : existing) {
-                int ss = ssb.getSpanStart(span);
-                int se = ssb.getSpanEnd(span);
-                if (ss >= start && se <= end) ssb.removeSpan(span);
-            }
-
-            QuoteBlockSpan blockSpan = new QuoteBlockSpan(accentColor, bgColor);
-            if (isCollapsible) blockSpan.setCollapsible(true, isExpanded);
-            blockSpan.setPadding(quotePadTop, quotePadBottom);
-            ssb.setSpan(blockSpan, start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-
-            ssb.setSpan(new QuoteLineHeightSpan(quotePadTop, quotePadBottom),
-                    start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        }
-    }
-
-    private int findQuoteCutoff(CharSequence text, int maxLines, int maxChars) {
-        int lines = 0;
-        for (int i = 0; i < text.length(); i++) {
-            if (text.charAt(i) == '\n') {
-                lines++;
-                if (lines >= maxLines) {
-                    return i;
-                }
-            }
-        }
-        if (text.length() > maxChars) {
-            for (int i = Math.min(maxChars, text.length() - 1);
-                 i >= Math.max(0, maxChars - 50); i--) {
-                if (text.charAt(i) == ' ' || text.charAt(i) == '\n') {
-                    return i;
-                }
-            }
-            return Math.min(maxChars, text.length());
-        }
-        return text.length();
-    }
 
     private void rebuildMessageText() {
         if (currentItem == null) return;
 
-        CharSequence text = getFormattedText(currentItem);
+        CharSequence text = textFormatter.format(currentItem,
+                messageTextView.getPaint().getFontMetricsInt());
         if (text == null || text.length() == 0) return;
 
         fullText = text;
 
         boolean hasQuotes = false;
         if (text instanceof Spanned) {
-            QuoteBlockSpan[] qs = ((Spanned) text).getSpans(0, text.length(), QuoteBlockSpan.class);
+            FeedQuoteSpan[] qs = ((Spanned) text).getSpans(0, text.length(), FeedQuoteSpan.class);
             hasQuotes = qs != null && qs.length > 0;
         }
-        messageTextView.setPadding(0, 0, hasQuotes ? QuoteBlockSpan.ICON_ZONE : 0, 0);
+        messageTextView.setPadding(0, 0, hasQuotes ? FeedQuoteSpan.ICON_ZONE : 0, 0);
 
         messageTextView.setMaxLines(Integer.MAX_VALUE);
         messageTextView.setText(fullText);
