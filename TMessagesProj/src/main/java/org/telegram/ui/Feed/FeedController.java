@@ -42,7 +42,6 @@ public class FeedController {
         public boolean isAlbum() { return messages.size() > 1; }
         public int getMessageId() { return getPrimaryMessage().getId(); }
         public String getUniqueId() { return channelId + "_" + getMessageId(); }
-
     }
 
     private static final FeedController[] instances = new FeedController[UserConfig.MAX_ACCOUNT_COUNT];
@@ -85,20 +84,33 @@ public class FeedController {
         bookmarkedIds.addAll(p.getStringSet("bookmarks", new HashSet<>()));
     }
 
+    private void saveNow() {
+        if (saveRunnable != null) {
+            AndroidUtilities.cancelRunOnUIThread(saveRunnable);
+            saveRunnable = null;
+        }
+        performSave();
+    }
+
     private void scheduleSave() {
         if (saveRunnable != null) AndroidUtilities.cancelRunOnUIThread(saveRunnable);
         saveRunnable = () -> {
-            Set<String> r = new HashSet<>(localReadIds);
-            if (r.size() > 50000) {
-                List<String> l = new ArrayList<>(r);
-                r = new HashSet<>(l.subList(l.size() - 50000, l.size()));
-            }
-            getPrefs().edit()
-                    .putStringSet("read", r)
-                    .putStringSet("bookmarks", new HashSet<>(bookmarkedIds))
-                    .apply();
+            performSave();
+            saveRunnable = null;
         };
         AndroidUtilities.runOnUIThread(saveRunnable, 3000);
+    }
+
+    private void performSave() {
+        Set<String> r = new HashSet<>(localReadIds);
+        if (r.size() > 50000) {
+            List<String> l = new ArrayList<>(r);
+            r = new HashSet<>(l.subList(l.size() - 50000, l.size()));
+        }
+        getPrefs().edit()
+                .putStringSet("read", r)
+                .putStringSet("bookmarks", new HashSet<>(bookmarkedIds))
+                .apply();
     }
 
     public void markAsRead(FeedItem item) {
@@ -113,7 +125,8 @@ public class FeedController {
             maxId = Math.max(maxId, msg.getId());
         }
         localReadIds.add(uid);
-        scheduleSave();
+
+        saveNow();
 
         final int finalMaxId = maxId;
         final long dialogId = item.channelId;
@@ -128,7 +141,12 @@ public class FeedController {
             TLRPC.TL_channels_readHistory req = new TLRPC.TL_channels_readHistory();
             req.channel = MessagesController.getInputChannel(chat);
             req.max_id = finalMaxId;
-            ConnectionsManager.getInstance(currentAccount).sendRequest(req, (response, error) -> {});
+            ConnectionsManager.getInstance(currentAccount).sendRequest(req, (response, error) -> {
+                if (error != null) {
+                    android.util.Log.w("FeedController",
+                            "readHistory failed for " + dialogId + ": " + error.text);
+                }
+            });
 
             TLRPC.Dialog dialog = controller.dialogs_dict.get(dialogId);
             if (dialog != null) {
@@ -173,85 +191,90 @@ public class FeedController {
         }
         isLoading = true;
 
-        new Thread(() -> {
-            MessagesController controller = MessagesController.getInstance(currentAccount);
-            List<TLRPC.Dialog> allDialogs = controller.getAllDialogs();
+        MessagesController controller = MessagesController.getInstance(currentAccount);
+        List<TLRPC.Dialog> allDialogs = controller.getAllDialogs();
 
-            List<TLRPC.Dialog> channels = new ArrayList<>();
-            for (TLRPC.Dialog dialog : allDialogs) {
-                if (dialog == null || dialog.id >= 0) continue;
-                TLRPC.Chat chat = controller.getChat(-dialog.id);
-                if (chat == null || !chat.broadcast || chat.megagroup) continue;
-                if (dialog.unread_count <= 0) continue;
-                channels.add(dialog);
-            }
+        List<TLRPC.Dialog> channels = new ArrayList<>();
+        for (TLRPC.Dialog dialog : allDialogs) {
+            if (dialog == null || dialog.id >= 0) continue;
+            TLRPC.Chat chat = controller.getChat(-dialog.id);
+            if (chat == null || !chat.broadcast || chat.megagroup) continue;
+            if (dialog.unread_count <= 0) continue;
 
-            if (channels.isEmpty()) {
-                AndroidUtilities.runOnUIThread(() -> {
-                    if (force) { cachedFeed.clear(); feedLoaded = true; }
-                    isLoading = false;
-                    callback.onLoaded(new ArrayList<>(), false);
-                });
-                return;
-            }
+            if (dialog.read_inbox_max_id <= 0) continue;
 
-            final List<FeedItem> allItems = Collections.synchronizedList(new ArrayList<>());
-            final AtomicInteger completed = new AtomicInteger(0);
-            final int totalChannels = channels.size();
+            channels.add(dialog);
+        }
 
-            for (TLRPC.Dialog dialog : channels) {
-                int readMaxId = dialog.read_inbox_max_id;
-                int limit = Math.min(dialog.unread_count + 10, MAX_MESSAGES_PER_CHANNEL);
+        if (channels.isEmpty()) {
+            if (force) { cachedFeed.clear(); feedLoaded = true; }
+            isLoading = false;
+            callback.onLoaded(new ArrayList<>(), false);
+            return;
+        }
 
-                TLRPC.TL_messages_getHistory req = new TLRPC.TL_messages_getHistory();
-                req.peer = controller.getInputPeer(dialog.id);
-                req.limit = limit;
-                req.offset_id = 0;
-                req.min_id = Math.max(0, readMaxId - 5);
-                req.max_id = 0;
+        final List<FeedItem> allItems = Collections.synchronizedList(new ArrayList<>());
+        final AtomicInteger completed = new AtomicInteger(0);
+        final int totalChannels = channels.size();
 
-                ConnectionsManager.getInstance(currentAccount).sendRequest(req, (response, error) -> {
-                    List<MessageObject> channelMessages = new ArrayList<>();
+        for (TLRPC.Dialog dialog : channels) {
+            final int readMaxId = dialog.read_inbox_max_id;
+            int limit = Math.min(dialog.unread_count + 5, MAX_MESSAGES_PER_CHANNEL);
 
-                    if (response instanceof TLRPC.messages_Messages) {
-                        TLRPC.messages_Messages msgs = (TLRPC.messages_Messages) response;
+            TLRPC.TL_messages_getHistory req = new TLRPC.TL_messages_getHistory();
+            req.peer = controller.getInputPeer(dialog.id);
+            req.limit = limit;
+            req.offset_id = 0;
+            req.max_id = 0;
+
+            req.min_id = readMaxId;
+
+            ConnectionsManager.getInstance(currentAccount).sendRequest(req, (response, error) -> {
+                List<MessageObject> channelMessages = new ArrayList<>();
+
+                if (response instanceof TLRPC.messages_Messages) {
+                    TLRPC.messages_Messages msgs = (TLRPC.messages_Messages) response;
+
+                    AndroidUtilities.runOnUIThread(() -> {
                         controller.putUsers(msgs.users, false);
                         controller.putChats(msgs.chats, false);
+                    });
 
-                        for (TLRPC.Message msg : msgs.messages) {
-                            if (msg.id <= readMaxId) continue;
-                            MessageObject obj = new MessageObject(currentAccount, msg, true, true);
-                            if (obj.isOut() || obj.messageOwner.action != null) continue;
+                    for (TLRPC.Message msg : msgs.messages) {
+                        if (msg.id <= readMaxId) continue;
 
-                            boolean hasContent = (obj.messageText != null && obj.messageText.length() > 0)
-                                    || obj.messageOwner.media != null;
-                            if (!hasContent) continue;
-                            if (isLocallyRead(dialog.id, obj.getId())) continue;
+                        MessageObject obj = new MessageObject(currentAccount, msg, true, true);
+                        if (obj.isOut() || obj.messageOwner.action != null) continue;
 
-                            channelMessages.add(obj);
-                        }
+                        boolean hasContent = (obj.messageText != null && obj.messageText.length() > 0)
+                                || obj.messageOwner.media != null;
+                        if (!hasContent) continue;
+
+                        if (isLocallyRead(dialog.id, obj.getId())) continue;
+
+                        channelMessages.add(obj);
                     }
+                }
 
-                    List<FeedItem> channelItems = groupIntoItems(channelMessages, dialog.id);
-                    allItems.addAll(channelItems);
+                List<FeedItem> channelItems = groupIntoItems(channelMessages, dialog.id);
+                allItems.addAll(channelItems);
 
-                    int done = completed.incrementAndGet();
+                int done = completed.incrementAndGet();
 
-                    if (done >= totalChannels) {
-                        List<FeedItem> sorted = new ArrayList<>(allItems);
-                        Collections.sort(sorted, (a, b) -> Long.compare(a.sortDate, b.sortDate));
+                if (done >= totalChannels) {
+                    List<FeedItem> sorted = new ArrayList<>(allItems);
+                    Collections.sort(sorted, (a, b) -> Long.compare(a.sortDate, b.sortDate));
 
-                        AndroidUtilities.runOnUIThread(() -> {
-                            cachedFeed.clear();
-                            cachedFeed.addAll(sorted);
-                            feedLoaded = true;
-                            isLoading = false;
-                            callback.onLoaded(sorted, false);
-                        });
-                    }
-                });
-            }
-        }).start();
+                    AndroidUtilities.runOnUIThread(() -> {
+                        cachedFeed.clear();
+                        cachedFeed.addAll(sorted);
+                        feedLoaded = true;
+                        isLoading = false;
+                        callback.onLoaded(sorted, false);
+                    });
+                }
+            });
+        }
     }
 
     private List<FeedItem> groupIntoItems(List<MessageObject> messages, long dialogId) {
