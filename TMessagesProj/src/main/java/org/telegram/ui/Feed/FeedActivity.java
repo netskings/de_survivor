@@ -30,6 +30,7 @@ import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBar;
+import org.telegram.ui.ActionBar.ActionBarMenu;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.ChatActivity;
@@ -46,6 +47,8 @@ import java.io.File;
 import java.util.ArrayList;
 
 public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFragmentDelegate {
+
+    private static final int MENU_SETTINGS = 1;
 
     private RecyclerListView listView;
     private FeedAdapter adapter;
@@ -76,6 +79,18 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
         actionBar.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite, resourceProvider));
         actionBar.setTitleColor(Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourceProvider));
         actionBar.setAddToContainer(true);
+        actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
+            @Override
+            public void onItemClick(int id) {
+                if (id == MENU_SETTINGS) {
+                    saveScroll();
+                    presentFragment(new FeedSettingsActivity());
+                }
+            }
+        });
+
+        ActionBarMenu menu = actionBar.createMenu();
+        menu.addItem(MENU_SETTINGS, R.drawable.msg_settings);
 
         FrameLayout rootView = new FrameLayout(context);
         rootView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite, resourceProvider));

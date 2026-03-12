@@ -133,6 +133,7 @@ import org.telegram.ui.bots.BotDownloads;
 import org.telegram.ui.bots.BotLocation;
 import org.telegram.ui.bots.BotWebViewSheet;
 import org.telegram.ui.bots.SetupEmojiStatusSheet;
+import org.telegram.ui.Feed.FeedSettingsActivity;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -688,6 +689,14 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
         items.add(SettingCell.Factory.of(8, IconBackgroundColors.CYAN.top, IconBackgroundColors.CYAN.bottom, R.drawable.settings_devices, getString(R.string.SettingsDevices), getString(R.string.SettingsDevicesInfo)));
         items.add(SettingCell.Factory.of(9, IconBackgroundColors.ORANGE_DEEP.top, IconBackgroundColors.ORANGE_DEEP.bottom, R.drawable.settings_power, getString(R.string.SettingsPowerSaving), getString(R.string.SettingsPowerSavingInfo)));
         items.add(SettingCell.Factory.of(10, IconBackgroundColors.PURPLE.top, IconBackgroundColors.PURPLE.bottom, R.drawable.settings_language, getString(R.string.SettingsLanguage), LocaleController.getCurrentLanguageName()));
+        items.add(SettingCell.Factory.of(
+                100,
+                IconBackgroundColors.GREEN.top,
+                IconBackgroundColors.GREEN.bottom,
+                R.drawable.msg_customize,
+                "Custom Settings",
+                "Ads, proxy sponsor"
+        ));
 
         items.add(UItem.asShadow(null));
 
@@ -811,6 +820,9 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 break;
             case 10:
                 presentFragment(new LanguageSelectActivity());
+                break;
+            case 100:
+                presentFragment(new FeedSettingsActivity());
                 break;
 
             case 11:
@@ -1421,6 +1433,7 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 (SharedConfig.frameMetricsEnabled ? "hide frame metrics" : "show frame metrics"),
                 BuildVars.DEBUG_PRIVATE_VERSION ? (SharedConfig.shadowsInSections ? "disable shadows in settings" : "enable shadows in settings") : null,
                 BuildVars.DEBUG_PRIVATE_VERSION ? (SharedConfig.debugViewMetrics ? "disable debug view metrics" : "enable debug view metrics") : null,
+                BuildVars.DEBUG_VERSION ? (SharedConfig.useEightPatch ? "use nine patch" : "use eight patch") : null,
         };
 
         builder.setItems(items, (dialog, which) -> {
@@ -1728,6 +1741,9 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
             } else if (which == 41) {
                 final SharedPreferences prefs = ApplicationLoader.applicationContext.getSharedPreferences("mainconfig", Activity.MODE_PRIVATE);
                 prefs.edit().putBoolean("debugViewMetrics", SharedConfig.debugViewMetrics = !SharedConfig.debugViewMetrics).apply();
+            } else if (which == 42) {
+                final SharedPreferences prefs = ApplicationLoader.applicationContext.getSharedPreferences("mainconfig", Activity.MODE_PRIVATE);
+                prefs.edit().putBoolean("useEightPatch", SharedConfig.useEightPatch = !SharedConfig.useEightPatch).apply();
             }
         });
         builder.setNegativeButton(getString(R.string.Cancel), null);

@@ -203,6 +203,8 @@ public class FeedController {
 
             if (dialog.read_inbox_max_id <= 0) continue;
 
+            if (CustomSettings.hideProxySponsor() && controller.isPromoDialog(dialog.id, false)) continue;
+
             channels.add(dialog);
         }
 
