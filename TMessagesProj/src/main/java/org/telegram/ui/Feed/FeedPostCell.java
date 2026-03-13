@@ -16,8 +16,11 @@ import android.text.TextUtils;
 import android.text.method.LinkMovementMethod;
 import android.text.style.ClickableSpan;
 import android.util.TypedValue;
+import android.view.GestureDetector;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewGroup;
 import android.view.ViewTreeObserver;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -56,6 +59,7 @@ public class FeedPostCell extends LinearLayout {
     private final FeedDocumentView documentView;
     private final FeedVoiceView voiceView;
     private final FeedInlineButtonsView buttonsView;
+    private final FeedReactionsView reactionsView;
 
     private boolean messageHasSpoilers = false;
     private Runnable spoilerRevealer = null;
@@ -87,6 +91,8 @@ public class FeedPostCell extends LinearLayout {
     private final java.util.HashSet<Integer> expandedQuoteOffsets = new java.util.HashSet<>();
     private final FeedTextFormatter textFormatter;
 
+    private final GestureDetector doubleTapDetector;
+
     public interface Callback {
         void onHeaderClick(FeedController.FeedItem item);
         void onMediaClick(FeedController.FeedItem item, int mediaIndex);
@@ -96,12 +102,30 @@ public class FeedPostCell extends LinearLayout {
         void onForwardClick(long channelId, int messageId);
         void onReplyClick(long channelId, int messageId);
         void onInlineButtonClick(FeedController.FeedItem item, TLRPC.KeyboardButton button);
+        void onReactionToggle(FeedController.FeedItem item, TLRPC.Reaction reaction);
+        void onPaidReactionTap(FeedController.FeedItem item);
+        void onPaidReactionLongPress(FeedController.FeedItem item);
+        void onDoubleTap(FeedController.FeedItem item);
     }
 
     private Callback callback;
 
     public void setCallback(Callback callback) {
         this.callback = callback;
+        reactionsView.setCallback(new FeedReactionsView.ReactionCallback() {
+            @Override
+            public void onReactionToggle(FeedController.FeedItem item, TLRPC.Reaction reaction) {
+                if (callback != null) callback.onReactionToggle(item, reaction);
+            }
+            @Override
+            public void onPaidReactionTap(FeedController.FeedItem item) {
+                if (callback != null) callback.onPaidReactionTap(item);
+            }
+            @Override
+            public void onPaidReactionLongPress(FeedController.FeedItem item) {
+                if (callback != null) callback.onPaidReactionLongPress(item);
+            }
+        });
     }
 
     @SuppressLint("SetTextI18n")
@@ -530,21 +554,18 @@ public class FeedPostCell extends LinearLayout {
         addView(buttonsView,
                 LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 6, 0, 0));
 
+        reactionsView = new FeedReactionsView(context, currentAccount, resourceProvider);
+        reactionsView.setVisibility(GONE);
+        addView(reactionsView,
+                LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 0, 4, 0, 0));
+
+        setClipChildren(false);
+        setClipToPadding(false);
+
         LinearLayout engRow = new LinearLayout(context);
         engRow.setOrientation(HORIZONTAL);
         engRow.setGravity(Gravity.CENTER_VERTICAL);
         engRow.setPadding(0, dp(10), 0, dp(12));
-
-        viewsIcon = new ImageView(context);
-        viewsIcon.setImageResource(R.drawable.msg_views);
-        viewsIcon.setColorFilter(grayFilter);
-        engRow.addView(viewsIcon,
-                LayoutHelper.createLinear(16, 16, Gravity.CENTER_VERTICAL));
-
-        viewsCountView = smallText(context, grayColor);
-        engRow.addView(viewsCountView, LayoutHelper.createLinear(
-                LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT,
-                Gravity.CENTER_VERTICAL, 4, 0, 20, 0));
 
         commentsBtn = new LinearLayout(context);
         commentsBtn.setOrientation(HORIZONTAL);
@@ -590,10 +611,24 @@ public class FeedPostCell extends LinearLayout {
         shareBtn.addView(sharesCountView, LayoutHelper.createLinear(
                 LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT,
                 Gravity.CENTER_VERTICAL, 4, 0, 0, 0));
-
         engRow.addView(shareBtn, LayoutHelper.createLinear(
                 LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT,
                 Gravity.CENTER_VERTICAL, 0, 0, 0, 0));
+
+        View spacer = new View(context);
+        engRow.addView(spacer, new LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.MATCH_PARENT, 1f));
+
+        viewsIcon = new ImageView(context);
+        viewsIcon.setImageResource(R.drawable.msg_views);
+        viewsIcon.setColorFilter(grayFilter);
+        engRow.addView(viewsIcon,
+                LayoutHelper.createLinear(16, 16, Gravity.CENTER_VERTICAL));
+
+        viewsCountView = smallText(context, grayColor);
+        engRow.addView(viewsCountView, LayoutHelper.createLinear(
+                LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT,
+                Gravity.CENTER_VERTICAL, 4, 0, 0, 0));
 
         addView(engRow,
                 LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
@@ -604,6 +639,21 @@ public class FeedPostCell extends LinearLayout {
         View divider = new View(context);
         divider.setBackgroundColor(Theme.getColor(Theme.key_divider, resourceProvider));
         addView(divider, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 1));
+
+        doubleTapDetector = new GestureDetector(context, new GestureDetector.SimpleOnGestureListener() {
+            @Override
+            public boolean onDoubleTap(MotionEvent e) {
+                if (callback != null && currentItem != null) {
+                    callback.onDoubleTap(currentItem);
+                }
+                return true;
+            }
+
+            @Override
+            public boolean onSingleTapConfirmed(MotionEvent e) {
+                return false;
+            }
+        });
     }
 
     public void setPost(FeedController.FeedItem item) {
@@ -657,6 +707,7 @@ public class FeedPostCell extends LinearLayout {
         documentView.setData(item);
         voiceView.setData(item);
         buttonsView.setData(raw, item);
+        reactionsView.setData(item);
 
         bindMessageText(item);
 
@@ -688,6 +739,10 @@ public class FeedPostCell extends LinearLayout {
         }
         timeView.setText(timeStr);
         unreadDot.setVisibility(item.isRead ? GONE : VISIBLE);
+    }
+
+    public FeedReactionsView getReactionsView() {
+        return reactionsView;
     }
 
     private void bindMessageText(FeedController.FeedItem item) {
@@ -905,5 +960,11 @@ public class FeedPostCell extends LinearLayout {
         tv.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
         tv.setTextColor(color);
         return tv;
+    }
+
+    @Override
+    public boolean dispatchTouchEvent(MotionEvent ev) {
+        doubleTapDetector.onTouchEvent(ev);
+        return super.dispatchTouchEvent(ev);
     }
 }

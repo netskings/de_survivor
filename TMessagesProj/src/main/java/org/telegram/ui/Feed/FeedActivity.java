@@ -2,6 +2,7 @@ package org.telegram.ui.Feed;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.os.Bundle;
 import android.os.Parcelable;
@@ -17,6 +18,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
+import org.telegram.messenger.UserObject;
 import org.telegram.tgnet.TLObject;
 import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.MessagesStorage;
@@ -34,6 +36,7 @@ import org.telegram.ui.ActionBar.ActionBarMenu;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.ChatActivity;
+import org.telegram.ui.Components.Bulletin;
 import org.telegram.ui.Components.BulletinFactory;
 import org.telegram.ui.Components.ItemOptions;
 import org.telegram.ui.Components.LayoutHelper;
@@ -42,7 +45,7 @@ import org.telegram.ui.Components.ShareAlert;
 import org.telegram.ui.DialogsActivity;
 import org.telegram.ui.MainTabsActivity;
 import org.telegram.ui.PhotoViewer;
-import org.telegram.ui.Components.BulletinFactory;
+import org.telegram.ui.Stars.StarsReactionsSheet;
 
 import java.io.File;
 import java.util.ArrayList;
@@ -64,6 +67,12 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
     private static boolean hasScrollState = false;
 
     private Runnable markReadRunnable;
+
+    private Runnable pendingPaidSend;
+    private FeedController.FeedItem pendingPaidItem;
+    private int pendingPaidAmount;
+    private long pendingPaidRandomId;
+    private Bulletin currentStarBulletin;
 
     @Override
     public boolean onFragmentCreate() {
@@ -94,10 +103,12 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
         menu.addItem(MENU_SETTINGS, R.drawable.msg_settings);
 
         FrameLayout rootView = new FrameLayout(context);
+        rootView.setClipChildren(false);
+        rootView.setClipToPadding(false);
         rootView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite, resourceProvider));
 
         int topPad = ActionBar.getCurrentActionBarHeight() + AndroidUtilities.statusBarHeight;
-        int bottomPad = hasMainTabs ? dp(DialogsActivity.MAIN_TABS_HEIGHT + DialogsActivity.MAIN_TABS_MARGIN + 16) : 0;
+        int bottomPad = (hasMainTabs ? dp(DialogsActivity.MAIN_TABS_HEIGHT + DialogsActivity.MAIN_TABS_MARGIN + 16) : 0);
 
         adapter = new FeedAdapter(context, currentAccount, resourceProvider);
         adapter.setCellCallback(new FeedPostCell.Callback() {
@@ -136,6 +147,24 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
                 saveScroll();
                 openChannel(item);
             }
+            @Override
+            public void onReactionToggle(FeedController.FeedItem item, TLRPC.Reaction reaction) {
+                sendReaction(item, reaction);
+            }
+
+            @Override
+            public void onPaidReactionTap(FeedController.FeedItem item) {
+                handlePaidReaction(item, 1);
+            }
+
+            @Override
+            public void onPaidReactionLongPress(FeedController.FeedItem item) {
+                showStarAmountPicker(item);
+            }
+            @Override
+            public void onDoubleTap(FeedController.FeedItem item) {
+                handleDoubleTap(item);
+            }
         });
 
         layoutManager = new LinearLayoutManager(context);
@@ -145,6 +174,7 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
         listView.setClipToPadding(false);
         listView.setVerticalScrollBarEnabled(true);
         listView.setPadding(0, topPad, 0, bottomPad);
+        listView.setClipChildren(false);
 
         listView.setOnScrollListener(new RecyclerView.OnScrollListener() {
             @Override public void onScrolled(@NonNull RecyclerView rv, int dx, int dy) {
@@ -159,6 +189,8 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
         });
 
         swipeRefreshLayout = new SwipeRefreshLayout(context);
+        swipeRefreshLayout.setClipChildren(false);
+        swipeRefreshLayout.setClipToPadding(false);
         swipeRefreshLayout.setProgressViewOffset(false, topPad, topPad + dp(64));
         swipeRefreshLayout.setColorSchemeColors(Theme.getColor(Theme.key_featuredStickers_addButton, resourceProvider));
         swipeRefreshLayout.setOnRefreshListener(() -> loadFeed(true));
@@ -176,6 +208,32 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
 
         fragmentView = rootView;
         return fragmentView;
+    }
+
+    private void handleDoubleTap(FeedController.FeedItem item) {
+        int pos = adapter.findItemPosition(item);
+        if (pos < 0) return;
+
+        RecyclerView.ViewHolder vh = listView.findViewHolderForAdapterPosition(pos);
+        if (vh == null || !(vh.itemView instanceof FeedPostCell)) return;
+
+        FeedPostCell cell = (FeedPostCell) vh.itemView;
+        FeedReactionsView reactionsView = cell.getReactionsView();
+
+        if (reactionsView != null) {
+            boolean sent = reactionsView.triggerDefaultReaction();
+            if (!sent) {
+                reactionsView.animate()
+                        .scaleX(0.95f).scaleY(0.95f)
+                        .setDuration(100)
+                        .withEndAction(() ->
+                                reactionsView.animate()
+                                        .scaleX(1f).scaleY(1f)
+                                        .setDuration(150)
+                                        .start()
+                        ).start();
+            }
+        }
     }
 
     private void showMenu(View anchor, FeedController.FeedItem item) {
@@ -342,6 +400,230 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
         });
 
         presentFragment(dialogsActivity);
+    }
+
+    private void sendReaction(FeedController.FeedItem item, TLRPC.Reaction reaction) {
+        if (reaction instanceof TLRPC.TL_reactionPaid) return;
+
+        MessageObject msg = item.getPrimaryMessage();
+        MessagesController controller = MessagesController.getInstance(currentAccount);
+
+        boolean nowChosen = false;
+        if (msg.messageOwner.reactions != null && msg.messageOwner.reactions.results != null) {
+            for (TLRPC.ReactionCount rc : msg.messageOwner.reactions.results) {
+                if (FeedReactionsView.reactionsEqual(rc.reaction, reaction) && (rc.flags & 1) != 0) {
+                    nowChosen = true;
+                    break;
+                }
+            }
+        }
+
+        TLRPC.TL_messages_sendReaction req = new TLRPC.TL_messages_sendReaction();
+        req.peer = controller.getInputPeer(item.channelId);
+        req.msg_id = msg.getId();
+        req.flags |= 1;
+        req.reaction = new ArrayList<>();
+        if (nowChosen) {
+            req.reaction.add(reaction);
+            req.flags |= 4;
+        }
+
+        ConnectionsManager.getInstance(currentAccount).sendRequest(req, (response, error) -> {
+            if (error != null) {
+                AndroidUtilities.runOnUIThread(() -> {
+                    int pos = adapter.findItemPosition(item);
+                    if (pos >= 0) adapter.notifyItemChanged(pos);
+                });
+            }
+        });
+    }
+
+    private void handlePaidReaction(FeedController.FeedItem item, int amount) {
+        if (pendingPaidSend != null && pendingPaidItem != null && pendingPaidItem != item) {
+            AndroidUtilities.cancelRunOnUIThread(pendingPaidSend);
+            doSendPaidReaction(pendingPaidItem, pendingPaidAmount, pendingPaidRandomId);
+            pendingPaidSend = null;
+        }
+
+        if (pendingPaidSend != null && pendingPaidItem == item) {
+            AndroidUtilities.cancelRunOnUIThread(pendingPaidSend);
+            pendingPaidAmount += amount;
+        } else {
+            pendingPaidItem = item;
+            pendingPaidAmount = amount;
+            long currentTime = ConnectionsManager.getInstance(currentAccount).getCurrentTime();
+            pendingPaidRandomId = (Utilities.random.nextLong() & 0xFFFFFFFFL) | (currentTime << 32);
+        }
+
+        updatePaidReactionUI(item, amount);
+
+        showPaidUndoBulletin(item, pendingPaidAmount);
+
+        final long randomId = pendingPaidRandomId;
+        pendingPaidSend = () -> {
+            doSendPaidReaction(pendingPaidItem, pendingPaidAmount, randomId);
+            pendingPaidSend = null;
+            pendingPaidItem = null;
+            pendingPaidAmount = 0;
+        };
+        AndroidUtilities.runOnUIThread(pendingPaidSend, 5000);
+    }
+
+    private void updatePaidReactionUI(FeedController.FeedItem item, int amount) {
+        int pos = adapter.findItemPosition(item);
+        if (pos < 0) return;
+        RecyclerView.ViewHolder vh = listView.findViewHolderForAdapterPosition(pos);
+        if (vh != null && vh.itemView instanceof FeedPostCell) {
+            FeedReactionsView rv = ((FeedPostCell) vh.itemView).getReactionsView();
+            rv.optimisticallyAddPaid(amount);
+        }
+    }
+
+    private void showPaidUndoBulletin(FeedController.FeedItem item, int totalAmount) {
+        if (currentStarBulletin != null) {
+            currentStarBulletin.hide();
+        }
+
+        String title = "You sent ⭐ " + totalAmount + " anonymously";
+        String subtitle = "You reacted with " + totalAmount + " star" + (totalAmount != 1 ? "s" : "");
+
+        Bulletin.TwoLineLottieLayout layout = new Bulletin.TwoLineLottieLayout(
+                getParentActivity(), resourceProvider);
+        layout.setAnimation(R.raw.stars_topup, 36, 36);
+        layout.titleTextView.setText(title);
+        layout.subtitleTextView.setText(subtitle);
+
+        Bulletin.UndoButton undoButton = new Bulletin.UndoButton(
+                getParentActivity(), true, false, resourceProvider);
+        undoButton.setText("Undo");
+        undoButton.setUndoAction(() -> undoPaidReaction(item, pendingPaidAmount));
+        layout.setButton(undoButton);
+
+        currentStarBulletin = Bulletin.make(this, layout, 5000);
+        currentStarBulletin.show(true);
+
+        layout.post(() -> {
+            View parentView = (View) layout.getParent();
+            if (parentView != null && parentView.getLayoutParams() instanceof FrameLayout.LayoutParams) {
+                FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) parentView.getLayoutParams();
+                lp.topMargin = ActionBar.getCurrentActionBarHeight()
+                        + AndroidUtilities.statusBarHeight + dp(8);
+                parentView.setLayoutParams(lp);
+            }
+        });
+    }
+
+
+    private void undoPaidReaction(FeedController.FeedItem item, int amount) {
+        if (pendingPaidSend != null) {
+            AndroidUtilities.cancelRunOnUIThread(pendingPaidSend);
+            pendingPaidSend = null;
+        }
+
+        int pos = adapter.findItemPosition(item);
+        if (pos >= 0) {
+            RecyclerView.ViewHolder vh = listView.findViewHolderForAdapterPosition(pos);
+            if (vh != null && vh.itemView instanceof FeedPostCell) {
+                ((FeedPostCell) vh.itemView).getReactionsView()
+                        .optimisticallyRemovePaid(amount);
+            }
+        }
+
+        pendingPaidItem = null;
+        pendingPaidAmount = 0;
+    }
+
+    private void doSendPaidReaction(FeedController.FeedItem item, int amount, long randomId) {
+        if (item == null || amount <= 0) return;
+
+        MessageObject msg = item.getPrimaryMessage();
+        MessagesController controller = MessagesController.getInstance(currentAccount);
+
+        TLRPC.TL_messages_sendPaidReaction req = new TLRPC.TL_messages_sendPaidReaction();
+        req.peer = controller.getInputPeer(item.channelId);
+        req.msg_id = msg.getId();
+        req.count = amount;
+        req.random_id = randomId;
+
+        req.flags = 0;
+
+        ConnectionsManager.getInstance(currentAccount).sendRequest(req, (response, error) -> {
+            AndroidUtilities.runOnUIThread(() -> {
+                if (error != null) {
+                    int pos = adapter.findItemPosition(item);
+                    if (pos >= 0) {
+                        RecyclerView.ViewHolder vh = listView.findViewHolderForAdapterPosition(pos);
+                        if (vh != null && vh.itemView instanceof FeedPostCell) {
+                            ((FeedPostCell) vh.itemView).getReactionsView()
+                                    .optimisticallyRemovePaid(amount);
+                        }
+                    }
+
+                    String errText;
+                    if (error.text != null && error.text.contains("BALANCE")) {
+                        errText = "Not enough Stars";
+                    } else {
+                        errText = "Error: " + error.text;
+                    }
+                    BulletinFactory.of(FeedActivity.this)
+                            .createSimpleBulletin(R.drawable.star_small_inner, errText)
+                            .show();
+                } else if (response instanceof TLRPC.Updates) {
+                    controller.processUpdates((TLRPC.Updates) response, false);
+                }
+            });
+        });
+    }
+
+
+    @SuppressLint("SetTextI18n")
+    private void showStarAmountPicker(FeedController.FeedItem item) {
+        if (getParentActivity() == null) return;
+
+        MessageObject msg = item.getPrimaryMessage();
+
+        ArrayList<TLRPC.MessageReactor> reactors = null;
+        if (msg.messageOwner.reactions != null
+                && msg.messageOwner.reactions.recent_reactions != null
+                && !msg.messageOwner.reactions.recent_reactions.isEmpty()) {
+            reactors = new ArrayList<>();
+            for (TLRPC.MessagePeerReaction mpr : msg.messageOwner.reactions.recent_reactions) {
+                if (mpr.reaction instanceof TLRPC.TL_reactionPaid) {
+                    TLRPC.TL_messageReactor reactor = new TLRPC.TL_messageReactor();
+                    reactor.peer_id = mpr.peer_id;
+                    reactor.count = 1;
+                    reactors.add(reactor);
+                }
+            }
+        }
+
+        StarsReactionsSheet sheet = getStarsReactionsSheet(item, msg, reactors);
+
+        sheet.show();
+    }
+
+    @NonNull
+    private StarsReactionsSheet getStarsReactionsSheet(FeedController.FeedItem item, MessageObject msg, ArrayList<TLRPC.MessageReactor> reactors) {
+        StarsReactionsSheet sheet = new StarsReactionsSheet(
+                getParentActivity(),
+                currentAccount,
+                item.channelId,
+                null,
+                msg,
+                reactors,
+                true,
+                false,
+                UserObject.ANONYMOUS,
+                resourceProvider
+        );
+
+        sheet.setOnSend((peer, stars) -> {
+            AndroidUtilities.runOnUIThread(() -> {
+                handlePaidReaction(item, (int) (long) stars);
+            }, 300);
+            return Integer.MIN_VALUE;
+        });
+        return sheet;
     }
 
     private void forwardDropAuthor(FeedController.FeedItem item, long targetDialogId, String link) {
@@ -698,6 +980,15 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
     @Override
     public void onPause() {
         super.onPause();
+
+        if (pendingPaidSend != null) {
+            AndroidUtilities.cancelRunOnUIThread(pendingPaidSend);
+            doSendPaidReaction(pendingPaidItem, pendingPaidAmount, pendingPaidRandomId);
+            pendingPaidSend = null;
+            pendingPaidItem = null;
+            pendingPaidAmount = 0;
+        }
+
         cancelScheduledMark();
         markVisibleAsRead();
         if (layoutManager != null) {
