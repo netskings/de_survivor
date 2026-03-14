@@ -815,10 +815,8 @@ public class FeedPostCell extends LinearLayout {
     public void setPost(FeedController.FeedItem item) {
         cancelPendingTruncate();
         currentItem = item;
-        textExpanded = false;
         fullText = null;
         collapsedEndOffset = -1;
-        expandedQuoteOffsets.clear();
 
         replyView.clear();
         forwardView.clear();
@@ -830,12 +828,15 @@ public class FeedPostCell extends LinearLayout {
 
         if (item == null) return;
 
+        textExpanded = item.textExpanded;
+        expandedQuoteOffsets.clear();
+        expandedQuoteOffsets.addAll(item.expandedQuoteOffsets);
+
         MessageObject primary = item.getPrimaryMessage();
         TLRPC.Message raw = primary.messageOwner;
         MessagesController controller = MessagesController.getInstance(currentAccount);
 
         bindHeader(item, raw, controller);
-
         replyView.setData(raw, controller);
         forwardView.setData(raw, controller);
 
@@ -866,7 +867,6 @@ public class FeedPostCell extends LinearLayout {
         reactionsView.setData(item);
 
         bindMessageText(item);
-
         bindEngagement(raw, item);
     }
 
@@ -920,6 +920,9 @@ public class FeedPostCell extends LinearLayout {
             messageTextView.setMaxLines(Integer.MAX_VALUE);
             messageTextView.setText(fullText);
             messageTextView.setVisibility(VISIBLE);
+
+            messageTextView.post(messageTextView::invalidate);
+
             scheduleMeasureAndTruncate();
         } else {
             fullText = null;
@@ -964,9 +967,12 @@ public class FeedPostCell extends LinearLayout {
             if (!textExpanded) {
                 setCollapsedText();
                 scheduleQuoteWidthUpdate();
+                readMoreView.setVisibility(VISIBLE);
+                readMoreView.setText(LocaleController.getString("FeedReadMore", R.string.FeedReadMore));
+            } else {
+                readMoreView.setVisibility(VISIBLE);
+                readMoreView.setText(LocaleController.getString("FeedShowLess", R.string.FeedShowLess));
             }
-            readMoreView.setVisibility(VISIBLE);
-            readMoreView.setText(LocaleController.getString("FeedReadMore", R.string.FeedReadMore));
         } else {
             collapsedEndOffset = -1;
             readMoreView.setVisibility(GONE);
@@ -987,6 +993,11 @@ public class FeedPostCell extends LinearLayout {
 
     private void toggleExpanded() {
         textExpanded = !textExpanded;
+
+        if (currentItem != null) {
+            currentItem.textExpanded = textExpanded;
+        }
+
         if (textExpanded) {
             messageTextView.setText(fullText);
             readMoreView.setText(LocaleController.getString("FeedShowLess", R.string.FeedShowLess));
@@ -1000,6 +1011,9 @@ public class FeedPostCell extends LinearLayout {
 
     private void rebuildMessageText() {
         if (currentItem == null) return;
+
+        currentItem.expandedQuoteOffsets.clear();
+        currentItem.expandedQuoteOffsets.addAll(expandedQuoteOffsets);
 
         CharSequence text = textFormatter.format(currentItem,
                 messageTextView.getPaint().getFontMetricsInt());
@@ -1169,5 +1183,14 @@ public class FeedPostCell extends LinearLayout {
 
     public TextView getMessageTextView() {
         return messageTextView;
+    }
+
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        if (messageTextView != null && messageTextView.getVisibility() == VISIBLE
+                && fullText != null && fullText.length() > 0) {
+            messageTextView.invalidate();
+        }
     }
 }

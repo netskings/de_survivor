@@ -143,7 +143,14 @@ public class FeedReactionsView extends FrameLayout {
                     }
                 }
             }
+            if (rd.reaction instanceof TLRPC.TL_reactionCustomEmoji) {
+                long docId = ((TLRPC.TL_reactionCustomEmoji) rd.reaction).document_id;
+                AnimatedEmojiDrawable drawable = AnimatedEmojiDrawable.make(
+                        currentAccount, AnimatedEmojiDrawable.CACHE_TYPE_MESSAGES, docId);
+                drawable.preload();
+            }
         }
+
         rebuild();
     }
 
@@ -237,8 +244,12 @@ public class FeedReactionsView extends FrameLayout {
                 ? allReactions.subList(0, MAX_COLLAPSED) : allReactions;
 
         for (ReactionData rd : toShow) {
-            View chip = createReactionChip(rd);
+            View chip = null;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                chip = createReactionChip(rd);
+            }
             if (rd.isPaid) {
+                assert chip != null;
                 chip.setOnClickListener(v -> {
                     animateBounce(v);
                     if (callback != null) callback.onPaidReactionTap(currentItem);
@@ -268,6 +279,17 @@ public class FeedReactionsView extends FrameLayout {
         }
         addPickerButton();
         setVisibility(VISIBLE);
+
+        postDelayed(() -> {
+            for (int i = 0; i < container.getChildCount(); i++) {
+                container.getChildAt(i).invalidate();
+            }
+        }, 100);
+        postDelayed(() -> {
+            for (int i = 0; i < container.getChildCount(); i++) {
+                container.getChildAt(i).invalidate();
+            }
+        }, 500);
     }
 
     @RequiresApi(api = Build.VERSION_CODES.Q)

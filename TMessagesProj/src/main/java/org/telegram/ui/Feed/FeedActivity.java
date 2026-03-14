@@ -53,6 +53,7 @@ import org.telegram.ui.Stars.StarsReactionsSheet;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.List;
 
 public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFragmentDelegate {
 
@@ -85,7 +86,47 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
 
     private void onNewPostsReceived() {
         if (adapter == null || !feedController.hasCachedFeed()) return;
-        adapter.setItems(feedController.getCachedFeed());
+
+        List<FeedController.FeedItem> newFeed = feedController.getCachedFeed();
+        List<FeedController.FeedItem> oldFeed = adapter.getItems();
+
+        List<FeedController.FeedItem> toInsert = new ArrayList<>();
+        java.util.Set<String> oldIds = new java.util.HashSet<>();
+        for (FeedController.FeedItem item : oldFeed) {
+            oldIds.add(item.getUniqueId());
+        }
+        for (FeedController.FeedItem item : newFeed) {
+            if (!oldIds.contains(item.getUniqueId())) {
+                toInsert.add(item);
+            }
+        }
+
+        if (toInsert.isEmpty()) return;
+
+        Parcelable scrollState = null;
+        if (layoutManager != null) {
+            scrollState = layoutManager.onSaveInstanceState();
+        }
+
+        adapter.setItemsSilent(newFeed);
+
+        for (FeedController.FeedItem newItem : toInsert) {
+            int pos = -1;
+            for (int i = 0; i < newFeed.size(); i++) {
+                if (newFeed.get(i).getUniqueId().equals(newItem.getUniqueId())) {
+                    pos = i;
+                    break;
+                }
+            }
+            if (pos >= 0) {
+                adapter.notifyItemInserted(pos);
+            }
+        }
+
+        if (scrollState != null && layoutManager != null) {
+            layoutManager.onRestoreInstanceState(scrollState);
+        }
+
         updateEmpty();
     }
 
@@ -1227,7 +1268,13 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
     public void onResume() {
         super.onResume();
         if (feedController.hasCachedFeed()) {
-            adapter.setItems(feedController.getCachedFeed());
+            List<FeedController.FeedItem> cached = feedController.getCachedFeed();
+
+            if (adapter.getItems().isEmpty() ||
+                    adapter.getItems().size() != cached.size()) {
+                adapter.setItems(cached);
+            }
+
             if (hasScrollState && savedScrollState != null && layoutManager != null) {
                 layoutManager.onRestoreInstanceState(savedScrollState);
             }

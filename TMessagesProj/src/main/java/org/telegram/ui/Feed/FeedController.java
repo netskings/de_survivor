@@ -27,6 +27,9 @@ public class FeedController implements NotificationCenter.NotificationCenterDele
     private boolean observing = false;
     private final List<Runnable> newPostListeners = new ArrayList<>();
 
+    private static final int BATCH_SIZE = 5;
+    private static final long BATCH_DELAY_MS = 300;
+
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
         if (id == NotificationCenter.didReceiveNewMessages) {
@@ -125,6 +128,9 @@ public class FeedController implements NotificationCenter.NotificationCenterDele
         public boolean isRead;
         public boolean isBookmarked;
         public long sortDate;
+
+        public boolean textExpanded = false;
+        public final java.util.HashSet<Integer> expandedQuoteOffsets = new java.util.HashSet<>();
 
         public FeedItem(long channelId, List<MessageObject> messages, long date) {
             this.channelId = channelId;
@@ -321,7 +327,7 @@ public class FeedController implements NotificationCenter.NotificationCenterDele
             if (dialog.read_inbox_max_id <= 0) continue;
             if (dialog.top_message <= dialog.read_inbox_max_id) continue;
             if (isChannelHidden(-dialog.id)) continue;
-            if (CustomSettings.hideProxySponsor() && controller.isPromoDialog(dialog.id, false)) continue;
+            if (controller.isPromoDialog(dialog.id, false)) continue;
 
             channels.add(dialog);
         }
@@ -337,68 +343,76 @@ public class FeedController implements NotificationCenter.NotificationCenterDele
         final AtomicInteger completed = new AtomicInteger(0);
         final int totalChannels = channels.size();
 
-        for (TLRPC.Dialog dialog : channels) {
-            final int readMaxId = dialog.read_inbox_max_id;
-            int limit = Math.min(dialog.unread_count + 5, MAX_MESSAGES_PER_CHANNEL);
+        for (int batchStart = 0; batchStart < totalChannels; batchStart += BATCH_SIZE) {
+            final int start = batchStart;
+            final int end = Math.min(batchStart + BATCH_SIZE, totalChannels);
+            long delay = (long) (batchStart / BATCH_SIZE) * BATCH_DELAY_MS;
 
-            TLRPC.TL_messages_getHistory req = new TLRPC.TL_messages_getHistory();
-            req.peer = controller.getInputPeer(dialog.id);
-            req.limit = limit;
-            req.offset_id = 0;
-            req.max_id = 0;
+            AndroidUtilities.runOnUIThread(() -> {
+                for (int i = start; i < end; i++) {
+                    TLRPC.Dialog dialog = channels.get(i);
+                    final int readMaxId = dialog.read_inbox_max_id;
+                    int limit = Math.min(dialog.unread_count + 5, MAX_MESSAGES_PER_CHANNEL);
 
-            req.min_id = readMaxId;
+                    TLRPC.TL_messages_getHistory req = new TLRPC.TL_messages_getHistory();
+                    req.peer = controller.getInputPeer(dialog.id);
+                    req.limit = limit;
+                    req.offset_id = 0;
+                    req.max_id = 0;
+                    req.min_id = readMaxId;
 
-            ConnectionsManager.getInstance(currentAccount).sendRequest(req, (response, error) -> {
-                List<MessageObject> channelMessages = new ArrayList<>();
+                    ConnectionsManager.getInstance(currentAccount).sendRequest(req, (response, error) -> {
+                        List<MessageObject> channelMessages = new ArrayList<>();
 
-                if (response instanceof TLRPC.messages_Messages) {
-                    TLRPC.messages_Messages msgs = (TLRPC.messages_Messages) response;
+                        if (response instanceof TLRPC.messages_Messages) {
+                            TLRPC.messages_Messages msgs = (TLRPC.messages_Messages) response;
 
-                    AndroidUtilities.runOnUIThread(() -> {
-                        controller.putUsers(msgs.users, false);
-                        controller.putChats(msgs.chats, false);
-                    });
+                            AndroidUtilities.runOnUIThread(() -> {
+                                controller.putUsers(msgs.users, false);
+                                controller.putChats(msgs.chats, false);
+                            });
 
-                    for (TLRPC.Message msg : msgs.messages) {
-                        if (msg.id <= readMaxId) continue;
-                        if (isLocallyRead(dialog.id, msg.id)) continue;
+                            for (TLRPC.Message msg : msgs.messages) {
+                                if (msg.id <= readMaxId) continue;
+                                if (isLocallyRead(dialog.id, msg.id)) continue;
 
-                        MessageObject obj = new MessageObject(currentAccount, msg, true, true);
-                        if (obj.isOut()) continue;
-                        if (obj.messageOwner.action != null) continue;
+                                MessageObject obj = new MessageObject(currentAccount, msg, true, true);
+                                if (obj.isOut()) continue;
+                                if (obj.messageOwner.action != null) continue;
 
-                        boolean hasContent = (obj.messageText != null && obj.messageText.length() > 0)
-                                || obj.messageOwner.media != null;
-                        if (!hasContent) continue;
+                                boolean hasContent = (obj.messageText != null && obj.messageText.length() > 0)
+                                        || obj.messageOwner.media != null;
+                                if (!hasContent) continue;
 
-                        channelMessages.add(obj);
-                    }
-                }
-
-                List<FeedItem> channelItems = groupIntoItems(channelMessages, dialog.id);
-                allItems.addAll(channelItems);
-
-                int done = completed.incrementAndGet();
-
-                if (done >= totalChannels) {
-                    List<FeedItem> sorted = new ArrayList<>(allItems);
-                    Collections.sort(sorted, (a, b) -> Long.compare(a.sortDate, b.sortDate));
-
-                    AndroidUtilities.runOnUIThread(() -> {
-                        cachedFeed.clear();
-                        cachedFeed.addAll(sorted);
-                        feedLoaded = true;
-                        isLoading = false;
-                        noMorePosts = false;
-                        loadedItemIds.clear();
-                        for (FeedItem item : sorted) {
-                            loadedItemIds.add(item.getUniqueId());
+                                channelMessages.add(obj);
+                            }
                         }
-                        callback.onLoaded(sorted, true);
+
+                        List<FeedItem> channelItems = groupIntoItems(channelMessages, dialog.id);
+                        allItems.addAll(channelItems);
+
+                        int done = completed.incrementAndGet();
+
+                        if (done >= totalChannels) {
+                            List<FeedItem> sorted = new ArrayList<>(allItems);
+                            Collections.sort(sorted, (a, b) -> Long.compare(a.sortDate, b.sortDate));
+
+                            AndroidUtilities.runOnUIThread(() -> {
+                                cachedFeed.clear();
+                                cachedFeed.addAll(sorted);
+                                feedLoaded = true;
+                                isLoading = false;
+                                noMorePosts = false;
+                                loadedItemIds.clear();
+                                for (FeedItem item : sorted) {
+                                    loadedItemIds.add(item.getUniqueId());
+                                }
+                                callback.onLoaded(sorted, true);
+                            });
+                        }
                     });
                 }
-            });
+            }, delay);
         }
     }
 
@@ -470,7 +484,7 @@ public class FeedController implements NotificationCenter.NotificationCenterDele
             TLRPC.Chat chat = controller.getChat(-dialog.id);
             if (chat == null || !chat.broadcast || chat.megagroup) continue;
             if (isChannelHidden(-dialog.id)) continue;
-            if (CustomSettings.hideProxySponsor() && controller.isPromoDialog(dialog.id, false)) continue;
+            if (controller.isPromoDialog(dialog.id, false)) continue;
             channels.add(dialog);
         }
 
@@ -491,72 +505,82 @@ public class FeedController implements NotificationCenter.NotificationCenterDele
         final int totalChannels = channels.size();
         final int finalNewestDate = newestDate;
 
-        for (TLRPC.Dialog dialog : channels) {
-            TLRPC.TL_messages_getHistory req = new TLRPC.TL_messages_getHistory();
-            req.peer = controller.getInputPeer(dialog.id);
-            req.limit = 10;
-            req.offset_id = 0;
-            req.offset_date = 0;
-            req.add_offset = 0;
-            req.max_id = 0;
-            req.min_id = 0;
+        for (int batchStart = 0; batchStart < totalChannels; batchStart += BATCH_SIZE) {
+            final int start = batchStart;
+            final int end = Math.min(batchStart + BATCH_SIZE, totalChannels);
+            long delay = (long) (batchStart / BATCH_SIZE) * BATCH_DELAY_MS;
 
-            ConnectionsManager.getInstance(currentAccount).sendRequest(req, (response, error) -> {
-                if (response instanceof TLRPC.messages_Messages) {
-                    TLRPC.messages_Messages msgs = (TLRPC.messages_Messages) response;
+            AndroidUtilities.runOnUIThread(() -> {
+                for (int i = start; i < end; i++) {
+                    TLRPC.Dialog dialog = channels.get(i);
 
-                    AndroidUtilities.runOnUIThread(() -> {
-                        controller.putUsers(msgs.users, false);
-                        controller.putChats(msgs.chats, false);
-                    });
+                    TLRPC.TL_messages_getHistory req = new TLRPC.TL_messages_getHistory();
+                    req.peer = controller.getInputPeer(dialog.id);
+                    req.limit = 10;
+                    req.offset_id = 0;
+                    req.offset_date = 0;
+                    req.add_offset = 0;
+                    req.max_id = 0;
+                    req.min_id = 0;
 
-                    List<MessageObject> channelMessages = new ArrayList<>();
-                    for (TLRPC.Message msg : msgs.messages) {
-                        if (msg.date <= finalNewestDate) continue;
+                    ConnectionsManager.getInstance(currentAccount).sendRequest(req, (response, error) -> {
+                        if (response instanceof TLRPC.messages_Messages) {
+                            TLRPC.messages_Messages msgs = (TLRPC.messages_Messages) response;
 
-                        MessageObject obj = new MessageObject(currentAccount, msg, true, true);
-                        if (obj.isOut() || obj.messageOwner.action != null) continue;
+                            AndroidUtilities.runOnUIThread(() -> {
+                                controller.putUsers(msgs.users, false);
+                                controller.putChats(msgs.chats, false);
+                            });
 
-                        boolean hasContent = (obj.messageText != null && obj.messageText.length() > 0)
-                                || obj.messageOwner.media != null;
-                        if (!hasContent) continue;
+                            List<MessageObject> channelMessages = new ArrayList<>();
+                            for (TLRPC.Message msg : msgs.messages) {
+                                if (msg.date <= finalNewestDate) continue;
 
-                        channelMessages.add(obj);
-                    }
+                                MessageObject obj = new MessageObject(currentAccount, msg, true, true);
+                                if (obj.isOut() || obj.messageOwner.action != null) continue;
 
-                    List<FeedItem> channelItems = groupIntoItems(channelMessages, dialog.id);
+                                boolean hasContent = (obj.messageText != null && obj.messageText.length() > 0)
+                                        || obj.messageOwner.media != null;
+                                if (!hasContent) continue;
 
-                    for (FeedItem item : channelItems) {
-                        String uid = item.getUniqueId();
-                        synchronized (loadedItemIds) {
-                            if (!loadedItemIds.contains(uid)) {
-                                loadedItemIds.add(uid);
-                                item.isRead = isLocallyRead(item.channelId, item.getMessageId());
-                                item.isBookmarked = isBookmarked(uid);
-                                newItems.add(item);
+                                channelMessages.add(obj);
+                            }
+
+                            List<FeedItem> channelItems = groupIntoItems(channelMessages, dialog.id);
+
+                            for (FeedItem item : channelItems) {
+                                String uid = item.getUniqueId();
+                                synchronized (loadedItemIds) {
+                                    if (!loadedItemIds.contains(uid)) {
+                                        loadedItemIds.add(uid);
+                                        item.isRead = isLocallyRead(item.channelId, item.getMessageId());
+                                        item.isBookmarked = isBookmarked(uid);
+                                        newItems.add(item);
+                                    }
+                                }
                             }
                         }
-                    }
-                }
 
-                int done = completed.incrementAndGet();
-                if (done >= totalChannels) {
-                    AndroidUtilities.runOnUIThread(() -> {
-                        isLoading = false;
+                        int done = completed.incrementAndGet();
+                        if (done >= totalChannels) {
+                            AndroidUtilities.runOnUIThread(() -> {
+                                isLoading = false;
 
-                        if (newItems.isEmpty()) {
-                            noMorePosts = true;
-                            callback.onLoaded(cachedFeed, false);
-                            return;
+                                if (newItems.isEmpty()) {
+                                    noMorePosts = true;
+                                    callback.onLoaded(cachedFeed, false);
+                                    return;
+                                }
+
+                                cachedFeed.addAll(newItems);
+                                Collections.sort(cachedFeed, Comparator.comparingLong(a -> a.sortDate));
+                                noMorePosts = false;
+                                callback.onLoaded(cachedFeed, true);
+                            });
                         }
-
-                        cachedFeed.addAll(newItems);
-                        Collections.sort(cachedFeed, Comparator.comparingLong(a -> a.sortDate));
-                        noMorePosts = false;
-                        callback.onLoaded(cachedFeed, true);
                     });
                 }
-            });
+            }, delay);
         }
     }
 }

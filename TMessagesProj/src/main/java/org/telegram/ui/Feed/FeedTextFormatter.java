@@ -17,6 +17,7 @@ import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.R;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Components.AnimatedEmojiSpan;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -51,9 +52,37 @@ public class FeedTextFormatter {
         if (result == null) return null;
 
         SpannableStringBuilder ssb = new SpannableStringBuilder(result.text);
+
+        applyAnimatedEmojiSpans(ssb, result.sourceMsg, fontMetrics);
+
         applyQuoteSpans(ssb, result.sourceMsg);
 
         return Emoji.replaceEmoji(ssb, fontMetrics, false);
+    }
+
+
+    private void applyAnimatedEmojiSpans(SpannableStringBuilder ssb,
+                                         @Nullable MessageObject sourceMsg,
+                                         Paint.FontMetricsInt fontMetrics) {
+        if (sourceMsg == null || sourceMsg.messageOwner == null
+                || sourceMsg.messageOwner.entities == null) return;
+
+        AnimatedEmojiSpan[] existing = ssb.getSpans(0, ssb.length(), AnimatedEmojiSpan.class);
+        if (existing != null && existing.length > 0) return;
+
+        for (TLRPC.MessageEntity entity : sourceMsg.messageOwner.entities) {
+            if (entity instanceof TLRPC.TL_messageEntityCustomEmoji) {
+                long docId = ((TLRPC.TL_messageEntityCustomEmoji) entity).document_id;
+                int start = entity.offset;
+                int end = entity.offset + entity.length;
+                if (start >= 0 && start < ssb.length() && end > start && end <= ssb.length()) {
+                    try {
+                        ssb.setSpan(new AnimatedEmojiSpan(docId, fontMetrics),
+                                start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                    } catch (Exception ignored) {}
+                }
+            }
+        }
     }
 
     private static class ExtractResult {
