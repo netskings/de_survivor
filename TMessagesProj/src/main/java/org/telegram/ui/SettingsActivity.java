@@ -133,7 +133,7 @@ import org.telegram.ui.bots.BotDownloads;
 import org.telegram.ui.bots.BotLocation;
 import org.telegram.ui.bots.BotWebViewSheet;
 import org.telegram.ui.bots.SetupEmojiStatusSheet;
-import org.telegram.ui.Feed.CustomSettingsActivity;
+import org.telegram.ui.Custom.CustomSettingsActivity;
 
 import java.io.File;
 import java.util.ArrayList;

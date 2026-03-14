@@ -112,7 +112,7 @@ import org.telegram.ui.TopicsFragment;
 import org.telegram.ui.bots.BotWebViewAttachedSheet;
 import org.telegram.ui.bots.BotWebViewSheet;
 import org.telegram.ui.bots.WebViewRequestProps;
-import org.telegram.ui.Feed.CustomSettings;
+import org.telegram.ui.Custom.CustomSettings;
 
 import java.io.File;
 import java.util.ArrayList;

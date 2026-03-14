@@ -10,16 +10,108 @@ import org.telegram.messenger.NotificationCenter;
 import org.telegram.messenger.UserConfig;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
+import org.telegram.ui.Custom.CustomSettings;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
-public class FeedController {
+public class FeedController implements NotificationCenter.NotificationCenterDelegate {
+    private boolean observing = false;
+    private final List<Runnable> newPostListeners = new ArrayList<>();
+
+    @Override
+    public void didReceivedNotification(int id, int account, Object... args) {
+        if (id == NotificationCenter.didReceiveNewMessages) {
+            if (!feedLoaded) return;
+
+            long dialogId = (Long) args[0];
+            if (dialogId >= 0) return;
+
+            MessagesController controller = MessagesController.getInstance(currentAccount);
+            TLRPC.Chat chat = controller.getChat(-dialogId);
+            if (chat == null || !chat.broadcast || chat.megagroup) return;
+            if (isChannelHidden(-dialogId)) return;
+            if (controller.isPromoDialog(dialogId, false)) return;
+
+            ArrayList<MessageObject> messages = (ArrayList<MessageObject>) args[1];
+            if (messages == null || messages.isEmpty()) return;
+
+            boolean added = false;
+            List<MessageObject> validMessages = new ArrayList<>();
+
+            for (MessageObject obj : messages) {
+                if (obj.isOut() || obj.messageOwner.action != null) continue;
+
+                boolean hasContent = (obj.messageText != null && obj.messageText.length() > 0)
+                        || obj.messageOwner.media != null;
+                if (!hasContent) continue;
+
+                String uid = dialogId + "_" + obj.getId();
+                if (loadedItemIds.contains(uid)) continue;
+
+                validMessages.add(obj);
+            }
+
+            if (validMessages.isEmpty()) return;
+
+            List<FeedItem> newItems = groupIntoItems(validMessages, dialogId);
+
+            for (FeedItem item : newItems) {
+                String uid = item.getUniqueId();
+                if (!loadedItemIds.contains(uid)) {
+                    loadedItemIds.add(uid);
+                    item.isRead = false;
+                    item.isBookmarked = isBookmarked(uid);
+                    cachedFeed.add(item);
+                    added = true;
+                }
+            }
+
+            if (added) {
+                noMorePosts = false;
+                Collections.sort(cachedFeed, Comparator.comparingLong(a -> a.sortDate));
+                AndroidUtilities.runOnUIThread(this::notifyNewPostListeners);
+            }
+        }
+    }
+
+
+    public void startObserving() {
+        if (observing) return;
+        observing = true;
+        NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.didReceiveNewMessages);
+        NotificationCenter.getInstance(currentAccount).addObserver(this, NotificationCenter.messagesDidLoad);
+    }
+
+    public void stopObserving() {
+        if (!observing) return;
+        observing = false;
+        NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.didReceiveNewMessages);
+        NotificationCenter.getInstance(currentAccount).removeObserver(this, NotificationCenter.messagesDidLoad);
+    }
+
+    public void addNewPostListener(Runnable listener) {
+        if (!newPostListeners.contains(listener)) {
+            newPostListeners.add(listener);
+        }
+    }
+
+    public void removeNewPostListener(Runnable listener) {
+        newPostListeners.remove(listener);
+    }
+
+    private void notifyNewPostListeners() {
+        for (Runnable r : newPostListeners) {
+            r.run();
+        }
+    }
+
     @FunctionalInterface
     public interface FeedLoadCallback {
         void onLoaded(List<FeedItem> items, boolean hasMore);
@@ -54,6 +146,9 @@ public class FeedController {
     private boolean isLoading = false;
     private boolean feedLoaded = false;
     private Runnable saveRunnable;
+
+    private boolean noMorePosts = false;
+    private final Set<String> loadedItemIds = new HashSet<>();
 
     private static final int MAX_MESSAGES_PER_CHANNEL = 50;
 
@@ -215,10 +310,9 @@ public class FeedController {
             TLRPC.Chat chat = controller.getChat(-dialog.id);
             if (chat == null || !chat.broadcast || chat.megagroup) continue;
             if (dialog.unread_count <= 0) continue;
-
             if (dialog.read_inbox_max_id <= 0) continue;
+            if (dialog.top_message <= dialog.read_inbox_max_id) continue;
             if (isChannelHidden(-dialog.id)) continue;
-
             if (CustomSettings.hideProxySponsor() && controller.isPromoDialog(dialog.id, false)) continue;
 
             channels.add(dialog);
@@ -260,15 +354,15 @@ public class FeedController {
 
                     for (TLRPC.Message msg : msgs.messages) {
                         if (msg.id <= readMaxId) continue;
+                        if (isLocallyRead(dialog.id, msg.id)) continue;
 
                         MessageObject obj = new MessageObject(currentAccount, msg, true, true);
-                        if (obj.isOut() || obj.messageOwner.action != null) continue;
+                        if (obj.isOut()) continue;
+                        if (obj.messageOwner.action != null) continue;
 
                         boolean hasContent = (obj.messageText != null && obj.messageText.length() > 0)
                                 || obj.messageOwner.media != null;
                         if (!hasContent) continue;
-
-                        if (isLocallyRead(dialog.id, obj.getId())) continue;
 
                         channelMessages.add(obj);
                     }
@@ -288,7 +382,12 @@ public class FeedController {
                         cachedFeed.addAll(sorted);
                         feedLoaded = true;
                         isLoading = false;
-                        callback.onLoaded(sorted, false);
+                        noMorePosts = false;
+                        loadedItemIds.clear();
+                        for (FeedItem item : sorted) {
+                            loadedItemIds.add(item.getUniqueId());
+                        }
+                        callback.onLoaded(sorted, true);
                     });
                 }
             });
@@ -336,5 +435,120 @@ public class FeedController {
 
     public Set<Long> getHiddenChannelIds() {
         return new HashSet<>(hiddenChannelIds);
+    }
+
+    public boolean hasMore() {
+        return !noMorePosts;
+    }
+
+    public void resetLoadMore() {
+        noMorePosts = false;
+        loadedItemIds.clear();
+    }
+
+    public void loadMore(FeedLoadCallback callback) {
+        if (isLoading || noMorePosts) {
+            callback.onLoaded(cachedFeed, !noMorePosts);
+            return;
+        }
+        isLoading = true;
+
+        MessagesController controller = MessagesController.getInstance(currentAccount);
+        List<TLRPC.Dialog> allDialogs = controller.getAllDialogs();
+
+        List<TLRPC.Dialog> channels = new ArrayList<>();
+        for (TLRPC.Dialog dialog : allDialogs) {
+            if (dialog == null || dialog.id >= 0) continue;
+            TLRPC.Chat chat = controller.getChat(-dialog.id);
+            if (chat == null || !chat.broadcast || chat.megagroup) continue;
+            if (isChannelHidden(-dialog.id)) continue;
+            if (controller.isPromoDialog(dialog.id, false)) continue;
+            channels.add(dialog);
+        }
+
+        if (channels.isEmpty()) {
+            isLoading = false;
+            noMorePosts = true;
+            callback.onLoaded(cachedFeed, false);
+            return;
+        }
+
+        int newestDate = 0;
+        for (FeedItem item : cachedFeed) {
+            newestDate = Math.max(newestDate, (int) item.sortDate);
+        }
+
+        final List<FeedItem> newItems = Collections.synchronizedList(new ArrayList<>());
+        final AtomicInteger completed = new AtomicInteger(0);
+        final int totalChannels = channels.size();
+        final int finalNewestDate = newestDate;
+
+        for (TLRPC.Dialog dialog : channels) {
+            TLRPC.TL_messages_getHistory req = new TLRPC.TL_messages_getHistory();
+            req.peer = controller.getInputPeer(dialog.id);
+            req.limit = 10;
+            req.offset_id = 0;
+            req.offset_date = 0;
+            req.add_offset = 0;
+            req.max_id = 0;
+            req.min_id = 0;
+
+            ConnectionsManager.getInstance(currentAccount).sendRequest(req, (response, error) -> {
+                if (response instanceof TLRPC.messages_Messages) {
+                    TLRPC.messages_Messages msgs = (TLRPC.messages_Messages) response;
+
+                    AndroidUtilities.runOnUIThread(() -> {
+                        controller.putUsers(msgs.users, false);
+                        controller.putChats(msgs.chats, false);
+                    });
+
+                    List<MessageObject> channelMessages = new ArrayList<>();
+                    for (TLRPC.Message msg : msgs.messages) {
+                        if (msg.date <= finalNewestDate) continue;
+
+                        MessageObject obj = new MessageObject(currentAccount, msg, true, true);
+                        if (obj.isOut() || obj.messageOwner.action != null) continue;
+
+                        boolean hasContent = (obj.messageText != null && obj.messageText.length() > 0)
+                                || obj.messageOwner.media != null;
+                        if (!hasContent) continue;
+
+                        channelMessages.add(obj);
+                    }
+
+                    List<FeedItem> channelItems = groupIntoItems(channelMessages, dialog.id);
+
+                    for (FeedItem item : channelItems) {
+                        String uid = item.getUniqueId();
+                        synchronized (loadedItemIds) {
+                            if (!loadedItemIds.contains(uid)) {
+                                loadedItemIds.add(uid);
+                                item.isRead = isLocallyRead(item.channelId, item.getMessageId());
+                                item.isBookmarked = isBookmarked(uid);
+                                newItems.add(item);
+                            }
+                        }
+                    }
+                }
+
+                int done = completed.incrementAndGet();
+                if (done >= totalChannels) {
+                    AndroidUtilities.runOnUIThread(() -> {
+                        isLoading = false;
+
+                        if (newItems.isEmpty()) {
+                            noMorePosts = true;
+                            callback.onLoaded(cachedFeed, false);
+                            return;
+                        }
+
+                        cachedFeed.addAll(newItems);
+                        Collections.sort(cachedFeed, Comparator.comparingLong(a -> a.sortDate));
+                        noMorePosts = false;
+                        callback.onLoaded(cachedFeed, true);
+                    });
+                }
+            });
+        }
     }
 }

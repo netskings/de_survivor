@@ -94,4 +94,9 @@ public class FeedAdapter extends RecyclerView.Adapter<FeedAdapter.ViewHolder> {
     static class ViewHolder extends RecyclerView.ViewHolder {
         ViewHolder(@NonNull View v) { super(v); }
     }
+
+    public void setItemsSilent(List<FeedController.FeedItem> newItems) {
+        items.clear();
+        items.addAll(newItems);
+    }
 }

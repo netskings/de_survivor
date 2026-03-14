@@ -1,4 +1,4 @@
-package org.telegram.ui.Feed;
+package org.telegram.ui.Custom;
 
 import android.content.SharedPreferences;
 

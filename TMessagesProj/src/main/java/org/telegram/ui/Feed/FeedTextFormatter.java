@@ -138,7 +138,7 @@ public class FeedTextFormatter {
 
             boolean isCollapsible = false;
             try {
-                isCollapsible = ((TLRPC.TL_messageEntityBlockquote) entity).collapsed;
+                isCollapsible = entity.collapsed;
             } catch (Throwable ignored) {}
 
             boolean isExpanded = expandedQuoteOffsets.contains(entity.offset);

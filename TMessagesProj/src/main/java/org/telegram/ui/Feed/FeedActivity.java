@@ -49,8 +49,11 @@ import org.telegram.ui.Stars.StarsReactionsSheet;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.List;
 
 public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFragmentDelegate {
+
+    private final Runnable onNewPostRunnable = this::onNewPostsReceived;
 
     private static final int MENU_SETTINGS = 1;
 
@@ -74,11 +77,39 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
     private long pendingPaidRandomId;
     private Bulletin currentStarBulletin;
 
+    private boolean isLoadingMore = false;
+    private View loadingFooter;
+
+    private void onNewPostsReceived() {
+        if (adapter == null || !feedController.hasCachedFeed()) return;
+
+        List<FeedController.FeedItem> items = feedController.getCachedFeed();
+        int oldCount = adapter.getItemCount();
+        int newCount = items.size();
+
+        if (newCount <= oldCount) return;
+
+        adapter.setItemsSilent(items);
+        adapter.notifyItemRangeInserted(oldCount, newCount - oldCount);
+        updateEmpty();
+    }
+
     @Override
     public boolean onFragmentCreate() {
         feedController = FeedController.getInstance(currentAccount);
         hasMainTabs = arguments != null && arguments.getBoolean("hasMainTabs", false);
+
+        feedController.startObserving();
+        feedController.addNewPostListener(onNewPostRunnable);
+
         return super.onFragmentCreate();
+    }
+
+    @Override
+    public void onFragmentDestroy() {
+        super.onFragmentDestroy();
+        feedController.removeNewPostListener(onNewPostRunnable);
+        feedController.stopObserving();
     }
 
     @Override
@@ -108,7 +139,9 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
         rootView.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite, resourceProvider));
 
         int topPad = ActionBar.getCurrentActionBarHeight() + AndroidUtilities.statusBarHeight;
-        int bottomPad = (hasMainTabs ? dp(DialogsActivity.MAIN_TABS_HEIGHT + DialogsActivity.MAIN_TABS_MARGIN + 16) : 0);
+        int bottomPad = hasMainTabs
+                ? dp(DialogsActivity.MAIN_TABS_HEIGHT + DialogsActivity.MAIN_TABS_MARGIN + 128)
+                : dp(128);
 
         adapter = new FeedAdapter(context, currentAccount, resourceProvider);
         adapter.setCellCallback(new FeedPostCell.Callback() {
@@ -172,18 +205,56 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
         listView.setLayoutManager(layoutManager);
         listView.setAdapter(adapter);
         listView.setClipToPadding(false);
+
+        loadingFooter = new FrameLayout(context) {
+            @Override
+            protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+                super.onMeasure(widthMeasureSpec,
+                        MeasureSpec.makeMeasureSpec(dp(60), MeasureSpec.EXACTLY));
+            }
+        };
+        org.telegram.ui.Components.RadialProgressView progressFooter =
+                new org.telegram.ui.Components.RadialProgressView(context);
+        progressFooter.setSize(dp(28));
+        progressFooter.setProgressColor(Theme.getColor(
+                Theme.key_featuredStickers_addButton, resourceProvider));
+        ((FrameLayout) loadingFooter).addView(progressFooter,
+                LayoutHelper.createFrame(40, 40, Gravity.CENTER));
+        loadingFooter.setVisibility(View.GONE);
+
+        int footerBottom = hasMainTabs
+                ? dp(DialogsActivity.MAIN_TABS_HEIGHT + DialogsActivity.MAIN_TABS_MARGIN + 24)
+                : dp(24);
+        rootView.addView(loadingFooter, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT, 60,
+                Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL,
+                0, 0, 0, footerBottom / AndroidUtilities.density));
+        org.telegram.ui.Components.RadialProgressView progressView =
+                new org.telegram.ui.Components.RadialProgressView(context);
+        progressView.setSize(dp(28));
+        progressView.setProgressColor(Theme.getColor(
+                Theme.key_featuredStickers_addButton, resourceProvider));
+        ((FrameLayout) loadingFooter).addView(progressView,
+                LayoutHelper.createFrame(40, 40, Gravity.CENTER));
+        loadingFooter.setVisibility(View.GONE);
+
         listView.setVerticalScrollBarEnabled(true);
         listView.setPadding(0, topPad, 0, bottomPad);
         listView.setClipChildren(false);
 
         listView.setOnScrollListener(new RecyclerView.OnScrollListener() {
-            @Override public void onScrolled(@NonNull RecyclerView rv, int dx, int dy) {
+            @Override
+            public void onScrolled(@NonNull RecyclerView rv, int dx, int dy) {
                 scheduleMarkAsRead();
+                checkLoadMore();
             }
-            @Override public void onScrollStateChanged(@NonNull RecyclerView rv, int state) {
+
+            @Override
+            public void onScrollStateChanged(@NonNull RecyclerView rv, int state) {
                 if (state == RecyclerView.SCROLL_STATE_IDLE) {
                     cancelScheduledMark();
                     markVisibleAsRead();
+                    checkLoadMore();
                 }
             }
         });
@@ -1001,6 +1072,10 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
         swipeRefreshLayout.setRefreshing(true);
         emptyView.setVisibility(View.GONE);
 
+        if (force) {
+            feedController.resetLoadMore();
+        }
+
         feedController.loadFeed(force, (items, hasMore) -> {
             adapter.setItems(items);
             swipeRefreshLayout.setRefreshing(false);
@@ -1033,5 +1108,35 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
     public void onParentScrollToTop() {
         if (listView != null) listView.smoothScrollToPosition(0);
         loadFeed(true);
+    }
+
+    private void checkLoadMore() {
+        if (isLoadingMore || !feedController.hasMore()) return;
+        if (layoutManager == null || adapter == null) return;
+
+        int lastVisible = layoutManager.findLastVisibleItemPosition();
+        int total = adapter.getItemCount();
+
+        if (lastVisible >= total - 3 && total > 0) {
+            loadMorePosts();
+        }
+    }
+
+    private void loadMorePosts() {
+        if (isLoadingMore || !feedController.hasMore()) return;
+        isLoadingMore = true;
+
+        if (loadingFooter != null) {
+            loadingFooter.setVisibility(View.VISIBLE);
+        }
+
+        feedController.loadMore((items, hasMore) -> {
+            isLoadingMore = false;
+            if (loadingFooter != null) {
+                loadingFooter.setVisibility(View.GONE);
+            }
+            adapter.setItems(items);
+            updateEmpty();
+        });
     }
 }

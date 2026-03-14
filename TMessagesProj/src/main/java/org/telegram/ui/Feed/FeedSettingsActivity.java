@@ -2,6 +2,7 @@ package org.telegram.ui.Feed;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
 
+import android.annotation.SuppressLint;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
@@ -246,6 +247,7 @@ public class FeedSettingsActivity extends BaseFragment {
                     LayoutHelper.MATCH_PARENT, 1, Gravity.BOTTOM));
         }
 
+        @SuppressLint("SetTextI18n")
         public void setChannel(long chatId, int index) {
             this.channelIndex = index;
             TLRPC.Chat chat = MessagesController.getInstance(currentAccount).getChat(chatId);
