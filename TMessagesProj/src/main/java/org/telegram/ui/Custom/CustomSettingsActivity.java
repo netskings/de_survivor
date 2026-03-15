@@ -147,9 +147,15 @@ public class CustomSettingsActivity extends BaseFragment {
                             Theme.getColor(Theme.key_windowBackgroundWhite));
                     break;
                 case TYPE_INFO:
+                    view = new TextInfoPrivacyCell(ctx);
+                    view.setBackground(Theme.getThemedDrawableByKey(ctx,
+                            R.drawable.greydivider,
+                            Theme.key_windowBackgroundGrayShadow));
+                    break;
                 case TYPE_TEXT_CELL:
                     view = new TextCell(ctx);
-                    view.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                    view.setBackgroundColor(
+                            Theme.getColor(Theme.key_windowBackgroundWhite));
                     break;
                 default:
                     view = new TextInfoPrivacyCell(ctx);

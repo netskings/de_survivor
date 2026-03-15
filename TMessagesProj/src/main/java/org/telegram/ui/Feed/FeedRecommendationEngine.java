@@ -13,7 +13,6 @@ import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.Custom.CustomSettings;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -59,11 +58,15 @@ public class FeedRecommendationEngine {
     private long lastScanTime = 0;
     private boolean isScanning = false;
 
+    private final Map<Long, Long> channelExhaustedTime = new HashMap<>();
+    private static final long CHANNEL_COOLDOWN_MS = 24 * 60 * 60 * 1000L;
+
     private Runnable onScanComplete;
 
     private final List<FeedController.FeedItem> recommendedPosts = new ArrayList<>();
     public static class RecommendedChannel {
         public long channelId;
+        public long accessHash;
         public TLRPC.Chat chat;
         public float score;
         public int similarSources;
@@ -91,6 +94,7 @@ public class FeedRecommendationEngine {
     private FeedRecommendationEngine(int account) {
         this.currentAccount = account;
         loadDismissed();
+        loadDiscoveredChannels();
     }
 
     public boolean isEnabled() {
@@ -116,7 +120,11 @@ public class FeedRecommendationEngine {
             return;
         }
         long now = System.currentTimeMillis();
-        if (now - lastScanTime < SCAN_INTERVAL_MS && !recommendations.isEmpty()) {
+        if (now - lastScanTime < SCAN_INTERVAL_MS && !allDiscovered.isEmpty()) {
+            if (recommendedPosts.isEmpty() && !allDiscovered.isEmpty()) {
+                ensureReady(onComplete);
+                return;
+            }
             if (onComplete != null) onComplete.run();
             return;
         }
@@ -139,15 +147,21 @@ public class FeedRecommendationEngine {
         }
 
         seenRecPostIds.removeIf(uid -> uid.startsWith(channelId + "_"));
+        channelExhaustedTime.remove(channelId);
 
         allDiscovered.removeIf(r -> r.channelId == channelId);
         recommendations.removeIf(r -> r.channelId == channelId);
         recommendedPosts.removeIf(p -> p.recommendedChannelId == channelId);
         saveDismissed();
+        saveDiscoveredChannels();
     }
 
     private void startScan() {
         isScanning = true;
+
+        long now = System.currentTimeMillis();
+        channelExhaustedTime.entrySet().removeIf(e ->
+                now - e.getValue() > CHANNEL_COOLDOWN_MS);
 
         MessagesController controller = MessagesController.getInstance(currentAccount);
         List<TLRPC.Dialog> allDialogs = controller.getAllDialogs();
@@ -326,6 +340,12 @@ public class FeedRecommendationEngine {
     private void processResults(Map<Long, ChannelScore> scores,
                                 Set<Long> subscribed,
                                 MessagesController controller) {
+        FeedController feed = FeedController.getInstance(currentAccount);
+        boolean hasFeedData = feed.hasCachedFeed() && !feed.getCachedFeed().isEmpty();
+
+        int minSources = hasFeedData ? 2 : 1;
+        float minScore = hasFeedData ? 0.5f : 0.3f;
+
         List<RecommendedChannel> result = new ArrayList<>();
 
         for (Map.Entry<Long, ChannelScore> entry : scores.entrySet()) {
@@ -347,11 +367,11 @@ public class FeedRecommendationEngine {
             int totalSources = cs.similarSourceIds.size()
                     + cs.forwardSourceIds.size()
                     + cs.mentionSourceIds.size();
-            if (totalSources < 2) continue;
+            if (totalSources < minSources) continue;
 
             float penalty = calculateDismissPenalty(cs);
             score *= (1f - penalty);
-            if (score <= 0.5f) continue;
+            if (score <= minScore) continue;
 
             if (chat.participants_count > 0) {
                 score += (float) (Math.log10(chat.participants_count) * 0.5);
@@ -360,6 +380,7 @@ public class FeedRecommendationEngine {
             RecommendedChannel rec = new RecommendedChannel();
             rec.channelId = channelId;
             rec.chat = chat;
+            rec.accessHash = chat.access_hash;
             rec.score = score;
             rec.similarSources = cs.similarSourceIds.size();
             rec.forwardSources = cs.forwardSourceIds.size();
@@ -384,6 +405,8 @@ public class FeedRecommendationEngine {
         loadedBatchIndex = 0;
         noMoreRecommendations = false;
         lastScanTime = System.currentTimeMillis();
+
+        saveDiscoveredChannels();
 
         finishScan();
     }
@@ -455,6 +478,7 @@ public class FeedRecommendationEngine {
         recommendedPosts.clear();
 
         if (!allDiscovered.isEmpty()) {
+            isLoadingMore = true;
             loadPostsBatch(0, this::notifyComplete);
         } else {
             notifyComplete();
@@ -464,7 +488,6 @@ public class FeedRecommendationEngine {
     private void loadPostsBatch(int fromIndex, Runnable onDone) {
         int toIndex = Math.min(fromIndex + POSTS_PER_BATCH, allDiscovered.size());
         if (fromIndex >= allDiscovered.size() || fromIndex >= toIndex) {
-            noMoreRecommendations = true;
             isLoadingMore = false;
             if (onDone != null) onDone.run();
             return;
@@ -473,26 +496,32 @@ public class FeedRecommendationEngine {
         List<RecommendedChannel> batch = allDiscovered.subList(fromIndex, toIndex);
         MessagesController controller = MessagesController.getInstance(currentAccount);
         AtomicInteger pending = new AtomicInteger(batch.size());
+        AtomicInteger foundCount = new AtomicInteger(0);
 
         for (int i = 0; i < batch.size(); i++) {
             RecommendedChannel rec = batch.get(i);
             long delay = i * 150L;
 
             AndroidUtilities.runOnUIThread(() -> {
+                if (allPostsSeen(rec.channelId)) {
+                    if (pending.decrementAndGet() <= 0) {
+                        finishBatch(toIndex, foundCount.get(), onDone);
+                    }
+                    return;
+                }
+
                 TLRPC.InputPeer peer = controller.getInputPeer(-rec.channelId);
 
                 if (peer == null || peer instanceof TLRPC.TL_inputPeerEmpty) {
                     if (pending.decrementAndGet() <= 0) {
-                        loadedBatchIndex = toIndex;
-                        isLoadingMore = false;
-                        if (onDone != null) onDone.run();
+                        finishBatch(toIndex, foundCount.get(), onDone);
                     }
                     return;
                 }
 
                 TLRPC.TL_messages_getHistory req = new TLRPC.TL_messages_getHistory();
                 req.peer = peer;
-                req.limit = 15;
+                req.limit = 40;
                 req.offset_id = 0;
                 req.max_id = 0;
                 req.min_id = 0;
@@ -508,16 +537,17 @@ public class FeedRecommendationEngine {
                                         msgs.messages, rec);
 
                                 if (bestPost != null) {
+                                    foundCount.incrementAndGet();
                                     synchronized (recommendedPosts) {
                                         recommendedPosts.add(bestPost);
                                     }
+                                } else {
+                                    markAllSeen(rec.channelId, msgs.messages);
                                 }
                             }
 
                             if (pending.decrementAndGet() <= 0) {
-                                loadedBatchIndex = toIndex;
-                                isLoadingMore = false;
-                                if (onDone != null) onDone.run();
+                                finishBatch(toIndex, foundCount.get(), onDone);
                             }
                         })
                 );
@@ -525,13 +555,52 @@ public class FeedRecommendationEngine {
         }
     }
 
+    private void finishBatch(int toIndex, int foundCount, Runnable onDone) {
+        loadedBatchIndex = toIndex;
+
+        if (foundCount == 0 && loadedBatchIndex < allDiscovered.size()) {
+            loadPostsBatch(loadedBatchIndex, onDone);
+        } else {
+            isLoadingMore = false;
+            if (onDone != null) onDone.run();
+        }
+    }
+
+
+    private boolean allPostsSeen(long channelId) {
+        Long exhaustedAt = channelExhaustedTime.get(channelId);
+        if (exhaustedAt != null) {
+            if (System.currentTimeMillis() - exhaustedAt < CHANNEL_COOLDOWN_MS) {
+                return true;
+            }
+            channelExhaustedTime.remove(channelId);
+        }
+        return false;
+    }
+
+    private void markAllSeen(long channelId, ArrayList<TLRPC.Message> messages) {
+        if (messages == null) return;
+        for (TLRPC.Message msg : messages) {
+            if (msg != null) {
+                seenRecPostIds.add(channelId + "_" + msg.id);
+            }
+        }
+        channelExhaustedTime.put(channelId, System.currentTimeMillis());
+        saveDismissed();
+    }
+
     public void loadMore(Runnable onDone) {
-        if (isLoadingMore || noMoreRecommendations) {
+        if (isLoadingMore) {
             if (onDone != null) onDone.run();
             return;
         }
 
         if (loadedBatchIndex >= allDiscovered.size()) {
+            if (noMoreRecommendations) {
+                if (onDone != null) onDone.run();
+                return;
+            }
+            isLoadingMore = true;
             expandScan(onDone);
             return;
         }
@@ -558,61 +627,125 @@ public class FeedRecommendationEngine {
 
         if (messages == null || messages.isEmpty()) return null;
 
-        TLRPC.Message best = null;
-        int bestScore = -1;
-
+        ArrayList<TLRPC.Message> validMessages = new ArrayList<>();
         for (TLRPC.Message msg : messages) {
-            if (msg == null) continue;
-            if (msg.action != null) continue;
+            if (msg != null && msg.action == null) {
+                validMessages.add(msg);
+            }
+        }
+        if (validMessages.isEmpty()) return null;
 
+        validMessages.sort(Comparator.comparingInt(m -> m.id));
+
+        int firstFetchedId = validMessages.get(0).id;
+        int lastFetchedId = validMessages.get(validMessages.size() - 1).id;
+
+        Map<Long, List<TLRPC.Message>> albums = new HashMap<>();
+        List<TLRPC.Message> singles = new ArrayList<>();
+
+        for (TLRPC.Message msg : validMessages) {
+            if (msg.grouped_id != 0) {
+                albums.computeIfAbsent(msg.grouped_id, k -> new ArrayList<>()).add(msg);
+            } else {
+                singles.add(msg);
+            }
+        }
+
+        Set<Long> incompleteAlbumIds = new HashSet<>();
+        for (Map.Entry<Long, List<TLRPC.Message>> entry : albums.entrySet()) {
+            List<TLRPC.Message> group = entry.getValue();
+            for (TLRPC.Message msg : group) {
+                if (msg.id == firstFetchedId || msg.id == lastFetchedId) {
+                    incompleteAlbumIds.add(entry.getKey());
+                    break;
+                }
+            }
+        }
+
+        List<CandidatePost> candidates = new ArrayList<>();
+
+        for (TLRPC.Message msg : singles) {
             String postUid = rec.channelId + "_" + msg.id;
             if (seenRecPostIds.contains(postUid)) continue;
 
-            int score = 0;
-
-            if (msg.message != null && msg.message.length() > 50) score += 3;
-            else if (msg.message != null && !msg.message.isEmpty()) score += 1;
-
-            if (msg.media instanceof TLRPC.TL_messageMediaPhoto) score += 2;
-            if (msg.media instanceof TLRPC.TL_messageMediaDocument) score += 2;
-
-            if (msg.views > 0) score += Math.min(3, (int) Math.log10(msg.views));
-
             int age = ConnectionsManager.getInstance(currentAccount).getCurrentTime() - msg.date;
             if (age > 3 * 24 * 3600) continue;
+
+            int score = scoreMessage(msg, age);
+            if (score > 0) {
+                CandidatePost c = new CandidatePost();
+                c.messages = new ArrayList<>();
+                c.messages.add(msg);
+                c.score = score;
+                c.primaryId = msg.id;
+                candidates.add(c);
+            }
+        }
+
+        for (Map.Entry<Long, List<TLRPC.Message>> entry : albums.entrySet()) {
+            long groupedId = entry.getKey();
+
+            if (incompleteAlbumIds.contains(groupedId)) continue;
+
+            List<TLRPC.Message> group = entry.getValue();
+            group.sort(Comparator.comparingInt(a -> a.id));
+
+            TLRPC.Message first = group.get(0);
+            String postUid = rec.channelId + "_" + first.id;
+            if (seenRecPostIds.contains(postUid)) continue;
+
+            int age = ConnectionsManager.getInstance(currentAccount).getCurrentTime() - first.date;
+            if (age > 3 * 24 * 3600) continue;
+
+            String albumCaption = findAlbumCaption(group);
+
+            int score = 0;
+            if (first.media instanceof TLRPC.TL_messageMediaPhoto) score += 2;
+            if (first.media instanceof TLRPC.TL_messageMediaDocument) score += 2;
+            if (first.views > 0) score += Math.min(3, (int) Math.log10(first.views));
             if (age < 24 * 3600) score += 2;
+            if (albumCaption != null && albumCaption.length() > 50) score += 3;
+            else if (albumCaption != null && !albumCaption.isEmpty()) score += 1;
+            score += Math.min(3, group.size());
 
-            if (score > bestScore) {
-                bestScore = score;
-                best = msg;
+            if (score > 0) {
+                CandidatePost c = new CandidatePost();
+                c.messages = new ArrayList<>(group);
+                c.score = score;
+                c.primaryId = first.id;
+                candidates.add(c);
             }
         }
 
-        if (best == null) return null;
+        if (candidates.isEmpty()) return null;
 
-        String bestUid = rec.channelId + "_" + best.id;
-        seenRecPostIds.add(bestUid);
+        candidates.sort((a, b) -> Integer.compare(b.score, a.score));
+        CandidatePost best = candidates.get(0);
 
-        MessageObject msgObj = new MessageObject(currentAccount, best, true, true);
-        if (msgObj.isOut() || msgObj.messageOwner.action != null) return null;
-
-        List<MessageObject> msgList = new ArrayList<>();
-        msgList.add(msgObj);
-
-        if (best.grouped_id != 0) {
-            for (TLRPC.Message msg : messages) {
-                if (msg.grouped_id == best.grouped_id && msg.id != best.id) {
-                    seenRecPostIds.add(rec.channelId + "_" + msg.id);
-                    msgList.add(new MessageObject(currentAccount, msg, true, true));
-                }
-            }
-            Collections.sort(msgList, Comparator.comparingInt(MessageObject::getId));
+        for (TLRPC.Message msg : best.messages) {
+            seenRecPostIds.add(rec.channelId + "_" + msg.id);
         }
-
         saveDismissed();
 
+        List<MessageObject> msgList = new ArrayList<>();
+        for (TLRPC.Message msg : best.messages) {
+            MessageObject obj = new MessageObject(currentAccount, msg, true, true);
+            if (obj.isOut() || obj.messageOwner.action != null) continue;
+            msgList.add(obj);
+        }
+
+        if (msgList.isEmpty()) return null;
+
+        msgList.sort(Comparator.comparingInt(MessageObject::getId));
+
+        if (msgList.size() > 1) {
+            ensureAlbumCaption(msgList);
+        }
+
+        MessageObject primary = msgList.get(0);
         long dialogId = -rec.channelId;
-        FeedController.FeedItem item = new FeedController.FeedItem(dialogId, msgList, best.date);
+        FeedController.FeedItem item = new FeedController.FeedItem(
+                dialogId, msgList, primary.messageOwner.date);
         item.isRecommendation = true;
         item.recommendationReason = rec.reason;
         item.recommendedChat = rec.chat;
@@ -620,6 +753,23 @@ public class FeedRecommendationEngine {
         item.isRead = true;
 
         return item;
+    }
+
+    private int scoreMessage(TLRPC.Message msg, int age) {
+        int score = 0;
+        if (msg.message != null && msg.message.length() > 50) score += 3;
+        else if (msg.message != null && !msg.message.isEmpty()) score += 1;
+        if (msg.media instanceof TLRPC.TL_messageMediaPhoto) score += 2;
+        if (msg.media instanceof TLRPC.TL_messageMediaDocument) score += 2;
+        if (msg.views > 0) score += Math.min(3, (int) Math.log10(msg.views));
+        if (age < 24 * 3600) score += 2;
+        return score;
+    }
+
+    private static class CandidatePost {
+        List<TLRPC.Message> messages;
+        int score;
+        int primaryId;
     }
 
     private SharedPreferences getPrefs() {
@@ -717,6 +867,13 @@ public class FeedRecommendationEngine {
             channelsToScan.add(chatId);
         }
 
+        if (channelsToScan.isEmpty()) {
+            noMoreRecommendations = true;
+            isLoadingMore = false;
+            if (onDone != null) onDone.run();
+            return;
+        }
+
         channelsToScan.sort((a, b) -> {
             TLRPC.Dialog da = controller.dialogs_dict.get(-a);
             TLRPC.Dialog db = controller.dialogs_dict.get(-b);
@@ -728,6 +885,7 @@ public class FeedRecommendationEngine {
         int newOffset = scannedChannelOffset + MAX_CHANNELS_TO_SCAN;
         if (newOffset >= channelsToScan.size()) {
             noMoreRecommendations = true;
+            isLoadingMore = false;
             if (onDone != null) onDone.run();
             return;
         }
@@ -736,7 +894,6 @@ public class FeedRecommendationEngine {
         int end = Math.min(newOffset + MAX_CHANNELS_TO_SCAN, channelsToScan.size());
         List<Long> nextBatch = channelsToScan.subList(newOffset, end);
 
-        isLoadingMore = true;
         Map<Long, ChannelScore> scores = new HashMap<>();
 
         for (RecommendedChannel rec : allDiscovered) {
@@ -837,6 +994,7 @@ public class FeedRecommendationEngine {
             RecommendedChannel rec = new RecommendedChannel();
             rec.channelId = channelId;
             rec.chat = chat;
+            rec.accessHash = chat.access_hash;
             rec.score = score;
             rec.similarSources = cs.similarSourceIds.size();
             rec.forwardSources = cs.forwardSourceIds.size();
@@ -860,6 +1018,8 @@ public class FeedRecommendationEngine {
         allDiscovered.addAll(newChannels);
         recommendations.addAll(newChannels);
 
+        saveDiscoveredChannels();
+
         loadPostsBatch(loadedBatchIndex, onDone);
     }
 
@@ -881,5 +1041,271 @@ public class FeedRecommendationEngine {
         noMoreRecommendations = false;
         isLoadingMore = false;
         loadPostsBatch(0, this::notifyComplete);
+    }
+
+    private String findAlbumCaption(List<TLRPC.Message> group) {
+        for (TLRPC.Message msg : group) {
+            if (msg.message != null && !msg.message.isEmpty()) {
+                return msg.message;
+            }
+        }
+        return null;
+    }
+
+    private void ensureAlbumCaption(List<MessageObject> msgList) {
+        MessageObject captionMsg = null;
+        for (MessageObject msg : msgList) {
+            CharSequence caption = msg.caption;
+            if (caption != null && caption.length() > 0) {
+                captionMsg = msg;
+                break;
+            }
+            if (msg.messageOwner.message != null
+                    && !msg.messageOwner.message.isEmpty()) {
+                captionMsg = msg;
+                break;
+            }
+        }
+
+        if (captionMsg == null) return;
+
+        MessageObject first = msgList.get(0);
+        if (captionMsg != first) {
+            if (first.caption == null || first.caption.length() == 0) {
+                first.caption = captionMsg.caption;
+                if (first.messageOwner.message == null
+                        || first.messageOwner.message.isEmpty()) {
+                    first.messageOwner.message = captionMsg.messageOwner.message;
+                }
+            }
+        }
+    }
+
+    private void saveDiscoveredChannels() {
+        try {
+            SharedPreferences.Editor editor = getPrefs().edit();
+
+            Set<String> channelSet = new HashSet<>();
+            for (RecommendedChannel rec : allDiscovered) {
+                StringBuilder sb = new StringBuilder();
+                sb.append(rec.channelId);
+                sb.append("|").append(rec.score);
+                sb.append("|").append(rec.similarSources);
+                sb.append("|").append(rec.forwardSources);
+                sb.append("|").append(rec.mentionSources);
+                sb.append("|").append(rec.reason != null ? rec.reason.replace("|", " ") : "");
+                sb.append("|").append(joinLongs(rec.similarSourceIds));
+                sb.append("|").append(joinLongs(rec.forwardSourceIds));
+                sb.append("|").append(joinLongs(rec.mentionSourceIds));
+
+                long accessHash = rec.accessHash;
+                String title = "";
+                if (rec.chat != null) {
+                    accessHash = rec.chat.access_hash;
+                    title = rec.chat.title != null ? rec.chat.title.replace("|", " ") : "";
+                }
+                sb.append("|").append(accessHash);
+                sb.append("|").append(title);
+
+                channelSet.add(sb.toString());
+            }
+
+            editor.putStringSet("discovered_channels", channelSet);
+            editor.putLong("last_scan_time", lastScanTime);
+            editor.putInt("scanned_offset", scannedChannelOffset);
+            editor.putInt("loaded_batch_index", loadedBatchIndex);
+            editor.apply();
+        } catch (Exception e) {
+            // ignore
+        }
+    }
+
+    private void loadDiscoveredChannels() {
+        SharedPreferences prefs = getPrefs();
+        lastScanTime = prefs.getLong("last_scan_time", 0);
+        scannedChannelOffset = prefs.getInt("scanned_offset", 0);
+        loadedBatchIndex = prefs.getInt("loaded_batch_index", 0);
+
+        Set<String> channelSet = prefs.getStringSet("discovered_channels", new HashSet<>());
+        if (channelSet.isEmpty()) return;
+
+        MessagesController controller = MessagesController.getInstance(currentAccount);
+        ArrayList<TLRPC.Chat> chatsToCache = new ArrayList<>();
+
+        for (String s : channelSet) {
+            try {
+                String[] parts = s.split("\\|", -1);
+                if (parts.length < 9) continue;
+
+                long channelId = Long.parseLong(parts[0]);
+                if (dismissedIds.contains(channelId)) continue;
+
+                RecommendedChannel rec = new RecommendedChannel();
+                rec.channelId = channelId;
+                rec.score = Float.parseFloat(parts[1]);
+                rec.similarSources = Integer.parseInt(parts[2]);
+                rec.forwardSources = Integer.parseInt(parts[3]);
+                rec.mentionSources = Integer.parseInt(parts[4]);
+                rec.reason = parts[5].isEmpty() ? "Recommended for you" : parts[5];
+                rec.similarSourceIds = parseLongs(parts[6]);
+                rec.forwardSourceIds = parseLongs(parts[7]);
+                rec.mentionSourceIds = parseLongs(parts[8]);
+
+                long savedAccessHash = 0;
+                StringBuilder savedTitle = new StringBuilder();
+                if (parts.length >= 11) {
+                    try {
+                        savedAccessHash = Long.parseLong(parts[9]);
+                    } catch (NumberFormatException ignored) {}
+                    savedTitle = new StringBuilder(parts[10]);
+                    for (int i = 11; i < parts.length; i++) {
+                        savedTitle.append(" ").append(parts[i]);
+                    }
+                }
+                rec.accessHash = savedAccessHash;
+
+                rec.chat = controller.getChat(channelId);
+
+                if (rec.chat == null && savedAccessHash != 0) {
+                    TLRPC.TL_channel tempChat = new TLRPC.TL_channel();
+                    tempChat.id = channelId;
+                    tempChat.access_hash = savedAccessHash;
+                    tempChat.title = (savedTitle.length() == 0) ? "Channel" : savedTitle.toString();
+                    tempChat.broadcast = true;
+                    tempChat.flags |= 1;
+                    rec.chat = tempChat;
+                    chatsToCache.add(tempChat);
+                }
+
+                if (rec.chat != null) {
+                    allDiscovered.add(rec);
+                }
+            } catch (Exception ignored) {}
+        }
+
+        if (!chatsToCache.isEmpty()) {
+            controller.putChats(chatsToCache, false);
+        }
+
+        allDiscovered.sort((a, b) -> Float.compare(b.score, a.score));
+        recommendations.clear();
+        recommendations.addAll(allDiscovered);
+    }
+
+    private String joinLongs(Set<Long> set) {
+        if (set == null || set.isEmpty()) return "";
+        StringBuilder sb = new StringBuilder();
+        for (Long v : set) {
+            if (sb.length() > 0) sb.append(",");
+            sb.append(v);
+        }
+        return sb.toString();
+    }
+
+    private Set<Long> parseLongs(String s) {
+        Set<Long> result = new HashSet<>();
+        if (s == null || s.isEmpty()) return result;
+        for (String part : s.split(",")) {
+            try {
+                result.add(Long.parseLong(part.trim()));
+            } catch (NumberFormatException ignored) {}
+        }
+        return result;
+    }
+
+    public void ensureReady(Runnable onComplete) {
+        if (!isEnabled()) {
+            if (onComplete != null) onComplete.run();
+            return;
+        }
+
+        if (!recommendedPosts.isEmpty()) {
+            if (onComplete != null) onComplete.run();
+            return;
+        }
+
+        if (!allDiscovered.isEmpty()) {
+            resolveChats(() -> {
+                this.onScanComplete = onComplete;
+                recommendedPosts.clear();
+                loadedBatchIndex = 0;
+                noMoreRecommendations = false;
+                isLoadingMore = true;
+                loadPostsBatch(0, this::notifyComplete);
+            });
+            return;
+        }
+
+        scanIfNeeded(onComplete);
+    }
+
+    private void resolveChats(Runnable onDone) {
+        MessagesController controller = MessagesController.getInstance(currentAccount);
+        List<RecommendedChannel> needResolve = new ArrayList<>();
+
+        for (RecommendedChannel rec : allDiscovered) {
+            if (rec.chat == null) {
+                rec.chat = controller.getChat(rec.channelId);
+                if (rec.chat == null) {
+                    needResolve.add(rec);
+                }
+            }
+        }
+
+        if (needResolve.isEmpty()) {
+            allDiscovered.removeIf(r -> r.chat == null);
+            recommendations.removeIf(r -> r.chat == null);
+            if (onDone != null) onDone.run();
+            return;
+        }
+
+        List<TLRPC.InputChannel> inputChannels = new ArrayList<>();
+        List<RecommendedChannel> resolvable = new ArrayList<>();
+        for (RecommendedChannel rec : needResolve) {
+            if (rec.accessHash == 0) continue;
+            TLRPC.TL_inputChannel ic = new TLRPC.TL_inputChannel();
+            ic.channel_id = rec.channelId;
+            ic.access_hash = rec.accessHash;
+            inputChannels.add(ic);
+            resolvable.add(rec);
+        }
+
+        if (inputChannels.isEmpty()) {
+            allDiscovered.removeIf(r -> r.chat == null);
+            recommendations.removeIf(r -> r.chat == null);
+            if (onDone != null) onDone.run();
+            return;
+        }
+
+        AtomicInteger pending = new AtomicInteger(0);
+        for (int i = 0; i < inputChannels.size(); i += 100) {
+            int end = Math.min(i + 100, inputChannels.size());
+            TLRPC.TL_channels_getChannels req = new TLRPC.TL_channels_getChannels();
+            req.id = new ArrayList<>(inputChannels.subList(i, end));
+            pending.incrementAndGet();
+
+            ConnectionsManager.getInstance(currentAccount).sendRequest(req, (res, err) ->
+                    AndroidUtilities.runOnUIThread(() -> {
+                        if (res instanceof TLRPC.TL_messages_chats) {
+                            TLRPC.TL_messages_chats chats = (TLRPC.TL_messages_chats) res;
+                            controller.putChats(chats.chats, false);
+                            for (TLRPC.Chat chat : chats.chats) {
+                                for (RecommendedChannel rec : allDiscovered) {
+                                    if (rec.channelId == chat.id) {
+                                        rec.chat = chat;
+                                        rec.accessHash = chat.access_hash;
+                                    }
+                                }
+                            }
+                        }
+                        if (pending.decrementAndGet() <= 0) {
+                            allDiscovered.removeIf(r -> r.chat == null);
+                            recommendations.removeIf(r -> r.chat == null);
+                            saveDiscoveredChannels(); // пересохраняем с обновлёнными данными
+                            if (onDone != null) onDone.run();
+                        }
+                    })
+            );
+        }
     }
 }
