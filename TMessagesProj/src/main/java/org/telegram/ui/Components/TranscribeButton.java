@@ -861,4 +861,11 @@ public class TranscribeButton {
         }
         return mc.transcribeAudioTrialCooldownUntil != 0 && cc.getCurrentTime() <= mc.transcribeAudioTrialCooldownUntil && mc.transcribeAudioTrialCurrentNumber <= 0;
     }
+
+    public static void registerPendingTranscription(long transcriptionId, MessageObject messageObject) {
+        if (transcribeOperationsById == null) {
+            transcribeOperationsById = new HashMap<>();
+        }
+        transcribeOperationsById.put(transcriptionId, messageObject);
+    }
 }

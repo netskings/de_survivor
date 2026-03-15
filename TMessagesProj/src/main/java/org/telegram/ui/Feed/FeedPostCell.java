@@ -9,6 +9,7 @@ import android.graphics.Paint;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
 import android.graphics.RectF;
+    import android.graphics.drawable.GradientDrawable;
 import android.text.Layout;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
@@ -29,13 +30,17 @@ import android.widget.TextView;
 import android.text.style.URLSpan;
 
 import androidx.annotation.NonNull;
+import androidx.core.graphics.ColorUtils;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.Emoji;
 import org.telegram.messenger.ImageLocation;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
+import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.R;
+import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.AnimatedEmojiSpan;
@@ -88,6 +93,10 @@ public class FeedPostCell extends LinearLayout {
 
     private final PorterDuffColorFilter grayFilter;
 
+    private final TextView summarizeBtn;
+    private final LinearLayout summaryCard;
+    private final TextView summaryTextView;
+    private boolean summaryLoading = false;
 
     private FeedController.FeedItem currentItem;
     private boolean textExpanded = false;
@@ -608,6 +617,46 @@ public class FeedPostCell extends LinearLayout {
         addView(readMoreView,
                 LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT));
 
+        summarizeBtn = new TextView(context);
+        summarizeBtn.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+        summarizeBtn.setTextColor(accentColor);
+        summarizeBtn.setTypeface(AndroidUtilities.bold());
+        summarizeBtn.setPadding(0, dp(6), 0, dp(2));
+        summarizeBtn.setVisibility(GONE);
+        summarizeBtn.setOnClickListener(v -> onSummarizeClick());
+        addView(summarizeBtn,
+                LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT));
+
+        summaryCard = new LinearLayout(context);
+        summaryCard.setOrientation(VERTICAL);
+        GradientDrawable cardBg = new GradientDrawable();
+        cardBg.setColor(ColorUtils.setAlphaComponent(accentColor, 0x1A));
+        cardBg.setCornerRadius(dp(10));
+        summaryCard.setBackground(cardBg);
+        summaryCard.setPadding(dp(12), dp(10), dp(12), dp(10));
+        summaryCard.setVisibility(GONE);
+
+        TextView summaryTitleView = new TextView(context);
+        summaryTitleView.setText("✨ AI Summary");
+        summaryTitleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+        summaryTitleView.setTextColor(accentColor);
+        summaryTitleView.setTypeface(AndroidUtilities.bold());
+        summaryCard.addView(summaryTitleView,
+                LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+
+        summaryTextView = new TextView(context);
+        summaryTextView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+        summaryTextView.setTextColor(
+                Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourceProvider));
+        summaryTextView.setLineSpacing(dp(2), 1f);
+        summaryTextView.setPadding(0, dp(4), 0, 0);
+        summaryCard.addView(summaryTextView,
+                LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+
+        addView(summaryCard,
+                LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT,
+                        0, 6, 0, 0));
+
         pollView = new FeedPollView(context, currentAccount, resourceProvider);
         pollView.setVisibility(GONE);
         addView(pollView,
@@ -826,6 +875,10 @@ public class FeedPostCell extends LinearLayout {
         buttonsView.clear();
         readMoreView.setVisibility(GONE);
 
+        summaryLoading = false;
+        summarizeBtn.setVisibility(GONE);
+        summaryCard.setVisibility(GONE);
+
         if (item == null) return;
 
         textExpanded = item.textExpanded;
@@ -868,6 +921,7 @@ public class FeedPostCell extends LinearLayout {
 
         bindMessageText(item);
         bindEngagement(raw, item);
+        bindSummary(item);
     }
 
     public FeedController.FeedItem getCurrentItem() {
@@ -1192,5 +1246,171 @@ public class FeedPostCell extends LinearLayout {
                 && fullText != null && fullText.length() > 0) {
             messageTextView.invalidate();
         }
+    }
+
+    private boolean canSummarize(MessageObject msg) {
+        if (msg == null || msg.messageOwner == null) return false;
+        String text = msg.messageOwner.message;
+        if (TextUtils.isEmpty(text) || text.length() <= 100) return false;
+        return msg.messageOwner.summary_from_language != null;
+    }
+
+    @SuppressLint("SetTextI18n")
+    private void bindSummary(FeedController.FeedItem item) {
+        summaryLoading = false;
+        MessageObject primary = item.getPrimaryMessage();
+
+        if (!canSummarize(primary)) {
+            summarizeBtn.setVisibility(GONE);
+            summaryCard.setVisibility(GONE);
+            return;
+        }
+
+        TLRPC.Message raw = primary.messageOwner;
+
+        if (raw.summarizedOpen && raw.summaryText != null) {
+            CharSequence display = Emoji.replaceEmoji(raw.summaryText.text,
+                    summaryTextView.getPaint().getFontMetricsInt(), false);
+            summaryTextView.setText(display);
+            summaryCard.setVisibility(VISIBLE);
+            summarizeBtn.setText("Hide summary");
+            summarizeBtn.setAlpha(1f);
+            summarizeBtn.setEnabled(true);
+            summarizeBtn.setVisibility(VISIBLE);
+
+        } else if (raw.summaryText != null) {
+            summaryCard.setVisibility(GONE);
+            summarizeBtn.setText("✨ Show summary");
+            summarizeBtn.setAlpha(1f);
+            summarizeBtn.setEnabled(true);
+            summarizeBtn.setVisibility(VISIBLE);
+
+        } else {
+            summaryCard.setVisibility(GONE);
+            summarizeBtn.setText("✨ Summarize");
+            summarizeBtn.setAlpha(1f);
+            summarizeBtn.setEnabled(true);
+            summarizeBtn.setVisibility(VISIBLE);
+        }
+    }
+
+    @SuppressLint("SetTextI18n")
+    private void onSummarizeClick() {
+        if (currentItem == null) return;
+        MessageObject primary = currentItem.getPrimaryMessage();
+        if (primary == null || primary.messageOwner == null) return;
+
+        TLRPC.Message raw = primary.messageOwner;
+
+        if (raw.summarizedOpen && raw.summaryText != null) {
+            raw.summarizedOpen = false;
+            saveSummaryState(primary);
+            updateSummaryUI();
+            return;
+        }
+
+        if (raw.summaryText != null) {
+            raw.summarizedOpen = true;
+            saveSummaryState(primary);
+            updateSummaryUI();
+            return;
+        }
+
+        if (summaryLoading) return;
+        requestSummary(primary);
+    }
+
+    private void requestSummary(MessageObject message) {
+        summaryLoading = true;
+        updateSummaryUI();
+
+        TLRPC.TL_messages_summarizeText req = new TLRPC.TL_messages_summarizeText();
+        req.peer = MessagesController.getInstance(currentAccount)
+                .getInputPeer(message.getDialogId());
+        req.id = message.getId();
+
+        final long dialogId = message.getDialogId();
+        final int  msgId    = message.getId();
+
+        ConnectionsManager.getInstance(currentAccount).sendRequest(req, (response, error) -> {
+            AndroidUtilities.runOnUIThread(() -> {
+                summaryLoading = false;
+
+                if (response instanceof TLRPC.TL_textWithEntities) {
+                    message.messageOwner.summaryText = (TLRPC.TL_textWithEntities) response;
+                    message.messageOwner.summarizedOpen = true;
+                    MessagesStorage.getInstance(currentAccount)
+                            .updateMessageCustomParams(dialogId, message.messageOwner);
+                } else {
+                    message.messageOwner.summarizedOpen = false;
+                    if (error != null && "SUMMARY_FLOOD_PREMIUM".equalsIgnoreCase(error.text)) {
+                        android.widget.Toast.makeText(getContext(),
+                                "Summary limit reached. Upgrade to Premium for unlimited summaries.",
+                                android.widget.Toast.LENGTH_LONG).show();
+                    } else if (error != null) {
+                        android.widget.Toast.makeText(getContext(),
+                                "Failed to summarize",
+                                android.widget.Toast.LENGTH_SHORT).show();
+                    }
+                }
+
+                if (currentItem != null) {
+                    MessageObject cur = currentItem.getPrimaryMessage();
+                    if (cur != null && cur.getId() == msgId
+                            && cur.getDialogId() == dialogId) {
+                        updateSummaryUI();
+                    }
+                }
+            });
+        });
+    }
+
+    @SuppressLint("SetTextI18n")
+    private void updateSummaryUI() {
+        if (currentItem == null) return;
+        MessageObject primary = currentItem.getPrimaryMessage();
+        if (primary == null || primary.messageOwner == null) return;
+
+        TLRPC.Message raw = primary.messageOwner;
+
+        if (summaryLoading) {
+            summarizeBtn.setText("Summarizing…");
+            summarizeBtn.setAlpha(0.5f);
+            summarizeBtn.setEnabled(false);
+            summarizeBtn.setVisibility(VISIBLE);
+            summaryCard.setVisibility(GONE);
+
+        } else if (raw.summarizedOpen && raw.summaryText != null) {
+            CharSequence display = Emoji.replaceEmoji(raw.summaryText.text,
+                    summaryTextView.getPaint().getFontMetricsInt(), false);
+            summaryTextView.setText(display);
+            summaryCard.setVisibility(VISIBLE);
+            summarizeBtn.setText("Hide summary");
+            summarizeBtn.setAlpha(1f);
+            summarizeBtn.setEnabled(true);
+            summarizeBtn.setVisibility(VISIBLE);
+
+        } else if (raw.summaryText != null) {
+            summaryCard.setVisibility(GONE);
+            summarizeBtn.setText("✨ Show summary");
+            summarizeBtn.setAlpha(1f);
+            summarizeBtn.setEnabled(true);
+            summarizeBtn.setVisibility(VISIBLE);
+
+        } else {
+            summaryCard.setVisibility(GONE);
+            summarizeBtn.setText("✨ Summarize");
+            summarizeBtn.setAlpha(1f);
+            summarizeBtn.setEnabled(true);
+            summarizeBtn.setVisibility(VISIBLE);
+        }
+
+        requestLayout();
+    }
+
+    private void saveSummaryState(MessageObject message) {
+        if (message == null) return;
+        MessagesStorage.getInstance(currentAccount)
+                .updateMessageCustomParams(message.getDialogId(), message.messageOwner);
     }
 }
