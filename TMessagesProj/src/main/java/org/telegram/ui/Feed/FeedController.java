@@ -30,6 +30,8 @@ public class FeedController implements NotificationCenter.NotificationCenterDele
     private static final int BATCH_SIZE = 5;
     private static final long BATCH_DELAY_MS = 300;
 
+    private final FeedRecommendationEngine recommendationEngine;
+
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
         if (id == NotificationCenter.didReceiveNewMessages) {
@@ -42,50 +44,64 @@ public class FeedController implements NotificationCenter.NotificationCenterDele
             TLRPC.Chat chat = controller.getChat(-dialogId);
             if (chat == null || !chat.broadcast || chat.megagroup) return;
             if (isChannelHidden(-dialogId)) return;
-            if (CustomSettings.hideProxySponsor() && controller.isPromoDialog(dialogId, false)) return;
+            if (CustomSettings.hideProxySponsor() && controller.isPromoDialog(dialogId, false))
+                return;
 
             ArrayList<MessageObject> messages = (ArrayList<MessageObject>) args[1];
             if (messages == null || messages.isEmpty()) return;
 
-            boolean added = false;
             List<MessageObject> validMessages = new ArrayList<>();
-
             for (MessageObject obj : messages) {
                 if (obj.isOut() || obj.messageOwner.action != null) continue;
-
                 boolean hasContent = (obj.messageText != null && obj.messageText.length() > 0)
                         || obj.messageOwner.media != null;
                 if (!hasContent) continue;
-
-                String uid = dialogId + "_" + obj.getId();
-                if (loadedItemIds.contains(uid)) continue;
-
                 validMessages.add(obj);
             }
-
             if (validMessages.isEmpty()) return;
 
             List<FeedItem> newItems = groupIntoItems(validMessages, dialogId);
+            boolean changed = false;
 
-            for (FeedItem item : newItems) {
-                String uid = item.getUniqueId();
-                if (!loadedItemIds.contains(uid)) {
-                    loadedItemIds.add(uid);
-                    item.isRead = false;
-                    item.isBookmarked = isBookmarked(uid);
-                    cachedFeed.add(item);
-                    added = true;
+            for (FeedItem newItem : newItems) {
+                MessageObject primary = newItem.getPrimaryMessage();
+                long groupedId = primary.messageOwner.grouped_id;
+
+                if (groupedId != 0) {
+                    FeedItem existing = findExistingAlbum(dialogId, groupedId);
+                    if (existing != null) {
+                        if (mergeAlbumMessages(existing, newItem)) {
+                            for (MessageObject msg : newItem.messages) {
+                                loadedItemIds.add(dialogId + "_" + msg.getId());
+                            }
+                            mergedItems.add(existing);
+                            changed = true;
+                        }
+                        continue; // НЕ создаём новый элемент
+                    }
                 }
+
+                // 4. Для обычных постов и новых альбомов — проверяем дубли
+                String uid = newItem.getUniqueId();
+                if (loadedItemIds.contains(uid)) continue;
+
+                loadedItemIds.add(uid);
+                for (MessageObject msg : newItem.messages) {
+                    loadedItemIds.add(dialogId + "_" + msg.getId());
+                }
+                newItem.isRead = false;
+                newItem.isBookmarked = isBookmarked(uid);
+                cachedFeed.add(newItem);
+                pendingNewItems.add(newItem);
+                changed = true;
             }
 
-            if (added) {
-                noMorePosts = false;
+            if (changed) {
                 Collections.sort(cachedFeed, Comparator.comparingLong(a -> a.sortDate));
                 AndroidUtilities.runOnUIThread(this::notifyNewPostListeners);
             }
         }
     }
-
 
     public void startObserving() {
         if (observing) return;
@@ -129,6 +145,11 @@ public class FeedController implements NotificationCenter.NotificationCenterDele
         public boolean isBookmarked;
         public long sortDate;
 
+        public boolean isRecommendation = false;
+        public String recommendationReason;
+        public TLRPC.Chat recommendedChat;
+        public long recommendedChannelId;
+
         public boolean textExpanded = false;
         public final java.util.HashSet<Integer> expandedQuoteOffsets = new java.util.HashSet<>();
 
@@ -160,6 +181,12 @@ public class FeedController implements NotificationCenter.NotificationCenterDele
     private boolean noMorePosts = false;
     private final Set<String> loadedItemIds = new HashSet<>();
 
+    private final List<Object> displayItems = new ArrayList<>();
+    private int postsSinceLastRec = 0;
+    private int recPostsUsedIndex = 0;
+    private final List<FeedItem> pendingNewItems = new ArrayList<>();
+    private final List<FeedItem> mergedItems = new ArrayList<>();
+
     private static final int MAX_MESSAGES_PER_CHANNEL = 50;
 
     public static FeedController getInstance(int account) {
@@ -178,6 +205,7 @@ public class FeedController implements NotificationCenter.NotificationCenterDele
     private FeedController(int account) {
         this.currentAccount = account;
         loadPersistedData();
+        this.recommendationEngine = FeedRecommendationEngine.getInstance(account);
     }
 
     private SharedPreferences getPrefs() {
@@ -335,8 +363,10 @@ public class FeedController implements NotificationCenter.NotificationCenterDele
         }
 
         if (channels.isEmpty()) {
-            if (force) { cachedFeed.clear(); feedLoaded = true; }
+            if (force) { cachedFeed.clear(); feedLoaded = true; pendingNewItems.clear(); }
             isLoading = false;
+            noMorePosts = true;
+            rebuildDisplayList();
             callback.onLoaded(new ArrayList<>(), false);
             return;
         }
@@ -404,12 +434,19 @@ public class FeedController implements NotificationCenter.NotificationCenterDele
                                 cachedFeed.addAll(sorted);
                                 feedLoaded = true;
                                 isLoading = false;
-                                noMorePosts = false;
+                                noMorePosts = true;
                                 loadedItemIds.clear();
                                 for (FeedItem item : sorted) {
                                     loadedItemIds.add(item.getUniqueId());
+                                    for (MessageObject msg : item.messages) {
+                                        loadedItemIds.add(item.channelId + "_" + msg.getId());
+                                    }
                                 }
-                                callback.onLoaded(sorted, true);
+
+                                recommendationEngine.scanIfNeeded(() -> {
+                                    rebuildDisplayList(); // строим display list с нуля
+                                    callback.onLoaded(cachedFeed, false);
+                                });
                             });
                         }
                     });
@@ -468,121 +505,144 @@ public class FeedController implements NotificationCenter.NotificationCenterDele
     public void resetLoadMore() {
         noMorePosts = false;
         loadedItemIds.clear();
+        pendingNewItems.clear();
     }
 
     public void loadMore(FeedLoadCallback callback) {
-        if (isLoading || noMorePosts) {
-            callback.onLoaded(cachedFeed, !noMorePosts);
-            return;
+        noMorePosts = true;
+        callback.onLoaded(cachedFeed, false);
+    }
+
+    public FeedRecommendationEngine getRecommendationEngine() {
+        return recommendationEngine;
+    }
+
+    public List<Object> getDisplayItems() {
+        return displayItems;
+    }
+
+    public void rebuildDisplayList() {
+        displayItems.clear();
+        postsSinceLastRec = 0;
+        recPostsUsedIndex = 0;
+
+        List<FeedItem> recPosts = recommendationEngine.hasRecommendedPosts()
+                ? recommendationEngine.getRecommendedPosts()
+                : Collections.emptyList();
+
+        int interval = FeedRecommendationEngine.getRecommendationInterval();
+
+        for (FeedItem item : cachedFeed) {
+            displayItems.add(item);
+            postsSinceLastRec++;
+
+            if (postsSinceLastRec >= interval && recPostsUsedIndex < recPosts.size()) {
+                displayItems.add(recPosts.get(recPostsUsedIndex++));
+                postsSinceLastRec = 0;
+            }
         }
-        isLoading = true;
 
-        MessagesController controller = MessagesController.getInstance(currentAccount);
-        List<TLRPC.Dialog> allDialogs = controller.getAllDialogs();
-
-        List<TLRPC.Dialog> channels = new ArrayList<>();
-        for (TLRPC.Dialog dialog : allDialogs) {
-            if (dialog == null || dialog.id >= 0) continue;
-            TLRPC.Chat chat = controller.getChat(-dialog.id);
-            if (chat == null || !chat.broadcast || chat.megagroup) continue;
-            if (isChannelHidden(-dialog.id)) continue;
-            if (controller.isPromoDialog(dialog.id, false)) continue;
-            channels.add(dialog);
+        while (recPostsUsedIndex < recPosts.size()) {
+            displayItems.add(recPosts.get(recPostsUsedIndex++));
         }
+    }
 
-        if (channels.isEmpty()) {
-            isLoading = false;
-            noMorePosts = true;
+    public List<FeedItem> flushPendingNewItems() {
+        List<FeedItem> result = new ArrayList<>(pendingNewItems);
+        pendingNewItems.clear();
+        return result;
+    }
+
+    public int appendItemsToDisplay(List<FeedItem> items) {
+        int added = 0;
+        List<FeedItem> recPosts = recommendationEngine.hasRecommendedPosts()
+                ? recommendationEngine.getRecommendedPosts()
+                : Collections.emptyList();
+        int interval = FeedRecommendationEngine.getRecommendationInterval();
+
+        for (FeedItem item : items) {
+            displayItems.add(item);
+            added++;
+            postsSinceLastRec++;
+
+            if (postsSinceLastRec >= interval && recPostsUsedIndex < recPosts.size()) {
+                displayItems.add(recPosts.get(recPostsUsedIndex++));
+                postsSinceLastRec = 0;
+                added++;
+            }
+        }
+        return added;
+    }
+
+    public int appendNewRecommendationsToDisplay() {
+        List<FeedItem> recPosts = recommendationEngine.hasRecommendedPosts()
+                ? recommendationEngine.getRecommendedPosts()
+                : Collections.emptyList();
+
+        int added = 0;
+        while (recPostsUsedIndex < recPosts.size()) {
+            displayItems.add(recPosts.get(recPostsUsedIndex++));
+            added++;
+        }
+        return added;
+    }
+
+    public static class FeedSeparator {
+        public final int type;
+        public FeedSeparator(int type) {
+            this.type = type;
+        }
+    }
+
+    public void loadMoreRecommendations(FeedLoadCallback callback) {
+        if (!recommendationEngine.canLoadMore()) {
             callback.onLoaded(cachedFeed, false);
             return;
         }
 
-        int newestDate = 0;
+        recommendationEngine.loadMore(() ->
+                AndroidUtilities.runOnUIThread(() ->
+                        callback.onLoaded(cachedFeed, recommendationEngine.canLoadMore())
+                )
+        );
+    }
+
+    private FeedItem findExistingAlbum(long dialogId, long groupedId) {
         for (FeedItem item : cachedFeed) {
-            newestDate = Math.max(newestDate, (int) item.sortDate);
-        }
-
-        final List<FeedItem> newItems = Collections.synchronizedList(new ArrayList<>());
-        final AtomicInteger completed = new AtomicInteger(0);
-        final int totalChannels = channels.size();
-        final int finalNewestDate = newestDate;
-
-        for (int batchStart = 0; batchStart < totalChannels; batchStart += BATCH_SIZE) {
-            final int start = batchStart;
-            final int end = Math.min(batchStart + BATCH_SIZE, totalChannels);
-            long delay = (long) (batchStart / BATCH_SIZE) * BATCH_DELAY_MS;
-
-            AndroidUtilities.runOnUIThread(() -> {
-                for (int i = start; i < end; i++) {
-                    TLRPC.Dialog dialog = channels.get(i);
-
-                    TLRPC.TL_messages_getHistory req = new TLRPC.TL_messages_getHistory();
-                    req.peer = controller.getInputPeer(dialog.id);
-                    req.limit = 10;
-                    req.offset_id = 0;
-                    req.offset_date = 0;
-                    req.add_offset = 0;
-                    req.max_id = 0;
-                    req.min_id = 0;
-
-                    ConnectionsManager.getInstance(currentAccount).sendRequest(req, (response, error) -> {
-                        if (response instanceof TLRPC.messages_Messages) {
-                            TLRPC.messages_Messages msgs = (TLRPC.messages_Messages) response;
-
-                            AndroidUtilities.runOnUIThread(() -> {
-                                controller.putUsers(msgs.users, false);
-                                controller.putChats(msgs.chats, false);
-                            });
-
-                            List<MessageObject> channelMessages = new ArrayList<>();
-                            for (TLRPC.Message msg : msgs.messages) {
-                                if (msg.date <= finalNewestDate) continue;
-
-                                MessageObject obj = new MessageObject(currentAccount, msg, true, true);
-                                if (obj.isOut() || obj.messageOwner.action != null) continue;
-
-                                boolean hasContent = (obj.messageText != null && obj.messageText.length() > 0)
-                                        || obj.messageOwner.media != null;
-                                if (!hasContent) continue;
-
-                                channelMessages.add(obj);
-                            }
-
-                            List<FeedItem> channelItems = groupIntoItems(channelMessages, dialog.id);
-
-                            for (FeedItem item : channelItems) {
-                                String uid = item.getUniqueId();
-                                synchronized (loadedItemIds) {
-                                    if (!loadedItemIds.contains(uid)) {
-                                        loadedItemIds.add(uid);
-                                        item.isRead = isLocallyRead(item.channelId, item.getMessageId());
-                                        item.isBookmarked = isBookmarked(uid);
-                                        newItems.add(item);
-                                    }
-                                }
-                            }
-                        }
-
-                        int done = completed.incrementAndGet();
-                        if (done >= totalChannels) {
-                            AndroidUtilities.runOnUIThread(() -> {
-                                isLoading = false;
-
-                                if (newItems.isEmpty()) {
-                                    noMorePosts = true;
-                                    callback.onLoaded(cachedFeed, false);
-                                    return;
-                                }
-
-                                cachedFeed.addAll(newItems);
-                                Collections.sort(cachedFeed, Comparator.comparingLong(a -> a.sortDate));
-                                noMorePosts = false;
-                                callback.onLoaded(cachedFeed, true);
-                            });
-                        }
-                    });
+            if (item.channelId != dialogId) continue;
+            for (MessageObject msg : item.messages) {
+                if (msg.messageOwner.grouped_id == groupedId) {
+                    return item;
                 }
-            }, delay);
+            }
         }
+        return null;
+    }
+
+    private boolean mergeAlbumMessages(FeedItem existing, FeedItem incoming) {
+        Set<Integer> existingIds = new HashSet<>();
+        for (MessageObject msg : existing.messages) {
+            existingIds.add(msg.getId());
+        }
+
+        boolean added = false;
+        for (MessageObject msg : incoming.messages) {
+            if (!existingIds.contains(msg.getId())) {
+                existing.messages.add(msg);
+                added = true;
+            }
+        }
+
+        if (added) {
+            Collections.sort(existing.messages,
+                    Comparator.comparingInt(MessageObject::getId));
+        }
+        return added;
+    }
+
+    public List<FeedItem> flushMergedItems() {
+        List<FeedItem> result = new ArrayList<>(mergedItems);
+        mergedItems.clear();
+        return result;
     }
 }

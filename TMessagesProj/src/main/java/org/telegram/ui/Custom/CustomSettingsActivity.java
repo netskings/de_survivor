@@ -14,10 +14,12 @@ import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.HeaderCell;
+import org.telegram.ui.Cells.TextCell;
 import org.telegram.ui.Cells.TextCheckCell;
 import org.telegram.ui.Cells.TextInfoPrivacyCell;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.RecyclerListView;
+import org.telegram.ui.Feed.FeedSettingsActivity;
 
 public class CustomSettingsActivity extends BaseFragment {
 
@@ -29,6 +31,10 @@ public class CustomSettingsActivity extends BaseFragment {
     private int hideProxySponsorRow;
     private int hideProxySponsorInfoRow;
 
+    private int feedHeaderRow;
+    private int feedSettingsRow;
+    private int feedInfoRow;
+
     @Override
     public boolean onFragmentCreate() {
         rowCount = 0;
@@ -38,6 +44,9 @@ public class CustomSettingsActivity extends BaseFragment {
         proxyHeaderRow = rowCount++;
         hideProxySponsorRow = rowCount++;
         hideProxySponsorInfoRow = rowCount++;
+        feedHeaderRow = rowCount++;
+        feedSettingsRow = rowCount++;
+        feedInfoRow = rowCount++;
         return super.onFragmentCreate();
     }
 
@@ -86,6 +95,8 @@ public class CustomSettingsActivity extends BaseFragment {
                 CustomSettings.setHideProxySponsor(val);
                 if (view instanceof TextCheckCell)
                     ((TextCheckCell) view).setChecked(val);
+            } else if (position == feedSettingsRow) {
+                presentFragment(new FeedSettingsActivity());
             }
         });
         return listView;
@@ -94,6 +105,7 @@ public class CustomSettingsActivity extends BaseFragment {
     private static final int TYPE_HEADER = 0;
     private static final int TYPE_CHECK  = 1;
     private static final int TYPE_INFO   = 2;
+    private static final int TYPE_TEXT_CELL = 3;
 
     private class ListAdapter extends RecyclerListView.SelectionAdapter {
         private final Context ctx;
@@ -105,7 +117,7 @@ public class CustomSettingsActivity extends BaseFragment {
 
         @Override
         public boolean isEnabled(RecyclerView.ViewHolder holder) {
-            return holder.getItemViewType() == TYPE_CHECK;
+            return holder.getItemViewType() == TYPE_CHECK || holder.getItemViewType() == TYPE_TEXT_CELL;
         }
 
         @Override
@@ -113,6 +125,9 @@ public class CustomSettingsActivity extends BaseFragment {
             if (pos == adsHeaderRow || pos == proxyHeaderRow)         return TYPE_HEADER;
             if (pos == hideAdsRow || pos == hideProxySponsorRow)      return TYPE_CHECK;
             if (pos == hideAdsInfoRow || pos == hideProxySponsorInfoRow) return TYPE_INFO;
+            if (pos == feedHeaderRow)    return TYPE_HEADER;
+            if (pos == feedSettingsRow)  return TYPE_TEXT_CELL;
+            if (pos == feedInfoRow)      return TYPE_INFO;
             return TYPE_HEADER;
         }
 
@@ -132,6 +147,10 @@ public class CustomSettingsActivity extends BaseFragment {
                             Theme.getColor(Theme.key_windowBackgroundWhite));
                     break;
                 case TYPE_INFO:
+                case TYPE_TEXT_CELL:
+                    view = new TextCell(ctx);
+                    view.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
+                    break;
                 default:
                     view = new TextInfoPrivacyCell(ctx);
                     view.setBackground(Theme.getThemedDrawableByKey(ctx,
@@ -152,6 +171,7 @@ public class CustomSettingsActivity extends BaseFragment {
                     HeaderCell cell = (HeaderCell) holder.itemView;
                     if (pos == adsHeaderRow)   cell.setText("Advertising");
                     if (pos == proxyHeaderRow)  cell.setText("Proxy");
+                    if (pos == feedHeaderRow)   cell.setText("Feed");
                     break;
                 }
                 case TYPE_CHECK: {
@@ -175,6 +195,16 @@ public class CustomSettingsActivity extends BaseFragment {
                     if (pos == hideProxySponsorInfoRow) {
                         cell.setText("Hides the proxy sponsor channel " +
                                 "from your chat list and feed");
+                    }
+                    if (pos == feedInfoRow) {
+                        cell.setText("Manage your feed channels and recommendations");
+                    }
+                    break;
+                }
+                case TYPE_TEXT_CELL: {
+                    TextCell cell = (TextCell) holder.itemView;
+                    if (pos == feedSettingsRow) {
+                        cell.setTextAndIcon("Feed Settings", R.drawable.msg_channel, true);
                     }
                     break;
                 }

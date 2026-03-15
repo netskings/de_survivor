@@ -88,46 +88,23 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
     private View loadingFooter;
 
     private void onNewPostsReceived() {
-        if (adapter == null || !feedController.hasCachedFeed()) return;
+        if (adapter == null) return;
 
-        List<FeedController.FeedItem> newFeed = feedController.getCachedFeed();
-        List<FeedController.FeedItem> oldFeed = adapter.getItems();
-
-        List<FeedController.FeedItem> toInsert = new ArrayList<>();
-        java.util.Set<String> oldIds = new java.util.HashSet<>();
-        for (FeedController.FeedItem item : oldFeed) {
-            oldIds.add(item.getUniqueId());
-        }
-        for (FeedController.FeedItem item : newFeed) {
-            if (!oldIds.contains(item.getUniqueId())) {
-                toInsert.add(item);
-            }
-        }
-
-        if (toInsert.isEmpty()) return;
-
-        Parcelable scrollState = null;
-        if (layoutManager != null) {
-            scrollState = layoutManager.onSaveInstanceState();
-        }
-
-        adapter.setItemsSilent(newFeed);
-
-        for (FeedController.FeedItem newItem : toInsert) {
-            int pos = -1;
-            for (int i = 0; i < newFeed.size(); i++) {
-                if (newFeed.get(i).getUniqueId().equals(newItem.getUniqueId())) {
-                    pos = i;
-                    break;
-                }
-            }
+        List<FeedController.FeedItem> merged = feedController.flushMergedItems();
+        for (FeedController.FeedItem item : merged) {
+            int pos = adapter.findItemPosition(item);
             if (pos >= 0) {
-                adapter.notifyItemInserted(pos);
+                adapter.notifyItemChanged(pos);
             }
         }
 
-        if (scrollState != null && layoutManager != null) {
-            layoutManager.onRestoreInstanceState(scrollState);
+        List<FeedController.FeedItem> pending = feedController.flushPendingNewItems();
+        if (!pending.isEmpty()) {
+            int oldSize = adapter.getItemCount();
+            int addedCount = feedController.appendItemsToDisplay(pending);
+            if (addedCount > 0) {
+                adapter.notifyItemRangeInserted(oldSize, addedCount);
+            }
         }
 
         updateEmpty();
@@ -255,6 +232,15 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
             @Override
             public void onPostLongPress(View cell) {
                 showPostScrim(cell);
+            }
+            @Override
+            public void onSubscribeClick(FeedController.FeedItem item) {
+                subscribeFromRecommendation(item);
+            }
+
+            @Override
+            public void onDismissRecommendation(FeedController.FeedItem item) {
+                dismissRecommendedPost(item);
             }
         });
 
@@ -402,9 +388,8 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
 
         scrimDialog.setItemOptions(options);
         scrimDialog.setOnDismissListener(d -> options.dismiss());
-        options.setOnDismiss(() -> scrimDialog.dismissFast());
+        options.setOnDismiss(scrimDialog::dismissFast);
 
-        /* Выделяем только текст ссылки */
         if (cell instanceof FeedPostCell) {
             TextView tv = ((FeedPostCell) cell).getMessageTextView();
             scrimDialog.setScrimForTextView(tv, span);
@@ -1267,9 +1252,13 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
         int first = layoutManager.findFirstVisibleItemPosition();
         int last = layoutManager.findLastVisibleItemPosition();
         for (int i = first; i <= last; i++) {
-            if (i < 0 || i >= adapter.getItems().size()) continue;
-            FeedController.FeedItem item = adapter.getItems().get(i);
-            if (item != null && !item.isRead) feedController.markAsRead(item);
+            Object obj = adapter.getDisplayItem(i);
+            if (obj instanceof FeedController.FeedItem) {
+                FeedController.FeedItem item = (FeedController.FeedItem) obj;
+                if (!item.isRead && !item.isRecommendation) {
+                    feedController.markAsRead(item);
+                }
+            }
         }
     }
 
@@ -1404,14 +1393,18 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
     }
 
     private void checkLoadMore() {
-        if (isLoadingMore || !feedController.hasMore()) return;
+        if (isLoadingMore) return;
         if (layoutManager == null || adapter == null) return;
 
         int lastVisible = layoutManager.findLastVisibleItemPosition();
         int total = adapter.getItemCount();
 
         if (lastVisible >= total - 3 && total > 0) {
-            loadMorePosts();
+            if (feedController.hasMore()) {
+                loadMorePosts();
+            } else if (feedController.getRecommendationEngine().canLoadMore()) {
+                loadMoreRecommendations();
+            }
         }
     }
 
@@ -1419,24 +1412,8 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
         if (isLoadingMore || !feedController.hasMore()) return;
         isLoadingMore = true;
 
-        if (loadingFooter != null) {
-            loadingFooter.setVisibility(View.VISIBLE);
-        }
-
         feedController.loadMore((items, hasMore) -> {
             isLoadingMore = false;
-            if (loadingFooter != null) {
-                loadingFooter.setVisibility(View.GONE);
-            }
-
-            int oldCount = adapter.getItemCount();
-            int newCount = items.size();
-
-            if (newCount > oldCount) {
-                adapter.setItemsSilent(items);
-                adapter.notifyItemRangeInserted(oldCount, newCount - oldCount);
-            }
-
             updateEmpty();
         });
     }
@@ -1621,5 +1598,85 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
                 new org.telegram.ui.ActionBar.BottomSheet.Builder(getParentActivity(), false, resourceProvider);
         builder.setCustomView(container);
         showDialog(builder.create());
+    }
+
+    private void refreshDisplayList() {
+        if (adapter != null) {
+            feedController.rebuildDisplayList();
+            adapter.setItems(feedController.getCachedFeed());
+        }
+    }
+
+    private void subscribeFromRecommendation(FeedController.FeedItem item) {
+        if (item == null || !item.isRecommendation || item.recommendedChat == null) return;
+
+        TLRPC.TL_channels_joinChannel req = new TLRPC.TL_channels_joinChannel();
+        req.channel = MessagesController.getInputChannel(item.recommendedChat);
+
+        ConnectionsManager.getInstance(currentAccount).sendRequest(req, (response, error) ->
+                AndroidUtilities.runOnUIThread(() -> {
+                    if (error == null) {
+                        String name = item.recommendedChat.title;
+
+                        item.isRecommendation = false;
+                        item.recommendationReason = null;
+
+                        feedController.getRecommendationEngine()
+                                .dismiss(item.recommendedChannelId);
+
+                        refreshDisplayList();
+
+                        BulletinFactory.of(FeedActivity.this)
+                                .createSimpleBulletin(R.drawable.msg_channel,
+                                        "Subscribed to " + name)
+                                .show();
+
+                        AndroidUtilities.runOnUIThread(() -> loadFeed(true), 2000);
+
+                    } else {
+                        String errText = "Failed to subscribe";
+                        if (error.text != null && error.text.contains("CHANNELS_TOO_MUCH")) {
+                            errText = "You have joined too many channels";
+                        }
+                        BulletinFactory.of(FeedActivity.this)
+                                .createSimpleBulletin(R.drawable.msg_channel, errText)
+                                .show();
+                    }
+                })
+        );
+    }
+
+    private void dismissRecommendedPost(FeedController.FeedItem item) {
+        if (item == null || !item.isRecommendation) return;
+
+        feedController.getRecommendationEngine().dismissPost(item);
+        refreshDisplayList();
+
+        BulletinFactory.of(FeedActivity.this)
+                .createSimpleBulletin(R.drawable.msg_close,
+                        "Won't recommend this channel")
+                .show();
+    }
+
+    private void loadMoreRecommendations() {
+        if (isLoadingMore) return;
+        isLoadingMore = true;
+
+        if (loadingFooter != null) {
+            loadingFooter.setVisibility(View.VISIBLE);
+        }
+
+        feedController.loadMoreRecommendations((items, hasMore) -> {
+            isLoadingMore = false;
+            if (loadingFooter != null) {
+                loadingFooter.setVisibility(View.GONE);
+            }
+
+            int oldSize = adapter.getItemCount();
+            int added = feedController.appendNewRecommendationsToDisplay();
+            if (added > 0) {
+                adapter.notifyItemRangeInserted(oldSize, added);
+            }
+        });
     }
 }

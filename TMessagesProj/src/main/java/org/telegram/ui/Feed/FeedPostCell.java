@@ -123,9 +123,16 @@ public class FeedPostCell extends LinearLayout {
     private final TextView translationTextView;
     private boolean translationLoading = false;
 
-    public LinkSpanDrawable<ClickableSpan> getPressedLink() {
-        return pressedLink;
-    }
+    private Runnable longPressRunnable;
+    private boolean longPressTriggered;
+    private float longPressDownX, longPressDownY;
+    private boolean longPressStarted;
+    private static final long LONG_PRESS_TIMEOUT = 500;
+    private static final float TOUCH_SLOP = dp(10);
+
+    private final LinearLayout recommendationHeader;
+    private final TextView recommendationReasonView;
+    private final TextView subscribeBtn;
 
     public void setPressedLink(LinkSpanDrawable<ClickableSpan> pressedLink) {
         this.pressedLink = pressedLink;
@@ -148,6 +155,8 @@ public class FeedPostCell extends LinearLayout {
         void onLinkClick(String url);
         void onLinkLongPress(String url, View cell, ClickableSpan span);
         void onPostLongPress(View cell);
+        void onSubscribeClick(FeedController.FeedItem item);
+        void onDismissRecommendation(FeedController.FeedItem item);
     }
 
     private Callback callback;
@@ -184,6 +193,45 @@ public class FeedPostCell extends LinearLayout {
         int grayColor = Theme.getColor(Theme.key_windowBackgroundWhiteGrayText3, resourceProvider);
         int accentColor = Theme.getColor(Theme.key_windowBackgroundWhiteBlueText2, resourceProvider);
         grayFilter = new PorterDuffColorFilter(grayColor, PorterDuff.Mode.SRC_IN);
+
+        recommendationHeader = new LinearLayout(context);
+        recommendationHeader.setOrientation(HORIZONTAL);
+        recommendationHeader.setGravity(Gravity.CENTER_VERTICAL);
+        recommendationHeader.setPadding(0, 0, 0, dp(8));
+        recommendationHeader.setVisibility(GONE);
+
+        TextView recIcon = new TextView(context);
+        recIcon.setText("✨");
+        recIcon.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+        recommendationHeader.addView(recIcon,
+                LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT,
+                        Gravity.CENTER_VERTICAL, 0, 0, 6, 0));
+
+        recommendationReasonView = new TextView(context);
+        recommendationReasonView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+        recommendationReasonView.setTextColor(accentColor);
+        recommendationReasonView.setTypeface(AndroidUtilities.bold());
+        recommendationReasonView.setMaxLines(1);
+        recommendationReasonView.setEllipsize(TextUtils.TruncateAt.END);
+        recommendationHeader.addView(recommendationReasonView,
+                LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f,
+                        Gravity.CENTER_VERTICAL));
+
+        TextView recommendationDismissBtn = new TextView(context);
+        recommendationDismissBtn.setText("✕");
+        recommendationDismissBtn.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+        recommendationDismissBtn.setTextColor(grayColor);
+        recommendationDismissBtn.setPadding(dp(12), dp(4), dp(4), dp(4));
+        recommendationDismissBtn.setOnClickListener(v -> {
+            if (callback != null && currentItem != null)
+                callback.onDismissRecommendation(currentItem);
+        });
+        recommendationHeader.addView(recommendationDismissBtn,
+                LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT,
+                        Gravity.CENTER_VERTICAL));
+
+        addView(recommendationHeader,
+                LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
 
         LinearLayout headerRow = new LinearLayout(context);
         headerRow.setOrientation(HORIZONTAL);
@@ -240,6 +288,26 @@ public class FeedPostCell extends LinearLayout {
 
         headerRow.addView(headerClickZone,
                 LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
+
+        subscribeBtn = new TextView(context);
+        subscribeBtn.setText("Subscribe");
+        subscribeBtn.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
+        subscribeBtn.setTextColor(0xFFFFFFFF);
+        subscribeBtn.setTypeface(AndroidUtilities.bold());
+        subscribeBtn.setGravity(Gravity.CENTER);
+        subscribeBtn.setPadding(dp(14), dp(6), dp(14), dp(6));
+        android.graphics.drawable.GradientDrawable subBg = new android.graphics.drawable.GradientDrawable();
+        subBg.setColor(accentColor);
+        subBg.setCornerRadius(dp(16));
+        subscribeBtn.setBackground(subBg);
+        subscribeBtn.setVisibility(GONE);
+        subscribeBtn.setOnClickListener(v -> {
+            if (callback != null && currentItem != null)
+                callback.onSubscribeClick(currentItem);
+        });
+        headerRow.addView(subscribeBtn,
+                LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, 30,
+                        Gravity.CENTER_VERTICAL, 0, 0, 4, 0));
 
         ImageView menuButton = new ImageView(context);
         menuButton.setScaleType(ImageView.ScaleType.CENTER);
@@ -913,18 +981,8 @@ public class FeedPostCell extends LinearLayout {
             public boolean onSingleTapConfirmed(MotionEvent e) {
                 return false;
             }
-
-            @Override
-            public void onLongPress(MotionEvent e) {
-                if (isTouchOnMessageText(e)) {
-                    return;
-                }
-                if (callback != null && currentItem != null) {
-                    callback.onPostLongPress(FeedPostCell.this);
-                }
-            }
         });
-        doubleTapDetector.setIsLongpressEnabled(true);
+        doubleTapDetector.setIsLongpressEnabled(false);
     }
 
     public void setPost(FeedController.FeedItem item) {
@@ -948,6 +1006,9 @@ public class FeedPostCell extends LinearLayout {
         translationLoading = false;
         translateBtn.setVisibility(GONE);
         translationCard.setVisibility(GONE);
+
+        recommendationHeader.setVisibility(GONE);
+        subscribeBtn.setVisibility(GONE);
 
         if (item == null) return;
 
@@ -993,6 +1054,7 @@ public class FeedPostCell extends LinearLayout {
         bindEngagement(raw, item);
         bindSummary(item);
         bindTranslation(item);
+        bindRecommendation(item);
     }
 
     public FeedController.FeedItem getCurrentItem() {
@@ -1274,14 +1336,66 @@ public class FeedPostCell extends LinearLayout {
 
     @Override
     public boolean dispatchTouchEvent(MotionEvent ev) {
-        if (ev.getAction() == MotionEvent.ACTION_DOWN) {
-            if (hasTextSelection() && !isTouchOnMessageText(ev)) {
-                clearTextSelection();
-                return true;
-            }
+        int action = ev.getAction();
+
+        switch (action) {
+            case MotionEvent.ACTION_DOWN:
+                if (hasTextSelection() && !isTouchOnMessageText(ev)) {
+                    clearTextSelection();
+                    return true;
+                }
+
+                longPressTriggered = false;
+                longPressStarted = false;
+                longPressDownX = ev.getX();
+                longPressDownY = ev.getY();
+
+                cancelPendingLongPress();
+                break;
+
+            case MotionEvent.ACTION_MOVE:
+                float dx = Math.abs(ev.getX() - longPressDownX);
+                float dy = Math.abs(ev.getY() - longPressDownY);
+
+                if (dx > TOUCH_SLOP || dy > TOUCH_SLOP) {
+                    cancelPendingLongPress();
+                    longPressStarted = false;
+                } else if (!longPressStarted && !longPressTriggered
+                        && !isTouchOnMessageText(ev)) {
+                    longPressStarted = true;
+                    longPressRunnable = () -> {
+                        longPressTriggered = true;
+                        if (callback != null && currentItem != null) {
+                            callback.onPostLongPress(FeedPostCell.this);
+                        }
+                    };
+                    AndroidUtilities.runOnUIThread(longPressRunnable, LONG_PRESS_TIMEOUT);
+                }
+                break;
+
+            case MotionEvent.ACTION_UP:
+                cancelPendingLongPress();
+                if (longPressTriggered) {
+                    longPressTriggered = false;
+                    return true;
+                }
+                break;
+
+            case MotionEvent.ACTION_CANCEL:
+                cancelPendingLongPress();
+                longPressTriggered = false;
+                break;
         }
+
         doubleTapDetector.onTouchEvent(ev);
         return super.dispatchTouchEvent(ev);
+    }
+
+    private void cancelPendingLongPress() {
+        if (longPressRunnable != null) {
+            AndroidUtilities.cancelRunOnUIThread(longPressRunnable);
+            longPressRunnable = null;
+        }
     }
 
     public void updateBookmarkState(boolean bookmarked) {
@@ -1767,5 +1881,18 @@ public class FeedPostCell extends LinearLayout {
     public void clearTextSelection() {
         if (messageTextView == null) return;
         messageTextView.clearFocus();
+    }
+
+    private void bindRecommendation(FeedController.FeedItem item) {
+        if (item.isRecommendation) {
+            String reason = item.recommendationReason;
+            if (reason == null || reason.isEmpty()) reason = "Recommended for you";
+            recommendationReasonView.setText(reason);
+            recommendationHeader.setVisibility(VISIBLE);
+            subscribeBtn.setVisibility(VISIBLE);
+        } else {
+            recommendationHeader.setVisibility(GONE);
+            subscribeBtn.setVisibility(GONE);
+        }
     }
 }
