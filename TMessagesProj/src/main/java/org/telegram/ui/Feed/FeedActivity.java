@@ -11,6 +11,7 @@ import android.text.style.ClickableSpan;
 import android.view.Gravity;
 import android.view.MotionEvent;
 import android.view.View;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
@@ -36,6 +37,7 @@ import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarMenu;
 import org.telegram.ui.ActionBar.BaseFragment;
+import org.telegram.ui.ActionBar.BottomSheet;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.ChatActivity;
 import org.telegram.ui.Components.AlertsCreator;
@@ -559,9 +561,11 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
             if (pos >= 0) adapter.updateItem(pos);
         });
 
+        options.addGap();
+
         TLRPC.Chat chat = MessagesController.getInstance(currentAccount).getChat(-item.channelId);
         String channelName = chat != null ? chat.title : "this channel";
-        options.add(R.drawable.msg_block2, "Hide from feed", true, () -> {
+        options.add(R.drawable.msg_block2, "Hide from feed", () -> {
             long chatId = -item.channelId;
             feedController.hideChannel(chatId);
             adapter.setItems(feedController.getCachedFeed());
@@ -570,6 +574,10 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
                     .createSimpleBulletin(R.drawable.msg_block2,
                             channelName + " hidden from feed")
                     .show();
+        });
+
+        options.add(R.drawable.msg_report, LocaleController.getString(R.string.ReportChat), true, () -> {
+            showReportDialog(item);
         });
 
         options.show();
@@ -1389,5 +1397,145 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
 
             updateEmpty();
         });
+    }
+
+    private void showReportDialog(FeedController.FeedItem item) {
+        if (getParentActivity() == null) return;
+
+        BottomSheet.Builder builder = new BottomSheet.Builder(getParentActivity(), true, resourceProvider);
+        builder.setTitle(LocaleController.getString(R.string.ReportChat), true);
+
+        CharSequence[] items = new CharSequence[]{
+                LocaleController.getString(R.string.ReportChatSpam),
+                LocaleController.getString(R.string.ReportChatFakeAccount),
+                LocaleController.getString(R.string.ReportChatViolence),
+                LocaleController.getString(R.string.ReportChatChild),
+                LocaleController.getString(R.string.ReportChatIllegalDrugs),
+                LocaleController.getString(R.string.ReportChatPersonalDetails),
+                LocaleController.getString(R.string.ReportChatPornography),
+                LocaleController.getString(R.string.ReportChatOther)
+        };
+
+        int[] icons = new int[]{
+                R.drawable.msg_clearcache,
+                R.drawable.msg_report_fake,
+                R.drawable.msg_report_violence,
+                R.drawable.msg_block2,
+                R.drawable.msg_report_drugs,
+                R.drawable.msg_report_personal,
+                R.drawable.msg_report_xxx,
+                R.drawable.msg_report_other
+        };
+
+        int[] types = new int[]{
+                AlertsCreator.REPORT_TYPE_SPAM,
+                AlertsCreator.REPORT_TYPE_FAKE_ACCOUNT,
+                AlertsCreator.REPORT_TYPE_VIOLENCE,
+                AlertsCreator.REPORT_TYPE_CHILD_ABUSE,
+                AlertsCreator.REPORT_TYPE_ILLEGAL_DRUGS,
+                AlertsCreator.REPORT_TYPE_PERSONAL_DETAILS,
+                AlertsCreator.REPORT_TYPE_PORNOGRAPHY,
+                AlertsCreator.REPORT_TYPE_OTHER
+        };
+
+        builder.setItems(items, icons, (dialogInterface, i) -> {
+            int type = types[i];
+            if (type == AlertsCreator.REPORT_TYPE_OTHER) {
+                showReportOtherDialog(item);
+            } else {
+                sendReport(item, getReportReasonText(type));
+            }
+        });
+
+        showDialog(builder.create());
+    }
+
+    private void showReportOtherDialog(FeedController.FeedItem item) {
+        if (getParentActivity() == null) return;
+
+        android.app.AlertDialog.Builder builder = new android.app.AlertDialog.Builder(getParentActivity());
+        builder.setTitle(LocaleController.getString(R.string.ReportChatOther));
+
+        FrameLayout container = new FrameLayout(getParentActivity());
+        container.setPadding(dp(24), dp(8), dp(24), 0);
+
+        EditText editText = new EditText(getParentActivity());
+        editText.setTextColor(Theme.getColor(Theme.key_dialogTextBlack, resourceProvider));
+        editText.setHintTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText3, resourceProvider));
+        editText.setHint(LocaleController.getString(R.string.ReportChatDescription));
+        editText.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 16);
+        editText.setMaxLines(4);
+        editText.setInputType(android.text.InputType.TYPE_CLASS_TEXT
+                | android.text.InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
+                | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE);
+        container.addView(editText, LayoutHelper.createFrame(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT));
+
+        builder.setView(container);
+        builder.setPositiveButton(LocaleController.getString(R.string.Send), (dialog, which) -> {
+            String message = editText.getText().toString().trim();
+            if (!message.isEmpty()) {
+                sendReport(item, message);
+            }
+        });
+        builder.setNegativeButton(LocaleController.getString(R.string.Cancel), null);
+
+        android.app.AlertDialog dialog = builder.create();
+        showDialog(dialog);
+
+        editText.requestFocus();
+        AndroidUtilities.runOnUIThread(() ->
+                AndroidUtilities.showKeyboard(editText), 300);
+    }
+
+    private void sendReport(FeedController.FeedItem item, String reason) {
+        if (item == null) return;
+
+        TLRPC.TL_messages_report req = new TLRPC.TL_messages_report();
+        req.peer = MessagesController.getInstance(currentAccount).getInputPeer(item.channelId);
+        for (MessageObject m : item.messages) {
+            req.id.add(m.getId());
+        }
+        req.option = new byte[0];
+        req.message = reason != null ? reason : "";
+
+        ConnectionsManager.getInstance(currentAccount).sendRequest(req, (response, error) ->
+                AndroidUtilities.runOnUIThread(() -> {
+                    Bulletin b = BulletinFactory.of(FeedActivity.this)
+                            .createSimpleBulletin(R.drawable.msg_report,
+                                    LocaleController.getString(R.string.ReportChatSent));
+                    b.show(true);
+                    b.getLayout().post(() -> {
+                        View pv = (View) b.getLayout().getParent();
+                        if (pv != null && pv.getLayoutParams() instanceof FrameLayout.LayoutParams) {
+                            FrameLayout.LayoutParams lp = (FrameLayout.LayoutParams) pv.getLayoutParams();
+                            lp.topMargin = ActionBar.getCurrentActionBarHeight()
+                                    + AndroidUtilities.statusBarHeight + dp(8);
+                            pv.setLayoutParams(lp);
+                        }
+                    });
+                })
+        );
+    }
+
+    private String getReportReasonText(int type) {
+        switch (type) {
+            case AlertsCreator.REPORT_TYPE_SPAM:
+                return "Spam";
+            case AlertsCreator.REPORT_TYPE_FAKE_ACCOUNT:
+                return "Fake account";
+            case AlertsCreator.REPORT_TYPE_VIOLENCE:
+                return "Violence";
+            case AlertsCreator.REPORT_TYPE_CHILD_ABUSE:
+                return "Child abuse";
+            case AlertsCreator.REPORT_TYPE_ILLEGAL_DRUGS:
+                return "Illegal drugs";
+            case AlertsCreator.REPORT_TYPE_PERSONAL_DETAILS:
+                return "Personal details";
+            case AlertsCreator.REPORT_TYPE_PORNOGRAPHY:
+                return "Pornography";
+            default:
+                return "";
+        }
     }
 }
