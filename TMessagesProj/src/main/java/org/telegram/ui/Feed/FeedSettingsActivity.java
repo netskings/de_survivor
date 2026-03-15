@@ -56,6 +56,7 @@ public class FeedSettingsActivity extends BaseFragment {
     private int hiddenChannelsEndRow;
     private int hiddenInfoRow;
     private int recommendationFrequencyRow;
+    private int recommendationsDetailRow;
 
     public FeedSettingsActivity() {
     }
@@ -78,6 +79,7 @@ public class FeedSettingsActivity extends BaseFragment {
         recommendationsHeaderRow = rowCount++;
         recommendationsToggleRow = rowCount++;
         recommendationFrequencyRow = rowCount++;
+        recommendationsDetailRow = rowCount++;
         recommendationsInfoRow = rowCount++;
 
         if (!hiddenChannelIds.isEmpty()) {
@@ -139,6 +141,8 @@ public class FeedSettingsActivity extends BaseFragment {
                 }
             } else if (position == recommendationFrequencyRow) {
                 showFrequencyPicker();
+            } else if (position == recommendationsDetailRow) {
+                presentFragment(new FeedRecommendationsDetailActivity());
             }
         });
         return listView;
@@ -193,7 +197,7 @@ public class FeedSettingsActivity extends BaseFragment {
         public int getItemViewType(int pos) {
             if (pos == recommendationsHeaderRow || pos == hiddenHeaderRow) return TYPE_HEADER;
             if (pos == recommendationsToggleRow) return TYPE_CHECK;
-            if (pos == recommendationFrequencyRow) return TYPE_TEXT_VALUE;
+            if (pos == recommendationFrequencyRow || pos == recommendationsDetailRow) return TYPE_TEXT_VALUE;
             if (pos == recommendationsInfoRow || pos == hiddenInfoRow) return TYPE_INFO;
             if (pos >= hiddenChannelsStartRow && pos < hiddenChannelsEndRow) return TYPE_CHANNEL;
             return TYPE_HEADER;
@@ -259,6 +263,12 @@ public class FeedSettingsActivity extends BaseFragment {
                     if (pos == recommendationFrequencyRow) {
                         cell.setTextAndValue("Show every N posts",
                                 String.valueOf(CustomSettings.feedRecommendationFrequency()),
+                                true);
+                    } else if (pos == recommendationsDetailRow) {
+                        int count = FeedRecommendationEngine.getInstance(currentAccount)
+                                .getRecommendations().size();
+                        cell.setTextAndValue("Recommended Channels",
+                                count > 0 ? String.valueOf(count) : "—",
                                 true);
                     }
                     break;
