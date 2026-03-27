@@ -14,7 +14,6 @@ import android.text.Layout;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.TextUtils;
-import android.text.method.LinkMovementMethod;
 import android.text.style.ClickableSpan;
 import android.util.TypedValue;
 import android.view.GestureDetector;
@@ -35,6 +34,7 @@ import androidx.core.graphics.ColorUtils;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.Emoji;
 import org.telegram.messenger.ImageLocation;
+import org.telegram.messenger.ImageReceiver;
 import org.telegram.messenger.LanguageDetector;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessageObject;
@@ -52,6 +52,7 @@ import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.LinkPath;
 import org.telegram.ui.Components.LinkSpanDrawable;
 import org.telegram.ui.Components.TranslateAlert2;
+import org.telegram.ui.Components.URLSpanMono;
 import org.telegram.ui.Components.spoilers.SpoilerEffect;
 
 @SuppressLint("ViewConstructor")
@@ -134,8 +135,14 @@ public class FeedPostCell extends LinearLayout {
     private final TextView recommendationReasonView;
     private final TextView subscribeBtn;
 
+    private final FeedMediaShimmer mediaShimmer;
+
     public void setPressedLink(LinkSpanDrawable<ClickableSpan> pressedLink) {
         this.pressedLink = pressedLink;
+    }
+
+    public LinkSpanDrawable<ClickableSpan> getPressedLink() {
+        return pressedLink;
     }
 
     public interface Callback {
@@ -390,6 +397,13 @@ public class FeedPostCell extends LinearLayout {
             private final RectF extRect = new RectF();
             private final android.graphics.Path extPath = new android.graphics.Path();
 
+            private final android.text.TextPaint codeBlockLangPaint = new android.text.TextPaint(Paint.ANTI_ALIAS_FLAG);
+            private final Paint codeBlockCopyBgPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            private final Paint codeBlockCopyIconPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            private final Paint codeBlockCopyFillPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            private final RectF codeRect = new RectF();
+            private FeedCodeSpan.Block touchedCopyBlock = null;
+
             private final java.util.List<SpoilerEffect> spoilerEffects = new java.util.ArrayList<>();
             private final java.util.Stack<SpoilerEffect> spoilerPool = new java.util.Stack<>();
             private boolean spoilersRevealed = false;
@@ -400,6 +414,13 @@ public class FeedPostCell extends LinearLayout {
                 extArrowPaint.setStrokeCap(Paint.Cap.ROUND);
                 extArrowPaint.setStrokeJoin(Paint.Join.ROUND);
                 extIconPaint.setStyle(Paint.Style.FILL);
+
+                codeBlockLangPaint.setTextSize(dp(11));
+                codeBlockLangPaint.setTypeface(AndroidUtilities.bold());
+                codeBlockCopyIconPaint.setStyle(Paint.Style.STROKE);
+                codeBlockCopyIconPaint.setStrokeWidth(dp(1.2f));
+                codeBlockCopyIconPaint.setStrokeCap(Paint.Cap.ROUND);
+                codeBlockCopyIconPaint.setStrokeJoin(Paint.Join.ROUND);
             }
 
             @Override
@@ -437,21 +458,23 @@ public class FeedPostCell extends LinearLayout {
 
             @Override
             protected void onDraw(@NonNull Canvas canvas) {
-                boolean hasSpoilers = !spoilerEffects.isEmpty() && !spoilersRevealed;
+                boolean hasSpoilers = !spoilerEffects.isEmpty()
+                        && !spoilersRevealed;
 
                 if (hasSpoilers) {
                     canvas.save();
                     spoilerClipPath.rewind();
-                    int pl = getCompoundPaddingLeft();
-                    int pt = getExtendedPaddingTop();
+                    int pl2 = getCompoundPaddingLeft();
+                    int pt2 = getExtendedPaddingTop();
                     for (SpoilerEffect eff : spoilerEffects) {
                         android.graphics.Rect b = eff.getBounds();
                         spoilerClipPath.addRect(
-                                pl + b.left, pt + b.top,
-                                pl + b.right, pt + b.bottom,
+                                pl2 + b.left, pt2 + b.top,
+                                pl2 + b.right, pt2 + b.bottom,
                                 android.graphics.Path.Direction.CW);
                     }
-                    canvas.clipPath(spoilerClipPath, android.graphics.Region.Op.DIFFERENCE);
+                    canvas.clipPath(spoilerClipPath,
+                            android.graphics.Region.Op.DIFFERENCE);
                 }
 
                 super.onDraw(canvas);
@@ -461,7 +484,7 @@ public class FeedPostCell extends LinearLayout {
                 }
 
                 drawQuoteDecorations(canvas);
-
+                drawCodeBlockDecorations(canvas);
                 drawSpoilerEffects(canvas);
             }
 
@@ -576,6 +599,7 @@ public class FeedPostCell extends LinearLayout {
                 }
             }
             private ClickableSpan touchedSpan;
+            private URLSpanMono touchedMonoSpan;
             private Runnable spanLongPressRunnable;
             private boolean spanLongPressed;
             private float spanDownX, spanDownY;
@@ -588,13 +612,16 @@ public class FeedPostCell extends LinearLayout {
 
                 if (layout != null && getText() instanceof Spanned) {
                     Spanned spanned = (Spanned) getText();
-                    int x = (int) event.getX() - getTotalPaddingLeft() + getScrollX();
-                    int y = (int) event.getY() - getTotalPaddingTop() + getScrollY();
+                    int x = (int) event.getX() - getTotalPaddingLeft()
+                            + getScrollX();
+                    int y = (int) event.getY() - getTotalPaddingTop()
+                            + getScrollY();
                     int line = layout.getLineForVertical(y);
                     int off = layout.getOffsetForHorizontal(line, x);
                     float lineLeft = layout.getLineLeft(line);
                     float lineWidth = layout.getLineWidth(line);
-                    boolean inText = x >= lineLeft && x <= lineLeft + lineWidth;
+                    boolean inText = x >= lineLeft
+                            && x <= lineLeft + lineWidth;
 
                     if (action == MotionEvent.ACTION_DOWN) {
                         spanLongPressed = false;
@@ -606,26 +633,67 @@ public class FeedPostCell extends LinearLayout {
                             return true;
                         }
 
+                        float viewX = event.getX();
+                        float viewY = event.getY();
+                        if (checkCopyButtonHit(viewX, viewY, false)) {
+                            touchedCopyBlock = findCopyBlock(viewX, viewY);
+                            return true;
+                        }
+
                         if (inText) {
-                            ClickableSpan[] spans = spanned.getSpans(off, off, ClickableSpan.class);
+                            URLSpanMono[] monoSpans = spanned.getSpans(
+                                    off, off, URLSpanMono.class);
+                            if (monoSpans != null && monoSpans.length > 0) {
+                                touchedSpan = null;
+                                touchedMonoSpan = monoSpans[0];
+
+                                LinkSpanDrawable<URLSpanMono> link =
+                                        new LinkSpanDrawable<>(
+                                                touchedMonoSpan,
+                                                resourceProvider,
+                                                event.getX(), event.getY(),
+                                                false);
+                                pressedLink = (LinkSpanDrawable) link;
+                                linkCollector.addLink(link);
+
+                                int start = spanned.getSpanStart(
+                                        touchedMonoSpan);
+                                int end = spanned.getSpanEnd(
+                                        touchedMonoSpan);
+                                LinkPath path = link.obtainNewPath();
+                                path.setCurrentLayout(layout, start,
+                                        getPaddingTop());
+                                layout.getSelectionPath(start, end, path);
+
+                                invalidate();
+                                return true;
+                            }
+
+                            ClickableSpan[] spans = spanned.getSpans(
+                                    off, off, ClickableSpan.class);
                             if (spans.length > 0) {
                                 touchedSpan = spans[0];
 
-                                LinkSpanDrawable<ClickableSpan> link = new LinkSpanDrawable<>(
-                                        touchedSpan, resourceProvider, event.getX(), event.getY());
+                                LinkSpanDrawable<ClickableSpan> link =
+                                        new LinkSpanDrawable<>(
+                                                touchedSpan,
+                                                resourceProvider,
+                                                event.getX(), event.getY());
                                 pressedLink = link;
                                 linkCollector.addLink(link);
 
                                 int start = spanned.getSpanStart(touchedSpan);
                                 int end = spanned.getSpanEnd(touchedSpan);
                                 LinkPath path = link.obtainNewPath();
-                                path.setCurrentLayout(layout, start, getPaddingTop());
+                                path.setCurrentLayout(layout, start,
+                                        getPaddingTop());
                                 layout.getSelectionPath(start, end, path);
 
                                 setDimmed(true);
 
                                 if (spanLongPressRunnable != null) {
-                                    AndroidUtilities.cancelRunOnUIThread(spanLongPressRunnable);
+                                    AndroidUtilities.cancelRunOnUIThread(
+                                            spanLongPressRunnable);
                                 }
                                 spanLongPressRunnable = () -> {
                                     spanLongPressed = true;
@@ -633,15 +701,18 @@ public class FeedPostCell extends LinearLayout {
                                     pressedLink = null;
                                     setDimmed(false);
                                     if (touchedSpan instanceof URLSpan) {
-                                        String url = ((URLSpan) touchedSpan).getURL();
+                                        String url =
+                                                ((URLSpan) touchedSpan).getURL();
                                         if (callback != null)
-                                            callback.onLinkLongPress(url, FeedPostCell.this, touchedSpan);
+                                            callback.onLinkLongPress(url,
+                                                    FeedPostCell.this,
+                                                    touchedSpan);
                                     }
                                     touchedSpan = null;
                                 };
-                                AndroidUtilities.runOnUIThread(spanLongPressRunnable,
+                                AndroidUtilities.runOnUIThread(
+                                        spanLongPressRunnable,
                                         ViewConfiguration.getLongPressTimeout());
-
                                 return true;
                             }
                         }
@@ -650,9 +721,26 @@ public class FeedPostCell extends LinearLayout {
                         return super.onTouchEvent(event);
 
                     } else if (action == MotionEvent.ACTION_MOVE) {
+                        if (touchedCopyBlock != null) {
+                            if (Math.abs(event.getX() - spanDownX) > dp(8)
+                                    || Math.abs(event.getY() - spanDownY)
+                                    > dp(8)) {
+                                touchedCopyBlock = null;
+                            }
+                            return true;
+                        }
+                        if (touchedMonoSpan != null) {
+                            if (Math.abs(event.getX() - spanDownX) > dp(8)
+                                    || Math.abs(event.getY() - spanDownY)
+                                    > dp(8)) {
+                                cancelMonoTouch();
+                            }
+                            return true;
+                        }
                         if (touchedSpan != null) {
-                            if (Math.abs(event.getX() - spanDownX) > dp(8) ||
-                                    Math.abs(event.getY() - spanDownY) > dp(8)) {
+                            if (Math.abs(event.getX() - spanDownX) > dp(8)
+                                    || Math.abs(event.getY() - spanDownY)
+                                    > dp(8)) {
                                 cancelSpanTouch();
                             }
                             return true;
@@ -661,19 +749,40 @@ public class FeedPostCell extends LinearLayout {
 
                     } else if (action == MotionEvent.ACTION_UP) {
                         if (spanLongPressRunnable != null) {
-                            AndroidUtilities.cancelRunOnUIThread(spanLongPressRunnable);
+                            AndroidUtilities.cancelRunOnUIThread(
+                                    spanLongPressRunnable);
                             spanLongPressRunnable = null;
                         }
                         setDimmed(false);
-                        linkCollector.clear();
-                        pressedLink = null;
 
                         if (messageHasSpoilers && spoilerRevealer != null) {
+                            linkCollector.clear();
+                            pressedLink = null;
                             spoilerRevealer.run();
                             messageHasSpoilers = false;
                             touchedSpan = null;
                             return true;
                         }
+
+                        if (touchedCopyBlock != null) {
+                            copyCodeToClipboard(touchedCopyBlock);
+                            touchedCopyBlock = null;
+                            return true;
+                        }
+
+                        if (touchedMonoSpan != null) {
+                            touchedMonoSpan.copyToClipboard();
+                            linkCollector.clear();
+                            pressedLink = null;
+                            touchedMonoSpan = null;
+                            android.widget.Toast.makeText(getContext(),
+                                    "Copied",
+                                    android.widget.Toast.LENGTH_SHORT).show();
+                            return true;
+                        }
+
+                        linkCollector.clear();
+                        pressedLink = null;
 
                         if (spanLongPressed) {
                             spanLongPressed = false;
@@ -704,6 +813,7 @@ public class FeedPostCell extends LinearLayout {
 
                     } else if (action == MotionEvent.ACTION_CANCEL) {
                         cancelSpanTouch();
+                        cancelMonoTouch();
                         return super.onTouchEvent(event);
                     }
                 }
@@ -721,7 +831,166 @@ public class FeedPostCell extends LinearLayout {
                 pressedLink = null;
                 touchedSpan = null;
                 spanLongPressed = false;
+                touchedCopyBlock = null;
+                touchedMonoSpan = null;
             }
+
+            private void cancelMonoTouch() {
+                linkCollector.clear();
+                pressedLink = null;
+                touchedMonoSpan = null;
+            }
+
+            private void drawCodeBlockDecorations(Canvas canvas) {
+                Layout layout = getLayout();
+                if (layout == null) return;
+                CharSequence text = getText();
+                if (!(text instanceof Spanned)) return;
+
+                Spanned spanned = (Spanned) text;
+                FeedCodeSpan.Block[] blocks = spanned.getSpans(
+                        0, text.length(), FeedCodeSpan.Block.class);
+                if (blocks == null || blocks.length == 0) return;
+
+                int pl = getCompoundPaddingLeft();
+                int pt = getExtendedPaddingTop();
+                int viewW = getWidth();
+                int pr = getPaddingRight();
+
+                int textColor = getCurrentTextColor();
+                int mutedColor = ColorUtils
+                        .setAlphaComponent(textColor, 0x80);
+
+                codeBlockLangPaint.setColor(mutedColor);
+                codeBlockCopyIconPaint.setColor(mutedColor);
+                codeBlockCopyBgPaint.setColor(
+                        ColorUtils.setAlphaComponent(textColor, 0x12));
+
+                for (FeedCodeSpan.Block block : blocks) {
+                    int start = spanned.getSpanStart(block);
+                    int end   = spanned.getSpanEnd(block);
+                    if (start < 0 || end <= start) continue;
+
+                    int firstLine = layout.getLineForOffset(start);
+                    int lastLine  = layout.getLineForOffset(
+                            Math.max(start, end - 1));
+                    float blockTop    = pt + layout.getLineTop(firstLine);
+                    float blockBottom = pt + layout.getLineBottom(lastLine);
+
+                    if (pr > 0) {
+                        float extLeft  = pl + layout.getWidth();
+                        float extRight = viewW;
+                        codeBlockCopyFillPaint.setColor(
+                                block.bgPaint.getColor());
+                        codeBlockCopyFillPaint.setStyle(Paint.Style.FILL);
+                        float cr = FeedCodeSpan.BLOCK_CORNER;
+                        extPath.reset();
+                        extRect.set(extLeft, blockTop, extRight, blockBottom);
+                        extPath.addRoundRect(extRect, new float[]{
+                                0, 0, cr, cr, cr, cr, 0, 0
+                        }, android.graphics.Path.Direction.CW);
+                        canvas.drawPath(extPath, codeBlockCopyFillPaint);
+                    }
+
+                    float bgRight = Math.min(
+                            pl + layout.getWidth() + pr, viewW);
+
+                    float btnR  = dp(12);
+                    float btnCX = bgRight - dp(6) - btnR;
+                    float btnCY = blockTop + dp(13);
+
+                    canvas.drawCircle(btnCX, btnCY, btnR,
+                            codeBlockCopyBgPaint);
+
+                    float iconS = dp(4.5f);
+                    float off   = dp(1.5f);
+
+                    codeRect.set(btnCX - iconS, btnCY - iconS,
+                            btnCX + iconS - off, btnCY + iconS - off);
+                    canvas.drawRoundRect(codeRect, dp(1.5f), dp(1.5f),
+                            codeBlockCopyIconPaint);
+
+                    codeRect.set(btnCX - iconS + off, btnCY - iconS + off,
+                            btnCX + iconS, btnCY + iconS);
+                    codeBlockCopyFillPaint.setColor(
+                            block.bgPaint.getColor());
+                    codeBlockCopyFillPaint.setStyle(Paint.Style.FILL);
+                    canvas.drawRoundRect(codeRect, dp(1.5f), dp(1.5f),
+                            codeBlockCopyFillPaint);
+                    canvas.drawRoundRect(codeRect, dp(1.5f), dp(1.5f),
+                            codeBlockCopyIconPaint);
+
+                    if (block.language != null) {
+                        float langX = pl + FeedCodeSpan.BLOCK_PAD_H;
+                        float langY = blockTop + dp(16);
+                        canvas.drawText(block.language, langX, langY,
+                                codeBlockLangPaint);
+                    }
+                }
+            }
+
+            private boolean checkCopyButtonHit(float viewX, float viewY,
+                                               boolean consume) {
+                return findCopyBlock(viewX, viewY) != null;
+            }
+
+            private FeedCodeSpan.Block findCopyBlock(
+                    float viewX, float viewY) {
+                Layout layout = getLayout();
+                if (layout == null) return null;
+                CharSequence text = getText();
+                if (!(text instanceof Spanned)) return null;
+
+                Spanned spanned = (Spanned) text;
+                FeedCodeSpan.Block[] blocks = spanned.getSpans(
+                        0, text.length(), FeedCodeSpan.Block.class);
+                if (blocks == null) return null;
+
+                int pl = getCompoundPaddingLeft();
+                int pt = getExtendedPaddingTop();
+                int pr = getPaddingRight();
+                int viewW = getWidth();
+
+                for (FeedCodeSpan.Block block : blocks) {
+                    int start = spanned.getSpanStart(block);
+                    int end   = spanned.getSpanEnd(block);
+                    if (start < 0 || end <= start) continue;
+
+                    int firstLine = layout.getLineForOffset(start);
+                    float blockTop = pt + layout.getLineTop(firstLine);
+                    float bgRight = Math.min(
+                            pl + layout.getWidth() + pr, viewW);
+
+                    float btnR  = dp(12);
+                    float btnCX = bgRight - dp(6) - btnR;
+                    float btnCY = blockTop + dp(13);
+
+                    float dist = (float) Math.sqrt(
+                            (viewX - btnCX) * (viewX - btnCX)
+                                    + (viewY - btnCY) * (viewY - btnCY));
+                    if (dist <= btnR + dp(4)) {
+                        return block;
+                    }
+                }
+                return null;
+            }
+
+            private void copyCodeToClipboard(FeedCodeSpan.Block block) {
+                if (block.codeText == null
+                        || block.codeText.isEmpty()) return;
+                android.content.ClipboardManager cm =
+                        (android.content.ClipboardManager) getContext()
+                                .getSystemService(Context.CLIPBOARD_SERVICE);
+                if (cm != null) {
+                    cm.setPrimaryClip(
+                            android.content.ClipData.newPlainText(
+                                    "code", block.codeText));
+                }
+                android.widget.Toast.makeText(getContext(),
+                        "Copied",
+                        android.widget.Toast.LENGTH_SHORT).show();
+            }
+
         };
 
         linkCollector = new LinkSpanDrawable.LinkCollector(messageTextView);
@@ -809,10 +1078,17 @@ public class FeedPostCell extends LinearLayout {
         mediaImageView1 = new BackupImageView(context);
         mediaImageView1.setRoundRadius(dp(12));
         mediaImageView1.setOnClickListener(v -> {
-            if (callback != null && currentItem != null) callback.onMediaClick(currentItem, 0);
+            if (callback != null && currentItem != null)
+                callback.onMediaClick(currentItem, 0);
         });
         mediaContainer.addView(mediaImageView1,
-                LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
+                LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT,
+                        LayoutHelper.MATCH_PARENT));
+
+        mediaShimmer = new FeedMediaShimmer(context);
+        mediaContainer.addView(mediaShimmer,
+                LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT,
+                        LayoutHelper.MATCH_PARENT));
 
         mediaOverlayLabel = new TextView(context);
         mediaOverlayLabel.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
@@ -825,7 +1101,8 @@ public class FeedPostCell extends LinearLayout {
                 Gravity.BOTTOM | Gravity.LEFT, 8, 0, 0, 8));
 
         addView(mediaContainer,
-                LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 200, 0, 8, 0, 0));
+                LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 200,
+                        0, 8, 0, 0));
 
         roundVideoView = new FeedRoundVideoView(context, currentAccount);
         roundVideoView.setVisibility(GONE);
@@ -991,6 +1268,16 @@ public class FeedPostCell extends LinearLayout {
         fullText = null;
         collapsedEndOffset = -1;
 
+        mediaShimmer.hide(false);
+        mediaImageView1.setImageDrawable(null);
+        mediaImageView1.getImageReceiver().clearImage();
+        mediaImageView1.getImageReceiver().setDelegate(null);
+        mediaContainer.setVisibility(GONE);
+        mediaRow.setVisibility(GONE);
+        albumLabel.setVisibility(GONE);
+        mediaOverlayLabel.setVisibility(GONE);
+        roundVideoView.setVisibility(GONE);
+
         replyView.clear();
         forwardView.clear();
         pollView.setVisibility(GONE);
@@ -1025,7 +1312,8 @@ public class FeedPostCell extends LinearLayout {
         forwardView.setData(raw, controller);
 
         if (raw.media instanceof TLRPC.TL_messageMediaPoll) {
-            TLRPC.TL_messageMediaPoll pollMedia = (TLRPC.TL_messageMediaPoll) raw.media;
+            TLRPC.TL_messageMediaPoll pollMedia =
+                    (TLRPC.TL_messageMediaPoll) raw.media;
             pollView.setPoll(pollMedia, raw);
             pollView.setVisibility(VISIBLE);
             mediaContainer.setVisibility(GONE);
@@ -1034,15 +1322,36 @@ public class FeedPostCell extends LinearLayout {
             mediaOverlayLabel.setVisibility(GONE);
         } else {
             pollView.setVisibility(GONE);
+
+            mediaShimmer.start();
+
+            final FeedController.FeedItem capturedItem = item;
+
             FeedMediaHelper.setupMedia(
                     item, getContext(), mediaContainer, mediaImageView1,
                     mediaOverlayLabel, mediaRow, albumLabel,
                     (feedItem, index) -> {
-                        if (callback != null) callback.onMediaClick(feedItem, index);
+                        if (callback != null)
+                            callback.onMediaClick(feedItem, index);
                     },
                     resourceProvider,
-                    roundVideoView
+                    roundVideoView,
+                    (fromCache) -> {
+                        if (currentItem != capturedItem) return;
+                        mediaShimmer.hide(!fromCache);
+                    }
             );
+
+            if (mediaContainer.getVisibility() == GONE) {
+                mediaShimmer.hide(false);
+            } else {
+                mediaImageView1.postDelayed(() -> {
+                    if (currentItem != capturedItem) return;
+                    if (mediaShimmer.isStarted()) {
+                        mediaShimmer.hide(true);
+                    }
+                }, 15_000);
+            }
         }
 
         documentView.setData(item);
@@ -1096,13 +1405,22 @@ public class FeedPostCell extends LinearLayout {
             fullText = text;
 
             boolean hasQuotes = false;
+            boolean hasCodeBlocks = false;
             if (text instanceof Spanned) {
                 FeedQuoteSpan[] qs = ((Spanned) text).getSpans(
                         0, text.length(), FeedQuoteSpan.class);
                 hasQuotes = qs != null && qs.length > 0;
+
+                FeedCodeSpan.Block[] cs = ((Spanned) text).getSpans(
+                        0, text.length(), FeedCodeSpan.Block.class);
+                hasCodeBlocks = cs != null && cs.length > 0;
             }
-            messageTextView.setPadding(0, 0,
-                    hasQuotes ? FeedQuoteSpan.ICON_ZONE : 0, 0);
+
+            int rightPad = 0;
+            if (hasQuotes)     rightPad = Math.max(rightPad, FeedQuoteSpan.ICON_ZONE);
+            if (hasCodeBlocks) rightPad = Math.max(rightPad, FeedCodeSpan.COPY_ZONE);
+
+            messageTextView.setPadding(0, 0, rightPad, 0);
 
             messageTextView.setMaxLines(Integer.MAX_VALUE);
             messageTextView.setText(fullText);
@@ -1209,13 +1527,22 @@ public class FeedPostCell extends LinearLayout {
         fullText = text;
 
         boolean hasQuotes = false;
+        boolean hasCodeBlocks = false;
         if (text instanceof Spanned) {
             FeedQuoteSpan[] qs = ((Spanned) text).getSpans(
                     0, text.length(), FeedQuoteSpan.class);
             hasQuotes = qs != null && qs.length > 0;
+
+            FeedCodeSpan.Block[] cs = ((Spanned) text).getSpans(
+                    0, text.length(), FeedCodeSpan.Block.class);
+            hasCodeBlocks = cs != null && cs.length > 0;
         }
-        messageTextView.setPadding(0, 0,
-                hasQuotes ? FeedQuoteSpan.ICON_ZONE : 0, 0);
+
+        int rightPad = 0;
+        if (hasQuotes)     rightPad = Math.max(rightPad, FeedQuoteSpan.ICON_ZONE);
+        if (hasCodeBlocks) rightPad = Math.max(rightPad, FeedCodeSpan.COPY_ZONE);
+
+        messageTextView.setPadding(0, 0, rightPad, 0);
 
         messageTextView.setMaxLines(Integer.MAX_VALUE);
         messageTextView.setText(fullText);
@@ -1325,6 +1652,14 @@ public class FeedPostCell extends LinearLayout {
         super.onDetachedFromWindow();
         cancelPendingTruncate();
         roundVideoView.release();
+
+        if (mediaShimmer != null) {
+            mediaShimmer.hide(false);
+        }
+
+        if (mediaImageView1 != null) {
+            mediaImageView1.getImageReceiver().setDelegate(null);
+        }
     }
 
     private TextView smallText(Context ctx, int color) {
@@ -1433,9 +1768,49 @@ public class FeedPostCell extends LinearLayout {
     @Override
     protected void onAttachedToWindow() {
         super.onAttachedToWindow();
+
         if (messageTextView != null && messageTextView.getVisibility() == VISIBLE
                 && fullText != null && fullText.length() > 0) {
             messageTextView.invalidate();
+        }
+
+        if (mediaImageView1 != null
+                && mediaContainer.getVisibility() == VISIBLE) {
+            mediaImageView1.invalidate();
+
+            ImageReceiver ir = mediaImageView1.getImageReceiver();
+            boolean mainLoaded = ir.hasNotThumb()
+                    || ir.getBitmap() != null
+                    || ir.getStaticThumb() != null;
+
+            if (mainLoaded) {
+                mediaShimmer.hide(false);
+            } else {
+                ir.setDelegate(new ImageReceiver.ImageReceiverDelegate() {
+                    @Override
+                    public void didSetImage(ImageReceiver imageReceiver,
+                                            boolean set, boolean thumb,
+                                            boolean memCache) {
+                        if (set && !thumb) {
+                            mediaShimmer.hide(!memCache);
+                        }
+                    }
+
+                });
+
+                if (!mediaShimmer.isStarted()) {
+                    mediaShimmer.start();
+                }
+            }
+        }
+
+        if (mediaRow != null && mediaRow.getVisibility() == VISIBLE) {
+            for (int i = 0; i < mediaRow.getChildCount(); i++) {
+                View child = mediaRow.getChildAt(i);
+                if (child instanceof BackupImageView) {
+                    child.invalidate();
+                }
+            }
         }
     }
 
