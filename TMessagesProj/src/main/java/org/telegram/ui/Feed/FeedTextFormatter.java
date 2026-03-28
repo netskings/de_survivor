@@ -36,10 +36,13 @@ public class FeedTextFormatter {
     private final Theme.ResourcesProvider resourceProvider;
     private RebuildCallback rebuildCallback;
 
+    private final List<int[]> dateReplacements;
+
     public FeedTextFormatter(Theme.ResourcesProvider rp,
-                             HashSet<Integer> expandedOffsets) {
+                             HashSet<Integer> expandedOffsets, List<int[]> dateReplacements) {
         this.resourceProvider = rp;
         this.expandedQuoteOffsets = expandedOffsets;
+        this.dateReplacements = dateReplacements;
     }
 
     public void setRebuildCallback(@Nullable RebuildCallback callback) {
@@ -56,17 +59,74 @@ public class FeedTextFormatter {
 
         SpannableStringBuilder ssb = new SpannableStringBuilder(result.text);
 
-        applyAnimatedEmojiSpans(ssb, result.sourceMsg, fontMetrics);
-        applyInlineCodeSpans(ssb, result.sourceMsg);
-        applyBlockSpans(ssb, result.sourceMsg);
+        List<int[]> dateReplacements = applyFormattedDateSpans(ssb, result.sourceMsg);
+
+        applyAnimatedEmojiSpans(ssb, result.sourceMsg, fontMetrics, dateReplacements);
+        applyInlineCodeSpans(ssb, result.sourceMsg, dateReplacements);
+        applyBlockSpans(ssb, result.sourceMsg, dateReplacements);
 
         return Emoji.replaceEmoji(ssb, fontMetrics, false);
     }
 
+    private List<int[]> applyFormattedDateSpans(SpannableStringBuilder ssb,
+                                                @Nullable MessageObject sourceMsg) {
+        List<int[]> replacements = new ArrayList<>();
+        if (sourceMsg == null || sourceMsg.messageOwner == null
+                || sourceMsg.messageOwner.entities == null) return replacements;
+
+        int accentColor = Theme.getColor(
+                Theme.key_windowBackgroundWhiteBlueText2, resourceProvider);
+
+        List<TLRPC.TL_messageEntityFormattedDate> dateEntities = new ArrayList<>();
+        for (TLRPC.MessageEntity entity : sourceMsg.messageOwner.entities) {
+            if (entity instanceof TLRPC.TL_messageEntityFormattedDate) {
+                dateEntities.add((TLRPC.TL_messageEntityFormattedDate) entity);
+            }
+        }
+        if (dateEntities.isEmpty()) return replacements;
+
+        Collections.sort(dateEntities, (a, b) -> b.offset - a.offset);
+
+        for (TLRPC.TL_messageEntityFormattedDate dateEntity : dateEntities) {
+            int start = dateEntity.offset;
+            int end = dateEntity.offset + dateEntity.length;
+            if (start < 0 || start >= ssb.length()) continue;
+            end = Math.min(end, ssb.length());
+            if (start >= end) continue;
+
+            String formatted = LocaleController.formatEntityFormattedDate(dateEntity);
+            if (formatted == null || formatted.isEmpty()) continue;
+
+            replacements.add(new int[]{start, end, formatted.length()});
+
+            ssb.replace(start, end, formatted);
+            int newEnd = start + formatted.length();
+
+            ssb.setSpan(
+                    new FeedDateSpan(dateEntity, accentColor),
+                    start, newEnd,
+                    Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+
+        return replacements;
+    }
+
+    private static int mapOffset(int original, List<int[]> replacements) {
+        if (replacements == null || replacements.isEmpty()) return original;
+        int delta = 0;
+        for (int[] r : replacements) {
+            int origLen = r[1] - r[0];
+            if (original >= r[1]) {
+                delta += r[2] - origLen;
+            }
+        }
+        return original + delta;
+    }
 
     private void applyAnimatedEmojiSpans(SpannableStringBuilder ssb,
                                          @Nullable MessageObject sourceMsg,
-                                         Paint.FontMetricsInt fontMetrics) {
+                                         Paint.FontMetricsInt fontMetrics,
+                                         List<int[]> dateReplacements) {
         if (sourceMsg == null || sourceMsg.messageOwner == null
                 || sourceMsg.messageOwner.entities == null) return;
 
@@ -77,8 +137,8 @@ public class FeedTextFormatter {
         for (TLRPC.MessageEntity entity : sourceMsg.messageOwner.entities) {
             if (entity instanceof TLRPC.TL_messageEntityCustomEmoji) {
                 long docId = ((TLRPC.TL_messageEntityCustomEmoji) entity).document_id;
-                int start = entity.offset;
-                int end = entity.offset + entity.length;
+                int start = mapOffset(entity.offset, dateReplacements);           // ← CHANGED
+                int end = mapOffset(entity.offset + entity.length, dateReplacements); // ← CHANGED
                 if (start >= 0 && start < ssb.length()
                         && end > start && end <= ssb.length()) {
                     try {
@@ -91,7 +151,8 @@ public class FeedTextFormatter {
     }
 
     private void applyInlineCodeSpans(SpannableStringBuilder ssb,
-                                      @Nullable MessageObject sourceMsg) {
+                                      @Nullable MessageObject sourceMsg,
+                                      List<int[]> dateReplacements) {
         if (sourceMsg == null || sourceMsg.messageOwner == null
                 || sourceMsg.messageOwner.entities == null) return;
 
@@ -103,13 +164,13 @@ public class FeedTextFormatter {
 
         for (TLRPC.MessageEntity entity : sourceMsg.messageOwner.entities) {
             if (entity instanceof TLRPC.TL_messageEntityCode) {
-                int start = entity.offset;
-                int end = Math.min(entity.offset + entity.length,
+                int start = mapOffset(entity.offset, dateReplacements);           // ← CHANGED
+                int end = Math.min(
+                        mapOffset(entity.offset + entity.length, dateReplacements), // ← CHANGED
                         ssb.length());
                 if (start >= 0 && start < end) {
                     ssb.setSpan(
-                            new URLSpanMono(fullText, start, end,
-                                    (byte) 0),
+                            new URLSpanMono(fullText, start, end, (byte) 0),
                             start, end,
                             Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
                 }
@@ -117,9 +178,9 @@ public class FeedTextFormatter {
         }
     }
 
-
     private void applyBlockSpans(SpannableStringBuilder ssb,
-                                 @Nullable MessageObject sourceMsg) {
+                                 @Nullable MessageObject sourceMsg,
+                                 List<int[]> dateReplacements) {
         if (sourceMsg == null || sourceMsg.messageOwner == null
                 || sourceMsg.messageOwner.entities == null) return;
 
@@ -143,8 +204,9 @@ public class FeedTextFormatter {
         Collections.sort(blockEntities, (a, b) -> b.offset - a.offset);
 
         for (TLRPC.MessageEntity entity : blockEntities) {
-            int start = entity.offset;
-            int end = Math.min(entity.offset + entity.length,
+            int start = mapOffset(entity.offset, dateReplacements);               // ← CHANGED
+            int end = Math.min(
+                    mapOffset(entity.offset + entity.length, dateReplacements),   // ← CHANGED
                     ssb.length());
             if (start < 0 || start >= end) continue;
 
@@ -274,7 +336,7 @@ public class FeedTextFormatter {
 
     @Nullable
     private ExtractResult extractRawText(FeedController.FeedItem item) {
-        MessageObject primary = item.getPrimaryMessage();
+       MessageObject primary = item.getPrimaryMessage();
         CharSequence text = null;
         MessageObject sourceMsg = null;
 

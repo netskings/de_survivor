@@ -164,6 +164,7 @@ public class FeedPostCell extends LinearLayout {
         void onPostLongPress(View cell);
         void onSubscribeClick(FeedController.FeedItem item);
         void onDismissRecommendation(FeedController.FeedItem item);
+        void onDateEntityClick(TLRPC.TL_messageEntityFormattedDate entity, View anchor); // ← NEW
     }
 
     private Callback callback;
@@ -700,7 +701,20 @@ public class FeedPostCell extends LinearLayout {
                                     linkCollector.clear();
                                     pressedLink = null;
                                     setDimmed(false);
-                                    if (touchedSpan instanceof URLSpan) {
+                                    if (touchedSpan instanceof FeedDateSpan) {
+                                        FeedDateSpan ds = (FeedDateSpan) touchedSpan;
+                                        String fullDate = ds.getFormattedFull();
+                                        android.content.ClipboardManager cm =
+                                                (android.content.ClipboardManager) getContext()
+                                                        .getSystemService(Context.CLIPBOARD_SERVICE);
+                                        if (cm != null) {
+                                            cm.setPrimaryClip(
+                                                    android.content.ClipData.newPlainText("date", fullDate));
+                                        }
+                                        android.widget.Toast.makeText(getContext(),
+                                                "Copied: " + fullDate,
+                                                android.widget.Toast.LENGTH_SHORT).show();
+                                    } else if (touchedSpan instanceof URLSpan) {
                                         String url =
                                                 ((URLSpan) touchedSpan).getURL();
                                         if (callback != null)
@@ -796,6 +810,13 @@ public class FeedPostCell extends LinearLayout {
 
                             if (span instanceof FeedQuoteSpan.Clickable) {
                                 span.onClick(this);
+                                return true;
+                            }
+                            if (span instanceof FeedDateSpan) {
+                                FeedDateSpan dateSpan = (FeedDateSpan) span;
+                                if (callback != null) {
+                                    callback.onDateEntityClick(dateSpan.entity, FeedPostCell.this);
+                                }
                                 return true;
                             }
                             if (span instanceof URLSpan) {

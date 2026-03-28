@@ -243,6 +243,74 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
             public void onDismissRecommendation(FeedController.FeedItem item) {
                 dismissRecommendedPost(item);
             }
+
+            @Override
+            public void onDateEntityClick(TLRPC.TL_messageEntityFormattedDate entity, View anchor) {
+                if (entity == null || getParentActivity() == null) return;
+
+                String fullDate = LocaleController.formatEntityFormattedDate(entity, true);
+
+                final ScrimOptions scrimDialog = new ScrimOptions(getParentActivity(), resourceProvider);
+                final ItemOptions options = ItemOptions.makeOptions(
+                        scrimDialog.getContainerView(), resourceProvider,
+                        scrimDialog.getContainerView());
+
+                options.addText(fullDate, 15);
+                options.addGap();
+
+                options.add(R.drawable.msg_copy,
+                        LocaleController.getString(R.string.Copy),
+                        () -> {
+                            AndroidUtilities.addToClipboard(fullDate);
+                            BulletinFactory.of(FeedActivity.this)
+                                    .createCopyBulletin(
+                                            LocaleController.getString(R.string.TextCopied))
+                                    .show();
+                        });
+
+                options.add(R.drawable.msg_calendar2,
+                        "Add to calendar",
+                        () -> {
+                            try {
+                                android.content.Intent intent = new android.content.Intent(
+                                        android.content.Intent.ACTION_INSERT);
+                                intent.setData(android.provider.CalendarContract.Events.CONTENT_URI);
+                                intent.putExtra(
+                                        android.provider.CalendarContract.EXTRA_EVENT_BEGIN_TIME,
+                                        entity.date * 1000L);
+                                intent.putExtra(
+                                        android.provider.CalendarContract.Events.TITLE,
+                                        fullDate);
+                                getParentActivity().startActivity(intent);
+                            } catch (Exception e) {
+                                BulletinFactory.of(FeedActivity.this)
+                                        .createSimpleBulletin(R.drawable.msg_calendar2,
+                                                "No calendar app found")
+                                        .show();
+                            }
+                        });
+
+                scrimDialog.setItemOptions(options);
+                scrimDialog.setOnDismissListener(d -> options.dismiss());
+                options.setOnDismiss(scrimDialog::dismissFast);
+
+                if (anchor instanceof FeedPostCell) {
+                    TextView tv = ((FeedPostCell) anchor).getMessageTextView();
+                    if (tv.getText() instanceof android.text.Spanned) {
+                        android.text.Spanned spanned = (android.text.Spanned) tv.getText();
+                        FeedDateSpan[] spans = spanned.getSpans(0,
+                                tv.getText().length(), FeedDateSpan.class);
+                        for (FeedDateSpan ds : spans) {
+                            if (ds.entity == entity) {
+                                scrimDialog.setScrimForTextView(tv, ds);
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                scrimDialog.show();
+            }
         });
 
         layoutManager = new LinearLayoutManager(context);
