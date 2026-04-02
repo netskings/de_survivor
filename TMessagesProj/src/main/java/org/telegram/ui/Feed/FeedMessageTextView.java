@@ -15,6 +15,7 @@ import android.text.style.ClickableSpan;
 import android.text.style.URLSpan;
 import android.view.MotionEvent;
 import android.view.ViewConfiguration;
+import android.view.ViewGroup;
 import android.widget.Toast;
 
 import androidx.annotation.NonNull;
@@ -114,7 +115,24 @@ class FeedMessageTextView extends AnimatedEmojiSpan.TextViewEmojis {
 
     @Override
     protected void onDraw(@NonNull Canvas canvas) {
+        boolean needsClip = getLayoutParams() != null
+                && getLayoutParams().height > 0
+                && getLayoutParams().height != ViewGroup.LayoutParams.WRAP_CONTENT
+                && getLayoutParams().height != ViewGroup.LayoutParams.MATCH_PARENT;
+
+        if (needsClip) {
+            canvas.save();
+            canvas.clipRect(0, 0, getWidth(), getHeight());
+        }
+
         boolean hasSpoilers = !spoilerEffects.isEmpty() && !spoilersRevealed;
+
+        if (cell.getPressedLink() != null || !cell.linkCollector.isEmpty()) {
+            canvas.save();
+            canvas.translate(getCompoundPaddingLeft(), getExtendedPaddingTop());
+            cell.linkCollector.draw(canvas);
+            canvas.restore();
+        }
 
         if (hasSpoilers) {
             canvas.save();
@@ -138,6 +156,10 @@ class FeedMessageTextView extends AnimatedEmojiSpan.TextViewEmojis {
         drawQuoteDecorations(canvas);
         drawCodeBlockDecorations(canvas);
         drawSpoilerEffects(canvas);
+
+        if (needsClip) {
+            canvas.restore();
+        }
     }
 
     private void drawSpoilerEffects(Canvas canvas) {
@@ -177,8 +199,9 @@ class FeedMessageTextView extends AnimatedEmojiSpan.TextViewEmojis {
 
             int firstLine = layout.getLineForOffset(start);
             int lastLine = layout.getLineForOffset(Math.max(start, end - 1));
-            float bgTop = pt + layout.getLineTop(firstLine) + q.topPad;
-            float bgBottom = pt + layout.getLineBottom(lastLine) - q.bottomPad;
+
+            float bgTop = pt + layout.getLineTop(firstLine) - q.topPad;
+            float bgBottom = pt + layout.getLineBottom(lastLine) + q.bottomPad;
             int cr = q.cornerRadius;
 
             float bgRight = (q.boxWidth > 0 && q.boxWidth <= layoutW)
@@ -327,7 +350,7 @@ class FeedMessageTextView extends AnimatedEmojiSpan.TextViewEmojis {
                 case MotionEvent.ACTION_MOVE:
                     return handleActionMove(event);
                 case MotionEvent.ACTION_UP:
-                    return handleActionUp(event, spanned);
+                    return handleActionUp(event);
                 case MotionEvent.ACTION_CANCEL:
                     cancelSpanTouch();
                     return super.onTouchEvent(event);
@@ -347,8 +370,9 @@ class FeedMessageTextView extends AnimatedEmojiSpan.TextViewEmojis {
             return true;
         }
 
-        if (findCopyBlock(event.getX(), event.getY()) != null) {
-            touchedCopyBlock = findCopyBlock(event.getX(), event.getY());
+        FeedCodeSpan.Block copyBlock = findCopyBlock(event.getX(), event.getY());
+        if (copyBlock != null) {
+            touchedCopyBlock = copyBlock;
             return true;
         }
 
@@ -362,13 +386,22 @@ class FeedMessageTextView extends AnimatedEmojiSpan.TextViewEmojis {
             }
 
             ClickableSpan[] spans = spanned.getSpans(off, off, ClickableSpan.class);
-            if (spans.length > 0) {
-                touchedSpan = spans[0];
-                highlightClickableSpan(touchedSpan, spanned, event);
-                cell.setDimmed(true);
-                scheduleSpanLongPress();
-                return true;
+            for (ClickableSpan span : spans) {
+                if (!(span instanceof FeedQuoteSpan.Clickable)) {
+                    touchedSpan = span;
+                    highlightClickableSpan(touchedSpan, spanned, event);
+                    cell.setDimmed(true);
+                    scheduleSpanLongPress();
+                    return true;
+                }
             }
+        }
+
+        FeedQuoteSpan.Clickable quoteClickable =
+                findQuoteClickable(event.getX(), event.getY(), spanned);
+        if (quoteClickable != null) {
+            touchedSpan = quoteClickable;
+            return true;
         }
 
         touchedSpan = null;
@@ -391,7 +424,7 @@ class FeedMessageTextView extends AnimatedEmojiSpan.TextViewEmojis {
         return super.onTouchEvent(event);
     }
 
-    private boolean handleActionUp(MotionEvent event, Spanned spanned) {
+    private boolean handleActionUp(MotionEvent event) {
         if (spanLongPressRunnable != null) {
             AndroidUtilities.cancelRunOnUIThread(spanLongPressRunnable);
             spanLongPressRunnable = null;
@@ -577,5 +610,39 @@ class FeedMessageTextView extends AnimatedEmojiSpan.TextViewEmojis {
                 .getSystemService(Context.CLIPBOARD_SERVICE);
         if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("code", block.codeText));
         Toast.makeText(getContext(), "Copied", Toast.LENGTH_SHORT).show();
+    }
+
+    private FeedQuoteSpan.Clickable findQuoteClickable(float viewX, float viewY,
+                                                       Spanned spanned) {
+        Layout layout = getLayout();
+        if (layout == null) return null;
+
+        int pt = getExtendedPaddingTop();
+
+        FeedQuoteSpan[] quotes = spanned.getSpans(0, spanned.length(), FeedQuoteSpan.class);
+        if (quotes == null) return null;
+
+        for (FeedQuoteSpan q : quotes) {
+            if (!q.collapsible) continue;
+
+            int start = spanned.getSpanStart(q);
+            int end = spanned.getSpanEnd(q);
+            if (start < 0 || end <= start) continue;
+
+            int firstLine = layout.getLineForOffset(start);
+            int lastLine = layout.getLineForOffset(Math.max(start, end - 1));
+
+            float quoteTop = pt + layout.getLineTop(firstLine) - q.topPad;
+            float quoteBottom = pt + layout.getLineBottom(lastLine) + q.bottomPad;
+
+            if (viewY >= quoteTop && viewY <= quoteBottom) {
+                FeedQuoteSpan.Clickable[] clickables = spanned.getSpans(
+                        start, end, FeedQuoteSpan.Clickable.class);
+                if (clickables != null && clickables.length > 0) {
+                    return clickables[0];
+                }
+            }
+        }
+        return null;
     }
 }

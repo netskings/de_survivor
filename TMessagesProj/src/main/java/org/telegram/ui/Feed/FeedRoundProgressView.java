@@ -110,10 +110,6 @@ class FeedRoundProgressView extends View {
         return computeCurrentProgress();
     }
 
-    int estimatePositionMs() {
-        return (int) (computeCurrentProgress() * durationMs);
-    }
-
     @Override
     protected void onDraw(@NonNull Canvas canvas) {
         if (running && !seeking && durationMs > 0) {

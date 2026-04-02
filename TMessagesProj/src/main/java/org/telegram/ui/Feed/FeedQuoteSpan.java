@@ -16,9 +16,8 @@ import androidx.annotation.NonNull;
 
 public class FeedQuoteSpan implements LineBackgroundSpan, LeadingMarginSpan {
 
-
-    final Paint bgPaint      = new Paint(Paint.ANTI_ALIAS_FLAG);
-    final Paint stripePaint  = new Paint(Paint.ANTI_ALIAS_FLAG);
+    final Paint bgPaint     = new Paint(Paint.ANTI_ALIAS_FLAG);
+    final Paint stripePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final RectF tmpRect = new RectF();
     private final android.graphics.Path tmpPath = new android.graphics.Path();
 
@@ -32,8 +31,8 @@ public class FeedQuoteSpan implements LineBackgroundSpan, LeadingMarginSpan {
     boolean expanded    = false;
     float boxWidth      = -1;
 
-    int topPad    = 0;
-    int bottomPad = 0;
+    int topPad    = dp(6);
+    int bottomPad = dp(6);
 
     FeedQuoteSpan(int stripeColor, int bgColor) {
         stripePaint.setColor(stripeColor);
@@ -43,11 +42,6 @@ public class FeedQuoteSpan implements LineBackgroundSpan, LeadingMarginSpan {
     void setCollapsible(boolean collapsible, boolean expanded) {
         this.collapsible = collapsible;
         this.expanded = expanded;
-    }
-
-    void setPadding(int top, int bottom) {
-        this.topPad = top;
-        this.bottomPad = bottom;
     }
 
     @Override
@@ -75,8 +69,8 @@ public class FeedQuoteSpan implements LineBackgroundSpan, LeadingMarginSpan {
         boolean isFirst = (start <= spanStart);
         boolean isLast  = (end >= spanEnd);
 
-        float t = isFirst ? top + topPad : top;
-        float b = isLast  ? bottom - bottomPad : bottom;
+        float t = isFirst ? top - topPad : top;
+        float b = isLast  ? bottom + bottomPad : bottom;
 
         float effectiveRight;
         boolean roundRight;
@@ -119,39 +113,6 @@ public class FeedQuoteSpan implements LineBackgroundSpan, LeadingMarginSpan {
                 tl, tl, tr, tr, br, br, bl, bl
         }, android.graphics.Path.Direction.CW);
         canvas.drawPath(tmpPath, paint);
-    }
-
-    public static class LineHeight implements android.text.style.LineHeightSpan {
-        final int topPad;
-        final int bottomPad;
-
-        public LineHeight(int topPad, int bottomPad) {
-            this.topPad = topPad;
-            this.bottomPad = bottomPad;
-        }
-
-        @Override
-        public void chooseHeight(CharSequence text, int start, int end,
-                                 int spanstartv, int lineHeight,
-                                 Paint.FontMetricsInt fm) {
-            Spanned sp = (Spanned) text;
-            int spanStart = sp.getSpanStart(this);
-            int spanEnd = sp.getSpanEnd(this);
-
-            if (start <= spanStart) {
-                fm.ascent -= topPad;
-                fm.top    -= topPad;
-            }
-            if (end >= spanEnd) {
-                fm.descent += bottomPad;
-                fm.bottom  += bottomPad;
-            }
-            if (end < spanEnd) {
-                int compensation = dp(2);
-                fm.descent -= compensation;
-                fm.bottom  -= compensation;
-            }
-        }
     }
 
     public static abstract class Clickable extends ClickableSpan {

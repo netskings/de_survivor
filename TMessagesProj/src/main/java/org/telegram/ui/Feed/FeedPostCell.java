@@ -41,6 +41,8 @@ import org.telegram.ui.Components.BackupImageView;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.LinkSpanDrawable;
 
+import java.util.HashMap;
+
 @SuppressLint("ViewConstructor")
 public class FeedPostCell extends LinearLayout {
 
@@ -304,8 +306,9 @@ public class FeedPostCell extends LinearLayout {
         messageTextView.setTextColor(
                 Theme.getColor(Theme.key_windowBackgroundWhiteBlackText, resourceProvider));
         messageTextView.setLinkTextColor(accentColor);
-        messageTextView.setLineSpacing(dp(2), 1f);
-        messageTextView.setTextIsSelectable(true);
+        messageTextView.setLineSpacing(dp(2), 1f);   // ★ множитель вместо абсолютного dp
+        messageTextView.setIncludeFontPadding(false); // ★ убирает лишний padding сверху/снизу
+        messageTextView.setTextIsSelectable(false);   // ★ конфликтует с AnimatedEmojiSpan
         messageTextView.setCursorVisible(false);
         messageTextView.setVisibility(GONE);
         addView(messageTextView,
@@ -665,6 +668,12 @@ public class FeedPostCell extends LinearLayout {
 
     public void setPost(FeedController.FeedItem item) {
         cancelPendingTruncate();
+        for (int i = 0; i < getChildCount(); i++) {
+            View child = getChildAt(i);
+            child.animate().cancel();
+            child.setTranslationY(0);
+            child.setAlpha(1f);
+        }
         currentItem = item;
         fullText = null;
         collapsedEndOffset = -1;
@@ -884,10 +893,103 @@ public class FeedPostCell extends LinearLayout {
     }
 
     void rebuildMessageText() {
+        rebuildMessageText(true);
+    }
+
+    void rebuildMessageText(boolean animate) {
         if (currentItem == null) return;
         currentItem.expandedQuoteOffsets.clear();
         currentItem.expandedQuoteOffsets.addAll(expandedQuoteOffsets);
 
+        CharSequence text = textFormatter.format(currentItem,
+                messageTextView.getPaint().getFontMetricsInt());
+        if (text == null || text.length() == 0) {
+            applyNewMessageText();
+            return;
+        }
+
+        boolean canAnimate = animate
+                && messageTextView.getVisibility() == VISIBLE
+                && messageTextView.getWidth() > 0
+                && messageTextView.getLayout() != null;
+
+        if (!canAnimate) {
+            applyNewMessageText();
+            return;
+        }
+
+        final HashMap<View, Integer> oldPositions = new HashMap<>();
+        for (int i = 0; i < getChildCount(); i++) {
+            View child = getChildAt(i);
+            if (child.getVisibility() != GONE) {
+                oldPositions.put(child, child.getTop());
+            }
+        }
+
+        fullText = text;
+        int rightPad = computeTextRightPad(text);
+        messageTextView.setPadding(0, 0, rightPad, 0);
+        messageTextView.setMaxLines(Integer.MAX_VALUE);
+        messageTextView.setText(fullText);
+        messageTextView.setVisibility(VISIBLE);
+
+        cancelPendingTruncate();
+
+        pendingTruncateListener = new ViewTreeObserver.OnPreDrawListener() {
+            boolean truncationApplied = false;
+            int safety = 0;
+
+            @Override
+            public boolean onPreDraw() {
+                safety++;
+                if (safety > 5) {
+                    cleanup();
+                    return true;
+                }
+
+                android.text.Layout layout = messageTextView.getLayout();
+                if (layout == null || messageTextView.getWidth() <= 0) return true;
+
+                if (!truncationApplied) {
+                    truncationApplied = true;
+                    updateQuoteWidths();
+
+                    if (layout.getLineCount() > MAX_LINES_COLLAPSED) {
+                        collapsedEndOffset = layout.getLineEnd(MAX_LINES_COLLAPSED - 1);
+                        if (!textExpanded) {
+                            setCollapsedText();
+                            readMoreView.setVisibility(VISIBLE);
+                            readMoreView.setText(
+                                    LocaleController.getString("FeedReadMore", R.string.FeedReadMore));
+                            return false;
+                        } else {
+                            readMoreView.setVisibility(VISIBLE);
+                            readMoreView.setText(
+                                    LocaleController.getString("FeedShowLess", R.string.FeedShowLess));
+                        }
+                    } else {
+                        collapsedEndOffset = -1;
+                        readMoreView.setVisibility(GONE);
+                    }
+                }
+
+                cleanup();
+                scheduleQuoteWidthUpdate();
+                runQuoteAnimation(oldPositions);
+                return true;
+            }
+
+            private void cleanup() {
+                try {
+                    messageTextView.getViewTreeObserver().removeOnPreDrawListener(this);
+                } catch (Exception ignored) {}
+                pendingTruncateListener = null;
+            }
+        };
+        messageTextView.getViewTreeObserver().addOnPreDrawListener(pendingTruncateListener);
+    }
+
+    private void applyNewMessageText() {
         CharSequence text = textFormatter.format(currentItem,
                 messageTextView.getPaint().getFontMetricsInt());
         if (text == null || text.length() == 0) return;
@@ -902,7 +1004,6 @@ public class FeedPostCell extends LinearLayout {
         collapsedEndOffset = -1;
         readMoreView.setVisibility(GONE);
         scheduleMeasureAndTruncate();
-        requestLayout();
     }
 
     void updateQuoteWidths() {
@@ -1022,10 +1123,6 @@ public class FeedPostCell extends LinearLayout {
 
         switch (action) {
             case MotionEvent.ACTION_DOWN:
-                if (hasTextSelection() && !isTouchOnMessageText(ev)) {
-                    clearTextSelection();
-                    return true;
-                }
                 longPressTriggered = false;
                 longPressStarted = false;
                 longPressDownX = ev.getX();
@@ -1078,16 +1175,6 @@ public class FeedPostCell extends LinearLayout {
                 && ev.getX() <= messageTextView.getRight()
                 && ev.getY() >= messageTextView.getTop()
                 && ev.getY() <= messageTextView.getBottom();
-    }
-
-    public boolean hasTextSelection() {
-        return messageTextView != null
-                && messageTextView.getVisibility() == VISIBLE
-                && messageTextView.hasSelection();
-    }
-
-    public void clearTextSelection() {
-        if (messageTextView != null) messageTextView.clearFocus();
     }
 
     private boolean isTouchOnInteractiveChild(MotionEvent ev) {
@@ -1156,5 +1243,35 @@ public class FeedPostCell extends LinearLayout {
         tv.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
         tv.setTextColor(color);
         return tv;
+    }
+
+    private void runQuoteAnimation(HashMap<View, Integer> oldPositions) {
+        int msgIndex = indexOfChild(messageTextView);
+
+        for (int i = 0; i < getChildCount(); i++) {
+            View child = getChildAt(i);
+            if (child.getVisibility() == GONE) continue;
+            if (i <= msgIndex) continue;
+
+            Integer oldTop = oldPositions.get(child);
+            if (oldTop == null) {
+                child.setAlpha(0f);
+                child.animate()
+                        .alpha(1f)
+                        .setDuration(200)
+                        .start();
+                continue;
+            }
+
+            int delta = child.getTop() - oldTop;
+            if (delta != 0) {
+                child.setTranslationY(-delta);
+                child.animate()
+                        .translationY(0)
+                        .setDuration(250)
+                        .setInterpolator(new android.view.animation.DecelerateInterpolator(1.5f))
+                        .start();
+            }
+        }
     }
 }

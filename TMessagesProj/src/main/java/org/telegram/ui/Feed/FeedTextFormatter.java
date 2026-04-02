@@ -221,8 +221,6 @@ public class FeedTextFormatter {
                                     TLRPC.MessageEntity entity,
                                     int start, int end,
                                     int accentColor, int quoteBgColor) {
-        int quotePadTop    = dp(6);
-        int quotePadBottom = dp(6);
 
         boolean isCollapsible = false;
         try { isCollapsible = entity.collapsed; }
@@ -282,11 +280,8 @@ public class FeedTextFormatter {
         FeedQuoteSpan blockSpan =
                 new FeedQuoteSpan(accentColor, quoteBgColor);
         if (isCollapsible) blockSpan.setCollapsible(true, isExpanded);
-        blockSpan.setPadding(quotePadTop, quotePadBottom);
         ssb.setSpan(blockSpan, start, end,
                 Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
-        ssb.setSpan(new FeedQuoteSpan.LineHeight(quotePadTop, quotePadBottom),
-                start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
     }
 
     private void processCodeBlockEntity(SpannableStringBuilder ssb,
