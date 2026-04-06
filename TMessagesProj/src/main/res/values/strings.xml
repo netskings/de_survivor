@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="AppName">Telegram</string>
-    <string name="AppNameBeta">Telegram Beta</string>
+    <string name="AppName">de_survivor</string>
+    <string name="AppNameBeta">de_survivor</string>
     <string name="LanguageName">English</string>
     <string name="English">English</string>
     <string name="LanguageNameInEnglish">English</string>
@@ -10340,8 +10340,15 @@
     <string name="MainTabsChats">Chats</string>
     <string name="MainTabsProfile">Profile</string>
     <string name="MainTabsSettings">Settings</string>
+    <string name="MainTabsFeed">Feed</string>
     <string name="SwitchThemeToDay">Day Mode</string>
     <string name="SwitchThemeToNight">Night Mode</string>
+
+    <string name="FeedTitle">Feed</string>
+    <string name="FeedEmpty">No posts yet. Subscribe to channels to see their posts here.</string>
+    <string name="FeedReadMore">Read more</string>
+    <string name="FeedShowLess">Show less</string>
+    <string name="FeedSavedToBookmarks">Saved to bookmarks</string>
 
     <string name="SettingsAccount">Account</string>
     <string name="SettingsAccounts">Accounts</string>
