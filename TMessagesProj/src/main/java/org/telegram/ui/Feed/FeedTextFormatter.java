@@ -399,11 +399,11 @@ public class FeedTextFormatter {
                 && cap.length() > 0
                 && !isPlaceholderText(cap.toString().trim());
 
+        if (hasCap && (!hasMt || cap.length() >= mt.length())) {
+            return buildSpannableFromCaption(msg);
+        }
+
         if (hasMt) {
-            if (hasCap && cap.length() > mt.length()
-                    && isPlaceholderText(mt.toString().trim())) {
-                return buildSpannableFromCaption(msg);
-            }
             return mt;
         }
 
@@ -442,6 +442,9 @@ public class FeedTextFormatter {
             case "Voice message": case "Video message":
             case "Contact": case "Location":
             case "Live location": case "Poll": case "Quiz":
+            case "Album":
+            case "Photo album":
+            case "Video album":
                 return true;
         }
         try {
