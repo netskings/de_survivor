@@ -326,11 +326,21 @@ public class FeedTextFormatter {
 
     @Nullable
     private ExtractResult extractRawText(FeedController.FeedItem item) {
-       MessageObject primary = item.getPrimaryMessage();
+        MessageObject primary = item.getPrimaryMessage();
+        if (primary == null) return null;
+
         CharSequence text = null;
         MessageObject sourceMsg = null;
 
-        if (item.isAlbum()) {
+        boolean isGrouped = false;
+        for (MessageObject msg : item.messages) {
+            if (msg.messageOwner.grouped_id != 0) {
+                isGrouped = true;
+                break;
+            }
+        }
+
+        if (isGrouped) {
             for (MessageObject msg : item.messages) {
                 if (msg.caption != null && msg.caption.length() > 0) {
                     text = msg.caption;
@@ -353,6 +363,7 @@ public class FeedTextFormatter {
             TLRPC.Document primaryDoc = primary.messageOwner != null
                     && primary.messageOwner.media != null
                     ? primary.messageOwner.media.document : null;
+
             if (primaryDoc != null && FeedUtils.isSticker(primaryDoc)) {
             } else if (primary.caption != null && primary.caption.length() > 0) {
                 text = primary.caption;

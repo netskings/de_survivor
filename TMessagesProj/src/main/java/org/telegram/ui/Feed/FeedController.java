@@ -79,10 +79,6 @@ public class FeedController implements NotificationCenter.NotificationCenterDele
         boolean hasAnyRows;
     }
 
-    private interface LocalLoadCallback {
-        void onLoaded(List<FeedItem> items);
-    }
-
     @Override
     public void didReceivedNotification(int id, int account, Object... args) {
         if (id == NotificationCenter.didReceiveNewMessages) {
@@ -104,9 +100,14 @@ public class FeedController implements NotificationCenter.NotificationCenterDele
             List<MessageObject> validMessages = new ArrayList<>();
             for (MessageObject obj : messages) {
                 if (obj.isOut() || obj.messageOwner.action != null) continue;
-                boolean hasContent = (obj.messageText != null && obj.messageText.length() > 0)
+
+                boolean hasContent = (obj.messageOwner.message != null
+                        && !obj.messageOwner.message.isEmpty())
                         || obj.messageOwner.media != null;
-                if (!hasContent) continue;
+
+                boolean isAlbumPart = obj.messageOwner.grouped_id != 0;
+
+                if (!hasContent && !isAlbumPart) continue;
                 validMessages.add(obj);
             }
             if (validMessages.isEmpty()) return;
@@ -212,10 +213,41 @@ public class FeedController implements NotificationCenter.NotificationCenterDele
             this.sortDate = date;
         }
 
-        public MessageObject getPrimaryMessage() { return messages.get(0); }
+        public MessageObject getPrimaryMessage() {
+            if (messages == null || messages.isEmpty()) return null;
+
+            MessageObject best = messages.get(0);
+            for (int i = 1; i < messages.size(); i++) {
+                MessageObject msg = messages.get(i);
+                boolean bestHasText = best.messageOwner.message != null
+                        && !best.messageOwner.message.isEmpty();
+                boolean msgHasText = msg.messageOwner.message != null
+                        && !msg.messageOwner.message.isEmpty();
+
+                if (!bestHasText && msgHasText) {
+                    best = msg;
+                } else if (!bestHasText && !msgHasText) {
+                    if (msg.getId() > best.getId()) {
+                        best = msg;
+                    }
+                }
+            }
+            return best;
+        }
         public boolean isAlbum() { return messages.size() > 1; }
-        public int getMessageId() { return getPrimaryMessage().getId(); }
-        public String getUniqueId() { return channelId + "_" + getMessageId(); }
+        public int getMessageId() {
+            if (messages == null || messages.isEmpty()) return 0;
+            int minId = messages.get(0).getId();
+            for (int i = 1; i < messages.size(); i++) {
+                int id = messages.get(i).getId();
+                if (id < minId) minId = id;
+            }
+            return minId;
+        }
+
+        public String getUniqueId() {
+            return channelId + "_" + getMessageId();
+        }
     }
 
     private static final FeedController[] instances = new FeedController[UserConfig.MAX_ACCOUNT_COUNT];
@@ -462,15 +494,15 @@ public class FeedController implements NotificationCenter.NotificationCenterDele
         return channels;
     }
 
-    private List<FeedItem> groupIntoItems(List<MessageObject> messages,
-                                          long dialogId) {
-        LinkedHashMap<String, List<MessageObject>> groups =
-                new LinkedHashMap<>();
+    private List<FeedItem> groupIntoItems(List<MessageObject> messages, long dialogId) {
+        LinkedHashMap<String, List<MessageObject>> groups = new LinkedHashMap<>();
+
         for (MessageObject msg : messages) {
             long gid = msg.messageOwner.grouped_id;
             String key = gid != 0
                     ? "g_" + dialogId + "_" + gid
                     : "s_" + dialogId + "_" + msg.getId();
+
             List<MessageObject> group = groups.get(key);
             if (group == null) {
                 group = new ArrayList<>();
@@ -481,11 +513,11 @@ public class FeedController implements NotificationCenter.NotificationCenterDele
 
         List<FeedItem> items = new ArrayList<>();
         for (List<MessageObject> group : groups.values()) {
-            Collections.sort(group,
-                    (a, b) -> Integer.compare(a.getId(), b.getId()));
-            MessageObject primary = group.get(0);
-            FeedItem item = new FeedItem(
-                    dialogId, group, primary.messageOwner.date);
+            Collections.sort(group, Comparator.comparingInt(MessageObject::getId));
+
+            long date = group.get(0).messageOwner.date;
+
+            FeedItem item = new FeedItem(dialogId, group, date);
             item.isRead = false;
             item.isBookmarked = isBookmarked(item.getUniqueId());
             items.add(item);
@@ -711,8 +743,13 @@ public class FeedController implements NotificationCenter.NotificationCenterDele
         if (obj.isOut()) return false;
         if (obj.messageOwner.action != null) return false;
 
-        return (obj.messageText != null && obj.messageText.length() > 0)
+        boolean hasContent = (obj.messageOwner.message != null
+                && !obj.messageOwner.message.isEmpty())
                 || obj.messageOwner.media != null;
+
+        boolean isAlbumPart = obj.messageOwner.grouped_id != 0;
+
+        return hasContent || isAlbumPart;
     }
 
     private static int compareFeedItemsOrder(FeedItem a, FeedItem b) {

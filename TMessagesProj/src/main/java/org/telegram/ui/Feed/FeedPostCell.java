@@ -750,7 +750,15 @@ public class FeedPostCell extends LinearLayout {
         expandedQuoteOffsets.addAll(item.expandedQuoteOffsets);
 
         MessageObject primary = item.getPrimaryMessage();
+        if (primary == null) {
+            setVisibility(GONE);
+            return;
+        }
         TLRPC.Message raw = primary.messageOwner;
+        if (raw == null) {
+            setVisibility(GONE);
+            return;
+        }
         MessagesController controller = MessagesController.getInstance(currentAccount);
 
         bindHeader(item, raw, controller);

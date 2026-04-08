@@ -21,6 +21,8 @@ import org.telegram.ui.Components.BackupImageView;
 import org.telegram.ui.Components.LayoutHelper;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
 
@@ -109,6 +111,7 @@ public class FeedMediaHelper {
 
     private static List<MessageObject> collectVisualMedia(FeedController.FeedItem item) {
         List<MessageObject> result = new ArrayList<>();
+
         for (MessageObject msg : item.messages) {
             TLRPC.MessageMedia media = msg.messageOwner.media;
             if (media == null
@@ -129,6 +132,9 @@ public class FeedMediaHelper {
                 }
             }
         }
+
+        Collections.sort(result, Comparator.comparingInt(MessageObject::getId));
+
         return result;
     }
 
