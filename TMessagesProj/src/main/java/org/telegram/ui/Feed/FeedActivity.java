@@ -630,7 +630,15 @@ public class FeedActivity extends BaseFragment implements MainTabsActivity.TabFr
 
     @Override
     public void onParentScrollToTop() {
-        if (listView != null) listView.smoothScrollToPosition(0);
+        if (listView != null) {
+            int firstVisible = layoutManager.findFirstVisibleItemPosition();
+            if (firstVisible > 10) {
+                layoutManager.scrollToPositionWithOffset(5, 0);
+                listView.post(() -> listView.smoothScrollToPosition(0));
+            } else {
+                listView.smoothScrollToPosition(0);
+            }
+        }
         loadFeed(true);
     }
 
