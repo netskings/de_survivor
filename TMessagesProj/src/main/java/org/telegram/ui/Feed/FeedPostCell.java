@@ -1116,7 +1116,7 @@ public class FeedPostCell extends LinearLayout {
                 });
     }
 
-    private void bindEngagement(TLRPC.Message raw, FeedController.FeedItem item) {
+    void bindEngagement(TLRPC.Message raw, FeedController.FeedItem item) {
         if (raw.views > 0) {
             viewsCountView.setText(LocaleController.formatShortNumber(raw.views, null));
             viewsIcon.setVisibility(VISIBLE);

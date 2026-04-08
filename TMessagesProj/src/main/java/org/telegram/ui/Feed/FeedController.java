@@ -466,6 +466,10 @@ public class FeedController implements NotificationCenter.NotificationCenterDele
                     scheduleSnapshotSave();
                     callback.onLoaded(new ArrayList<>(cachedFeed), hasMore);
 
+                    new FeedStatsRefresher(currentAccount).refreshReactions(page, () ->
+                            AndroidUtilities.runOnUIThread(this::notifyNewPostListeners)
+                    );
+
                     recommendationEngine.refreshPosts(() ->
                             AndroidUtilities.runOnUIThread(() -> {
                                 rebuildDisplayList();
@@ -585,9 +589,9 @@ public class FeedController implements NotificationCenter.NotificationCenterDele
                     isLoading = false;
                     noMorePosts = !hasMore;
 
-                    if (addedDisplayItems > 0) {
-                        scheduleSnapshotSave();
-                    }
+                    new FeedStatsRefresher(currentAccount).refreshReactions(page, () ->
+                            AndroidUtilities.runOnUIThread(this::notifyNewPostListeners)
+                    );
 
                     callback.onAppended(addedDisplayItems, hasMore);
                 }
