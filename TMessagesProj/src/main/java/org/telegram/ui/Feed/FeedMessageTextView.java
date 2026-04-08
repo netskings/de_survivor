@@ -22,6 +22,7 @@ import androidx.annotation.NonNull;
 import androidx.core.graphics.ColorUtils;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.browser.Browser;
 import org.telegram.ui.Components.AnimatedEmojiSpan;
 import org.telegram.ui.Components.LinkPath;
 import org.telegram.ui.Components.LinkSpanDrawable;
@@ -475,11 +476,27 @@ class FeedMessageTextView extends AnimatedEmojiSpan.TextViewEmojis {
                 return true;
             }
             if (span instanceof URLSpan) {
+                String url = ((URLSpan) span).getURL();
                 if (cell.callback != null) {
-                    cell.callback.onLinkClick(((URLSpan) span).getURL());
-                    return true;
+                    cell.callback.onLinkClick(url);
+                } else {
+                    Browser.openUrl(getContext(), url);
                 }
+                return true;
             }
+
+            if (span instanceof FeedQuoteSpan.Clickable) {
+                span.onClick(this);
+                return true;
+            }
+
+            if (span instanceof FeedDateSpan) {
+                if (cell.callback != null) {
+                    cell.callback.onDateEntityClick(((FeedDateSpan) span).entity, cell);
+                }
+                return true;
+            }
+
             span.onClick(this);
             return true;
         }

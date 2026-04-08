@@ -40,6 +40,16 @@ public class FeedTextFormatter {
         this.expandedQuoteOffsets = expandedOffsets;
     }
 
+    public static class FeedURLSpan extends android.text.style.URLSpan {
+        public FeedURLSpan(String url) {
+            super(url);
+        }
+
+        @Override
+        public void onClick(@NonNull View widget) {
+        }
+    }
+
     public void setRebuildCallback(@Nullable RebuildCallback callback) {
         this.rebuildCallback = callback;
     }
@@ -52,7 +62,12 @@ public class FeedTextFormatter {
         ExtractResult result = extractRawText(item);
         if (result == null) return null;
 
-        SpannableStringBuilder ssb = new SpannableStringBuilder(result.text);
+        SpannableStringBuilder ssb;
+        if (result.text instanceof SpannableStringBuilder) {
+            ssb = new SpannableStringBuilder(result.text);
+        } else {
+            ssb = new SpannableStringBuilder(result.text);
+        }
 
         List<int[]> dateReplacements = applyFormattedDateSpans(ssb, result.sourceMsg);
 
@@ -329,9 +344,6 @@ public class FeedTextFormatter {
         MessageObject primary = item.getPrimaryMessage();
         if (primary == null) return null;
 
-        CharSequence text = null;
-        MessageObject sourceMsg = null;
-
         boolean isGrouped = false;
         for (MessageObject msg : item.messages) {
             if (msg.messageOwner.grouped_id != 0) {
@@ -342,45 +354,64 @@ public class FeedTextFormatter {
 
         if (isGrouped) {
             for (MessageObject msg : item.messages) {
-                if (msg.caption != null && msg.caption.length() > 0) {
-                    text = msg.caption;
-                    sourceMsg = msg;
-                    break;
+                CharSequence text = pickBestText(msg);
+                if (text != null && text.length() > 0
+                        && !isPlaceholderText(text.toString().trim())) {
+                    return new ExtractResult(text, msg);
                 }
             }
-            if (text == null || text.length() == 0) {
-                for (MessageObject msg : item.messages) {
-                    CharSequence mt = msg.messageText;
-                    if (mt != null && mt.length() > 0
-                            && !isPlaceholderText(mt.toString().trim())) {
-                        text = mt;
-                        sourceMsg = msg;
-                        break;
-                    }
+            for (MessageObject msg : item.messages) {
+                CharSequence mt = msg.messageText;
+                if (mt != null && mt.length() > 0
+                        && !isPlaceholderText(mt.toString().trim())) {
+                    return new ExtractResult(mt, msg);
                 }
             }
+            return null;
         } else {
             TLRPC.Document primaryDoc = primary.messageOwner != null
                     && primary.messageOwner.media != null
                     ? primary.messageOwner.media.document : null;
-
             if (primaryDoc != null && FeedUtils.isSticker(primaryDoc)) {
-            } else if (primary.caption != null && primary.caption.length() > 0) {
-                text = primary.caption;
-                sourceMsg = primary;
-            } else {
-                CharSequence mt = primary.messageText;
-                if (mt != null && mt.length() > 0
-                        && !isPlaceholderText(mt.toString().trim())) {
-                    text = mt;
-                    sourceMsg = primary;
-                }
+                return null;
             }
+
+            CharSequence text = pickBestText(primary);
+            if (text == null || text.length() == 0
+                    || isPlaceholderText(text.toString().trim())) {
+                return null;
+            }
+            return new ExtractResult(text, primary);
+        }
+    }
+
+    @Nullable
+    private CharSequence pickBestText(MessageObject msg) {
+        if (msg == null || msg.messageOwner == null) return null;
+
+        CharSequence mt = msg.messageText;
+        boolean hasMt = mt != null
+                && mt.length() > 0
+                && !isPlaceholderText(mt.toString().trim());
+
+        CharSequence cap = msg.caption;
+        boolean hasCap = cap != null
+                && cap.length() > 0
+                && !isPlaceholderText(cap.toString().trim());
+
+        if (hasMt) {
+            if (hasCap && cap.length() > mt.length()
+                    && isPlaceholderText(mt.toString().trim())) {
+                return buildSpannableFromCaption(msg);
+            }
+            return mt;
         }
 
-        if (text == null || text.length() == 0) return null;
-        if (isPlaceholderText(text.toString().trim())) return null;
-        return new ExtractResult(text, sourceMsg);
+        if (hasCap) {
+            return buildSpannableFromCaption(msg);
+        }
+
+        return null;
     }
 
     private int findQuoteCutoff(CharSequence text, int maxLines,
@@ -429,5 +460,123 @@ public class FeedTextFormatter {
                 return true;
         } catch (Exception e) { /* ignore */ }
         return false;
+    }
+
+    private CharSequence buildSpannableFromCaption(MessageObject msg) {
+        if (msg == null || msg.messageOwner == null) return null;
+
+        CharSequence cap = msg.caption;
+        if (cap == null || cap.length() == 0) return null;
+
+        if (cap instanceof android.text.Spannable) {
+            android.text.Spannable sp = (android.text.Spannable) cap;
+            Object[] spans = sp.getSpans(0, sp.length(), Object.class);
+            if (spans != null && spans.length > 0) {
+                return cap;
+            }
+        }
+
+        if (msg.messageOwner.entities == null || msg.messageOwner.entities.isEmpty()) {
+            return cap;
+        }
+
+        SpannableStringBuilder ssb = new SpannableStringBuilder(cap);
+        int accentColor = Theme.getColor(
+                Theme.key_windowBackgroundWhiteBlueText2, resourceProvider);
+
+        for (TLRPC.MessageEntity entity : msg.messageOwner.entities) {
+            int start = entity.offset;
+            int end = entity.offset + entity.length;
+
+            if (start < 0 || start >= ssb.length()) continue;
+            end = Math.min(end, ssb.length());
+            if (start >= end) continue;
+
+            try {
+                applyEntitySpan(ssb, entity, start, end);
+            } catch (Exception ignored) {}
+        }
+
+        return ssb;
+    }
+
+    private void applyEntitySpan(SpannableStringBuilder ssb,
+                                 TLRPC.MessageEntity entity,
+                                 int start, int end) {
+        if (entity instanceof TLRPC.TL_messageEntityBold) {
+            ssb.setSpan(
+                    new android.text.style.StyleSpan(android.graphics.Typeface.BOLD),
+                    start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+        } else if (entity instanceof TLRPC.TL_messageEntityItalic) {
+            ssb.setSpan(
+                    new android.text.style.StyleSpan(android.graphics.Typeface.ITALIC),
+                    start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+        } else if (entity instanceof TLRPC.TL_messageEntityUnderline) {
+            ssb.setSpan(
+                    new android.text.style.UnderlineSpan(),
+                    start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+        } else if (entity instanceof TLRPC.TL_messageEntityStrike) {
+            ssb.setSpan(
+                    new android.text.style.StrikethroughSpan(),
+                    start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+        } else if (entity instanceof TLRPC.TL_messageEntityUrl) {
+            String url = ssb.subSequence(start, end).toString();
+            if (!url.contains("://")) {
+                url = "https://" + url;
+            }
+            ssb.setSpan(new FeedURLSpan(url),
+                    start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+        } else if (entity instanceof TLRPC.TL_messageEntityTextUrl) {
+            String url = entity.url;
+            if (url != null && !url.isEmpty()) {
+                ssb.setSpan(new FeedURLSpan(url),
+                        start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+
+        } else if (entity instanceof TLRPC.TL_messageEntityMention) {
+            String username = ssb.subSequence(start, end).toString();
+            ssb.setSpan(new FeedURLSpan("tg://resolve?domain=" + username.replace("@", "")),
+                    start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+        } else if (entity instanceof TLRPC.TL_messageEntityMentionName) {
+            long userId = ((TLRPC.TL_messageEntityMentionName) entity).user_id;
+            ssb.setSpan(new FeedURLSpan("tg://user?id=" + userId),
+                    start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+        } else if (entity instanceof TLRPC.TL_messageEntityHashtag) {
+            String tag = ssb.subSequence(start, end).toString();
+            ssb.setSpan(new FeedURLSpan("tg://search?query=" + tag),
+                    start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+        } else if (entity instanceof TLRPC.TL_messageEntityCashtag) {
+            String tag = ssb.subSequence(start, end).toString();
+            ssb.setSpan(new FeedURLSpan("tg://search?query=" + tag),
+                    start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+        } else if (entity instanceof TLRPC.TL_messageEntityBotCommand) {
+            String cmd = ssb.subSequence(start, end).toString();
+            ssb.setSpan(new FeedURLSpan("tg://bot_command?command=" + cmd),
+                    start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+        } else if (entity instanceof TLRPC.TL_messageEntityEmail) {
+            String email = ssb.subSequence(start, end).toString();
+            ssb.setSpan(new FeedURLSpan("mailto:" + email),
+                    start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+        } else if (entity instanceof TLRPC.TL_messageEntityPhone) {
+            String phone = ssb.subSequence(start, end).toString();
+            ssb.setSpan(new FeedURLSpan("tel:" + phone),
+                    start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        } else if (entity instanceof TLRPC.TL_messageEntitySpoiler) {
+            ssb.setSpan(
+                    new org.telegram.ui.Components.TextStyleSpan(
+                            new org.telegram.ui.Components.TextStyleSpan.TextStyleRun()),
+                    start, end, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
     }
 }
