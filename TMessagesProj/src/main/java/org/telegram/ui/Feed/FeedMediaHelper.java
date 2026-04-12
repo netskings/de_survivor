@@ -314,16 +314,28 @@ public class FeedMediaHelper {
 
             if (isGif) {
                 String gifFilter = makeFilter(displayWidth, height);
+
+                int docSize = 0;
+                if (doc.size > 0 && doc.size <= Integer.MAX_VALUE) {
+                    docSize = (int) doc.size;
+                }
+
                 iv.setImage(
                         ImageLocation.getForDocument(doc), gifFilter,
                         docThumbLoc, docThumbFilter,
-                        (int) doc.size, msg);
+                        docSize, msg);
                 iv.getImageReceiver().setAutoRepeat(1);
                 iv.getImageReceiver().setAllowStartAnimation(true);
+                iv.getImageReceiver().setDelegate((imageReceiver, set, thumb, memCache) -> {
+                    if (set && !thumb) {
+                        iv.getImageReceiver().setAllowStartAnimation(true);
+                        iv.getImageReceiver().startAnimation();
+                        iv.invalidate();
+                    }
+                });
 
                 overlay.setText("GIF");
                 overlay.setVisibility(View.VISIBLE);
-
             } else {
                 TLRPC.PhotoSize thumb = bestSize(doc.thumbs);
                 if (thumb != null) {
