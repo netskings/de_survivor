@@ -462,21 +462,17 @@ public class FeedTextFormatter {
         if (msg == null || msg.messageOwner == null) return null;
 
         CharSequence mt = msg.messageText;
-        boolean hasMt = mt != null
-                && mt.length() > 0
-                && !isPlaceholderText(mt.toString().trim());
+        boolean hasMt = mt != null && mt.length() > 0 && !isPlaceholderText(mt.toString().trim());
 
         CharSequence cap = msg.caption;
-        boolean hasCap = cap != null
-                && cap.length() > 0
-                && !isPlaceholderText(cap.toString().trim());
+        boolean hasCap = cap != null && cap.length() > 0 && !isPlaceholderText(cap.toString().trim());
 
         if (hasCap && (!hasMt || cap.length() >= mt.length())) {
             return buildSpannableFromCaption(msg);
         }
 
         if (hasMt) {
-            return mt;
+            return buildSpannableFromMessageText(msg);
         }
 
         if (hasCap) {
@@ -484,6 +480,40 @@ public class FeedTextFormatter {
         }
 
         return null;
+    }
+
+    private CharSequence buildSpannableFromMessageText(MessageObject msg) {
+        if (msg == null || msg.messageOwner == null) return null;
+
+        CharSequence mt = msg.messageText;
+        if (mt == null || mt.length() == 0) return null;
+
+        if (mt instanceof android.text.Spannable) {
+            android.text.Spannable sp = (android.text.Spannable) mt;
+            Object[] spans = sp.getSpans(0, sp.length(), Object.class);
+            if (spans != null && spans.length > 0) {
+                return mt;
+            }
+        }
+
+        if (msg.messageOwner.entities == null || msg.messageOwner.entities.isEmpty()) {
+            return mt;
+        }
+
+        SpannableStringBuilder ssb = new SpannableStringBuilder(mt);
+
+        for (TLRPC.MessageEntity entity : msg.messageOwner.entities) {
+            int start = entity.offset;
+            int end = entity.offset + entity.length;
+            if (start < 0 || start >= ssb.length()) continue;
+            end = Math.min(end, ssb.length());
+            if (start >= end) continue;
+            try {
+                applyEntitySpan(ssb, entity, start, end);
+            } catch (Exception ignored) {}
+        }
+
+        return ssb;
     }
 
     private int findQuoteCutoff(CharSequence text, int maxLines,

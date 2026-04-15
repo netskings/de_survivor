@@ -3,11 +3,24 @@ package org.telegram.ui.Custom;
 import android.content.SharedPreferences;
 
 import org.telegram.messenger.ApplicationLoader;
+import org.telegram.ui.Feed.FeedAlbumMode;
 
 public class CustomSettings {
 
     private static final String PREFS_NAME = "custom_app_settings";
 
+    public static FeedAlbumMode feedAlbumMode() {
+        String val = getPrefs().getString("feed_album_mode", FeedAlbumMode.CAROUSEL.name());
+        try {
+            return FeedAlbumMode.valueOf(val);
+        } catch (Exception e) {
+            return FeedAlbumMode.CAROUSEL;
+        }
+    }
+
+    public static void setFeedAlbumMode(FeedAlbumMode mode) {
+        getPrefs().edit().putString("feed_album_mode", mode.name()).apply();
+    }
     private static SharedPreferences getPrefs() {
         return ApplicationLoader.applicationContext
                 .getSharedPreferences(PREFS_NAME, 0);

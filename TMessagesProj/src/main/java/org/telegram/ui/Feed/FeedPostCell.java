@@ -867,6 +867,16 @@ public class FeedPostCell extends LinearLayout {
             mediaSpoilerAnimator = null;
         }
 
+        for (int i = mediaContainer.getChildCount() - 1; i >= 0; i--) {
+            android.view.View child = mediaContainer.getChildAt(i);
+            if (child instanceof FeedAlbumCarouselView) {
+                ((FeedAlbumCarouselView) child).setMessages(null, dp(200));
+            } else if (child instanceof FeedAlbumGridView) {
+                mediaContainer.removeViewAt(i);
+            }
+        }
+        mediaImageView1.setVisibility(android.view.View.VISIBLE);
+
         mediaShimmer.start();
         final FeedController.FeedItem capturedItem = item;
 
@@ -964,14 +974,47 @@ public class FeedPostCell extends LinearLayout {
 
     private void scheduleMeasureAndTruncate() {
         cancelPendingTruncate();
-        pendingTruncateListener = () -> {
-            if (messageTextView.getWidth() <= 0) return true;
-            if (messageTextView.getLayout() == null) return true;
-            cancelPendingTruncate();
-            performMeasureAndTruncate();
-            return true;
+        messageTextView.requestLayout();
+
+        final CharSequence expectedText = fullText;
+        final int expectedLength = expectedText != null ? expectedText.length() : 0;
+
+        pendingTruncateListener = new ViewTreeObserver.OnPreDrawListener() {
+            private int attempts = 0;
+
+            @Override
+            public boolean onPreDraw() {
+                attempts++;
+                if (attempts > 20) {
+                    cancelPendingTruncate();
+                    return true;
+                }
+
+                if (messageTextView.getWidth() <= 0) return true;
+
+                android.text.Layout layout = messageTextView.getLayout();
+                if (layout == null) return true;
+
+                if (layout.getText() == null
+                        || layout.getText().length() != expectedLength) {
+                    return true;
+                }
+
+                int availableWidth = messageTextView.getWidth()
+                        - messageTextView.getTotalPaddingLeft()
+                        - messageTextView.getTotalPaddingRight();
+                if (availableWidth > 0 && layout.getWidth() != availableWidth) {
+                    return true;
+                }
+
+                cancelPendingTruncate();
+                performMeasureAndTruncate();
+                return true;
+            }
         };
-        messageTextView.getViewTreeObserver().addOnPreDrawListener(pendingTruncateListener);
+
+        messageTextView.getViewTreeObserver()
+                .addOnPreDrawListener(pendingTruncateListener);
     }
 
     void cancelPendingTruncate() {

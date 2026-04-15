@@ -13,12 +13,12 @@ import android.widget.TextView;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ImageLocation;
-import org.telegram.messenger.ImageReceiver;
 import org.telegram.messenger.MessageObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.BackupImageView;
 import org.telegram.ui.Components.LayoutHelper;
+import org.telegram.ui.Custom.CustomSettings;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -75,34 +75,32 @@ public class FeedMediaHelper {
 
         if (loadCallback != null) {
             mainImage.getImageReceiver().setDelegate(
-                    new ImageReceiver.ImageReceiverDelegate() {
-                        @Override
-                        public void didSetImage(ImageReceiver imageReceiver,
-                                                boolean set, boolean thumb,
-                                                boolean memCache) {
-                            if (!set && !thumb) {
-                                loadCallback.onMainImageLoaded(false);
-                            }
-                            if (set && !thumb) {
-                                loadCallback.onMainImageLoaded(memCache);
-                            }
-                        }
-
+                    (imageReceiver, set, thumb, memCache) -> {
+                        if (set && !thumb) loadCallback.onMainImageLoaded(memCache);
                     });
         }
 
-       int h = setupSingleMedia(mediaMessages.get(0), mainImage, mediaOverlay);
+        int h = setupSingleMedia(mediaMessages.get(0), mainImage, mediaOverlay);
         mediaContainer.setVisibility(View.VISIBLE);
         LinearLayout.LayoutParams lp =
                 (LinearLayout.LayoutParams) mediaContainer.getLayoutParams();
         lp.height = h;
         mediaContainer.setLayoutParams(lp);
-
         mainImage.post(mainImage::invalidate);
 
         if (mediaMessages.size() >= 2) {
-            setupAlbumRow(mediaMessages, context, item, mediaRow,
-                    albumLabel, listener, rp);
+            FeedAlbumMode mode = CustomSettings.feedAlbumMode();
+            if (mode == FeedAlbumMode.GRID) {
+                setupAlbumGrid(mediaMessages, context, item,
+                        mediaContainer, mainImage, mediaOverlay,
+                        listener);
+            } else {
+                setupAlbumCarousel(mediaMessages, context, item,
+                        mediaContainer, mainImage,
+                        listener, rp, h);
+            }
+            mediaRow.setVisibility(View.GONE);
+            albumLabel.setVisibility(View.GONE);
         } else {
             mediaRow.setVisibility(View.GONE);
             albumLabel.setVisibility(View.GONE);
@@ -496,5 +494,105 @@ public class FeedMediaHelper {
             }
         }
         return null;
+    }
+
+    private static void setupAlbumCarousel(
+            List<MessageObject> mediaMessages,
+            Context context,
+            FeedController.FeedItem item,
+            FrameLayout mediaContainer,
+            BackupImageView mainImage,
+            MediaClickListener listener,
+            Theme.ResourcesProvider rp,
+            int heightPx) {
+
+        for (int i = mediaContainer.getChildCount() - 1; i >= 0; i--) {
+            android.view.View child = mediaContainer.getChildAt(i);
+            if (child instanceof FeedAlbumGridView) {
+                mediaContainer.removeViewAt(i);
+            }
+        }
+
+        mainImage.setVisibility(android.view.View.GONE);
+        mainImage.getImageReceiver().clearImage();
+
+        FeedAlbumCarouselView carousel = null;
+        for (int i = 0; i < mediaContainer.getChildCount(); i++) {
+            android.view.View child = mediaContainer.getChildAt(i);
+            if (child instanceof FeedAlbumCarouselView) {
+                carousel = (FeedAlbumCarouselView) child;
+                break;
+            }
+        }
+
+        if (carousel == null) {
+            carousel = new FeedAlbumCarouselView(context, rp);
+            FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.MATCH_PARENT);
+            mediaContainer.addView(carousel, 0, lp);
+        }
+
+        android.widget.LinearLayout.LayoutParams containerLp =
+                (android.widget.LinearLayout.LayoutParams) mediaContainer.getLayoutParams();
+        containerLp.height = heightPx;
+        mediaContainer.setLayoutParams(containerLp);
+
+        carousel.setMessages(mediaMessages, heightPx);
+
+        carousel.setOnPageClickListener(index -> {
+            if (listener != null) listener.onMediaClick(item, index);
+        });
+    }
+
+    private static void setupAlbumGrid(
+            List<MessageObject> mediaMessages,
+            Context context,
+            FeedController.FeedItem item,
+            FrameLayout mediaContainer,
+            BackupImageView mainImage,
+            TextView mediaOverlay,
+            MediaClickListener listener) {
+
+        for (int i = mediaContainer.getChildCount() - 1; i >= 0; i--) {
+            View child = mediaContainer.getChildAt(i);
+            if (child instanceof FeedAlbumCarouselView) mediaContainer.removeViewAt(i);
+        }
+
+        mainImage.setVisibility(View.GONE);
+        mediaOverlay.setVisibility(View.GONE);
+
+        FeedAlbumGridView grid = null;
+        for (int i = 0; i < mediaContainer.getChildCount(); i++) {
+            View child = mediaContainer.getChildAt(i);
+            if (child instanceof FeedAlbumGridView) {
+                grid = (FeedAlbumGridView) child;
+                break;
+            }
+        }
+
+        if (grid == null) {
+            grid = new FeedAlbumGridView(context);
+            FrameLayout.LayoutParams glp = new FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    FrameLayout.LayoutParams.WRAP_CONTENT);
+            mediaContainer.addView(grid, 0, glp);
+        }
+
+        grid.setMessages(mediaMessages);
+        final FeedAlbumGridView finalGrid = grid;
+        grid.setOnItemClickListener(index -> {
+            if (listener != null) listener.onMediaClick(item, index);
+        });
+
+        grid.post(() -> {
+            int h = finalGrid.getMeasuredHeight();
+            if (h > 0) {
+                LinearLayout.LayoutParams lp =
+                        (LinearLayout.LayoutParams) mediaContainer.getLayoutParams();
+                lp.height = h;
+                mediaContainer.setLayoutParams(lp);
+            }
+        });
     }
 }

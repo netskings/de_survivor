@@ -11,6 +11,8 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.RadioGroup;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -57,7 +59,9 @@ public class FeedSettingsActivity extends BaseFragment {
     private int hiddenInfoRow;
     private int recommendationFrequencyRow;
     private int recommendationsDetailRow;
-
+    private int albumModeHeaderRow;
+    private int albumModeRow;
+    private int albumModeInfoRow;
     public FeedSettingsActivity() {
     }
 
@@ -76,23 +80,26 @@ public class FeedSettingsActivity extends BaseFragment {
 
     private void buildRows() {
         rowCount = 0;
-        recommendationsHeaderRow = rowCount++;
-        recommendationsToggleRow = rowCount++;
-        recommendationFrequencyRow = rowCount++;
-        recommendationsDetailRow = rowCount++;
-        recommendationsInfoRow = rowCount++;
+
+        albumModeHeaderRow = rowCount++;
+        albumModeRow       = rowCount++;
+        albumModeInfoRow   = rowCount++;
+
+        recommendationsHeaderRow    = rowCount++;
+        recommendationsToggleRow    = rowCount++;
+        recommendationFrequencyRow  = rowCount++;
+        recommendationsDetailRow    = rowCount++;
+        recommendationsInfoRow      = rowCount++;
 
         if (!hiddenChannelIds.isEmpty()) {
-            hiddenHeaderRow = rowCount++;
+            hiddenHeaderRow      = rowCount++;
             hiddenChannelsStartRow = rowCount;
             rowCount += hiddenChannelIds.size();
             hiddenChannelsEndRow = rowCount;
-            hiddenInfoRow = rowCount++;
+            hiddenInfoRow        = rowCount++;
         } else {
-            hiddenHeaderRow = -1;
-            hiddenChannelsStartRow = -1;
-            hiddenChannelsEndRow = -1;
-            hiddenInfoRow = -1;
+            hiddenHeaderRow = hiddenChannelsStartRow =
+                    hiddenChannelsEndRow = hiddenInfoRow = -1;
         }
     }
 
@@ -143,6 +150,8 @@ public class FeedSettingsActivity extends BaseFragment {
                 showFrequencyPicker();
             } else if (position == recommendationsDetailRow) {
                 presentFragment(new FeedRecommendationsDetailActivity());
+            } else if (position == albumModeRow) {
+                showAlbumModePicker();
             }
         });
         return listView;
@@ -200,6 +209,7 @@ public class FeedSettingsActivity extends BaseFragment {
             if (pos == recommendationFrequencyRow || pos == recommendationsDetailRow) return TYPE_TEXT_VALUE;
             if (pos == recommendationsInfoRow || pos == hiddenInfoRow) return TYPE_INFO;
             if (pos >= hiddenChannelsStartRow && pos < hiddenChannelsEndRow) return TYPE_CHANNEL;
+            if (pos == albumModeRow) return TYPE_TEXT_VALUE;
             return TYPE_HEADER;
         }
 
@@ -243,7 +253,9 @@ public class FeedSettingsActivity extends BaseFragment {
             switch (holder.getItemViewType()) {
                 case TYPE_HEADER: {
                     HeaderCell cell = (HeaderCell) holder.itemView;
-                    if (pos == recommendationsHeaderRow) {
+                    if (pos == albumModeHeaderRow) {
+                        cell.setText("Album Layout");
+                    } else if (pos == recommendationsHeaderRow) {
                         cell.setText("Recommendations");
                     } else if (pos == hiddenHeaderRow) {
                         cell.setText("Hidden Channels");
@@ -260,7 +272,11 @@ public class FeedSettingsActivity extends BaseFragment {
                 }
                 case TYPE_TEXT_VALUE: {
                     TextCell cell = (TextCell) holder.itemView;
-                    if (pos == recommendationFrequencyRow) {
+                    if (pos == albumModeRow) {
+                        FeedAlbumMode mode = CustomSettings.feedAlbumMode();
+                        String modeStr = mode == FeedAlbumMode.CAROUSEL ? "Carousel" : "Grid";
+                        cell.setTextAndValue("Album display mode", modeStr, true);
+                    } else if (pos == recommendationFrequencyRow) {
                         cell.setTextAndValue("Show every N posts",
                                 String.valueOf(CustomSettings.feedRecommendationFrequency()),
                                 true);
@@ -283,7 +299,10 @@ public class FeedSettingsActivity extends BaseFragment {
                 }
                 case TYPE_INFO: {
                     TextInfoPrivacyCell cell = (TextInfoPrivacyCell) holder.itemView;
-                    if (pos == recommendationsInfoRow) {
+                    if (pos == albumModeInfoRow) {
+                        cell.setText("Carousel: swipe left/right between photos.\n" +
+                                "Grid: all photos visible at once, like VK.");
+                    } else if (pos == recommendationsInfoRow) {
                         cell.setText("Discover new channels based on your subscriptions. " +
                                 "The system analyzes similar channels, forwarded posts, " +
                                 "and mentions to suggest relevant content.");
@@ -389,5 +408,64 @@ public class FeedSettingsActivity extends BaseFragment {
         });
         builder.setNegativeButton("Cancel", null);
         showDialog(builder.create());
+    }
+
+    @SuppressLint({"NotifyDataSetChanged", "ResourceType"})
+    private void showAlbumModePicker() {
+        if (getParentActivity() == null) return;
+
+        FeedAlbumMode current = CustomSettings.feedAlbumMode();
+
+        android.widget.LinearLayout layout = new android.widget.LinearLayout(getParentActivity());
+        layout.setOrientation(android.widget.LinearLayout.VERTICAL);
+        layout.setPadding(dp(20), dp(8), dp(20), dp(8));
+
+        android.widget.RadioGroup radioGroup = new android.widget.RadioGroup(getParentActivity());
+        radioGroup.setOrientation(android.widget.RadioGroup.VERTICAL);
+
+        android.widget.RadioButton rbCarousel = new android.widget.RadioButton(getParentActivity());
+        rbCarousel.setText("Carousel");
+        rbCarousel.setId(0);
+        rbCarousel.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 15);
+        rbCarousel.setPadding(dp(8), dp(12), dp(8), dp(12));
+        rbCarousel.setTextColor(
+                Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+
+        android.widget.RadioButton rbGrid = new android.widget.RadioButton(getParentActivity());
+        rbGrid.setText("Grid");
+        rbGrid.setId(1);
+        rbGrid.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 15);
+        rbGrid.setPadding(dp(8), dp(12), dp(8), dp(12));
+        rbGrid.setTextColor(
+                Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
+
+        radioGroup.addView(rbCarousel);
+        radioGroup.addView(rbGrid);
+
+        radioGroup.check(current == FeedAlbumMode.CAROUSEL ? 0 : 1);
+
+        layout.addView(radioGroup);
+
+        AlertDialog.Builder builder = getBuilder(layout, radioGroup);
+        builder.setNegativeButton(
+                org.telegram.messenger.LocaleController.getString(
+                        "Cancel", org.telegram.messenger.R.string.Cancel),
+                null);
+        showDialog(builder.create());
+    }
+
+    private AlertDialog.@NonNull Builder getBuilder(LinearLayout layout, RadioGroup radioGroup) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+        builder.setTitle("Album display mode");
+        builder.setView(layout);
+        builder.setPositiveButton("OK", (dialog, which) -> {
+            int checkedId = radioGroup.getCheckedRadioButtonId();
+            FeedAlbumMode newMode = checkedId == 0
+                    ? FeedAlbumMode.CAROUSEL
+                    : FeedAlbumMode.GRID;
+            CustomSettings.setFeedAlbumMode(newMode);
+            if (adapter != null) adapter.notifyDataSetChanged();
+        });
+        return builder;
     }
 }
