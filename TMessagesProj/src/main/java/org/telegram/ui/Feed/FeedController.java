@@ -227,7 +227,7 @@ public class FeedController implements NotificationCenter.NotificationCenterDele
                 if (!bestHasText && msgHasText) {
                     best = msg;
                 } else if (!bestHasText && !msgHasText) {
-                    if (msg.getId() > best.getId()) {
+                    if (msg.getId() < best.getId()) {
                         best = msg;
                     }
                 }
@@ -743,7 +743,6 @@ public class FeedController implements NotificationCenter.NotificationCenterDele
 
     private boolean isValidFeedMessage(MessageObject obj, long dialogId, Set<String> readSnapshot) {
         if (obj == null) return false;
-        if (isLocallyRead(readSnapshot, dialogId, obj.getId())) return false;
         if (obj.isOut()) return false;
         if (obj.messageOwner.action != null) return false;
 
@@ -753,7 +752,13 @@ public class FeedController implements NotificationCenter.NotificationCenterDele
 
         boolean isAlbumPart = obj.messageOwner.grouped_id != 0;
 
-        return hasContent || isAlbumPart;
+        if (!hasContent && !isAlbumPart) return false;
+
+        if (isAlbumPart) {
+            return true;
+        }
+
+        return !isLocallyRead(readSnapshot, dialogId, obj.getId());
     }
 
     private static int compareFeedItemsOrder(FeedItem a, FeedItem b) {
@@ -958,7 +963,23 @@ public class FeedController implements NotificationCenter.NotificationCenterDele
             state.lastConsumedMid = chunk.consumedToMid;
 
             if (!chunk.validMessages.isEmpty()) {
-                state.buffer.addAll(groupIntoItems(chunk.validMessages, state.dialogId));
+                List<FeedItem> groupedItems = groupIntoItems(chunk.validMessages, state.dialogId);
+
+                groupedItems.removeIf(item -> {
+                    if (item.isAlbum()) {
+                        boolean allRead = true;
+                        for (MessageObject msg : item.messages) {
+                            if (!isLocallyRead(readSnapshot, state.dialogId, msg.getId())) {
+                                allRead = false;
+                                break;
+                            }
+                        }
+                        return allRead;
+                    }
+                    return false;
+                });
+
+                state.buffer.addAll(groupedItems);
             }
 
             if (state.lastConsumedMid >= state.topMessageId) {
