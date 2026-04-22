@@ -8,11 +8,13 @@ import android.graphics.Canvas;
 import android.graphics.Paint;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffColorFilter;
+import android.graphics.drawable.Drawable;
 import android.graphics.drawable.GradientDrawable;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
 import android.text.TextUtils;
 import android.text.style.ClickableSpan;
+import android.text.style.ImageSpan;
 import android.util.TypedValue;
 import android.view.GestureDetector;
 import android.view.Gravity;
@@ -856,6 +858,21 @@ public class FeedPostCell extends LinearLayout {
         TLRPC.Chat chat = controller.getChat(-item.channelId);
         if (chat != null) {
             channelNameView.setText(chat.title);
+
+            if (chat.verified) {
+                @SuppressLint("UseCompatLoadingForDrawables") Drawable verifiedDrawable = getResources()
+                        .getDrawable(R.drawable.verified_profile).mutate();
+                int iconSize = dp(18);
+                verifiedDrawable.setBounds(0, 0, iconSize, iconSize);
+                verifiedDrawable.setColorFilter(new PorterDuffColorFilter(
+                        Theme.getColor(Theme.key_featuredStickers_addButton, resourceProvider),
+                        PorterDuff.Mode.SRC_IN));
+                channelNameView.setCompoundDrawables(null, null, verifiedDrawable, null);
+                channelNameView.setCompoundDrawablePadding(dp(4));
+            } else {
+                channelNameView.setCompoundDrawables(null, null, null, null);
+            }
+
             avatarDrawable.setInfo(chat);
             if (chat.photo != null && chat.photo.photo_small != null) {
                 avatarView.setImage(
@@ -1512,4 +1529,38 @@ public class FeedPostCell extends LinearLayout {
         });
     }
 
+    private void appendBadge(SpannableStringBuilder builder, int drawableRes) {
+        int startIndex = builder.length();
+        builder.append("  ");
+
+        @SuppressLint("UseCompatLoadingForDrawables") Drawable drawable = getResources().getDrawable(drawableRes).mutate();
+        int size = dp(18);
+        drawable.setBounds(0, 0, size, size);
+
+        builder.setSpan(new CenteredImageSpan(drawable), startIndex, startIndex + 1,
+                Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+    }
+
+    private static class CenteredImageSpan extends ImageSpan {
+        public CenteredImageSpan(Drawable drawable) {
+            super(drawable);
+        }
+
+        @Override
+        public void draw(@NonNull Canvas canvas, CharSequence text,
+                         int start, int end, float x,
+                         int top, int y, int bottom, @NonNull Paint paint) {
+            Drawable b = getDrawable();
+            Paint.FontMetrics fm = paint.getFontMetrics();
+
+            int textHeight = (int) (fm.descent - fm.ascent);
+            int transY = (int) ((textHeight - b.getBounds().bottom) / 2f
+                    + fm.ascent + paint.getTextSize() / 2f - b.getBounds().bottom / 2f);
+
+            canvas.save();
+            canvas.translate(x, transY);
+            b.draw(canvas);
+            canvas.restore();
+        }
+    }
 }
