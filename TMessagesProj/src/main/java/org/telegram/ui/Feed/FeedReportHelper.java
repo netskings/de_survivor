@@ -2,8 +2,6 @@ package org.telegram.ui.Feed;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
 
-import android.text.InputType;
-import android.widget.EditText;
 import android.widget.FrameLayout;
 
 import org.telegram.messenger.AndroidUtilities;
@@ -15,6 +13,7 @@ import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.BottomSheet;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.Cells.EditTextCell;
 import org.telegram.ui.Components.AlertsCreator;
 import org.telegram.ui.Components.Bulletin;
 import org.telegram.ui.Components.BulletinFactory;
@@ -86,40 +85,41 @@ class FeedReportHelper {
 
         Theme.ResourcesProvider rp = activity.getResProvider();
 
-        android.app.AlertDialog.Builder builder =
-                new android.app.AlertDialog.Builder(activity.getParentActivity());
+        org.telegram.ui.ActionBar.AlertDialog.Builder builder =
+                new org.telegram.ui.ActionBar.AlertDialog.Builder(activity.getParentActivity(), rp);
         builder.setTitle(LocaleController.getString(R.string.ReportChatOther));
 
         FrameLayout container = new FrameLayout(activity.getParentActivity());
-        container.setPadding(dp(24), dp(8), dp(24), 0);
+        container.setPadding(dp(24), dp(12), dp(24), 0);
 
-        EditText editText = new EditText(activity.getParentActivity());
-        editText.setTextColor(Theme.getColor(Theme.key_dialogTextBlack, rp));
-        editText.setHintTextColor(
-                Theme.getColor(Theme.key_windowBackgroundWhiteGrayText3, rp));
-        editText.setHint(LocaleController.getString(R.string.ReportChatDescription));
-        editText.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 16);
-        editText.setMaxLines(4);
-        editText.setInputType(InputType.TYPE_CLASS_TEXT
-                | InputType.TYPE_TEXT_FLAG_CAP_SENTENCES
-                | InputType.TYPE_TEXT_FLAG_MULTI_LINE);
-        container.addView(editText,
+        EditTextCell inputCell = new EditTextCell(
+                activity.getParentActivity(),
+                LocaleController.getString(R.string.ReportChatDescription),
+                true,
+                false,
+                -1,
+                rp
+        );
+
+        inputCell.setBackground(Theme.createRoundRectDrawable(dp(10), Theme.getColor(Theme.key_windowBackgroundWhite, rp)));
+
+        container.addView(inputCell,
                 LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT,
                         LayoutHelper.WRAP_CONTENT));
 
         builder.setView(container);
         builder.setPositiveButton(LocaleController.getString(R.string.Send),
                 (dialog, which) -> {
-                    String message = editText.getText().toString().trim();
+                    String message = inputCell.getText().toString().trim();
                     if (!message.isEmpty()) sendReport(item, message);
                 });
         builder.setNegativeButton(LocaleController.getString(R.string.Cancel), null);
 
-        android.app.AlertDialog dialog = builder.create();
+        org.telegram.ui.ActionBar.AlertDialog dialog = builder.create();
         activity.showDialog(dialog);
 
-        editText.requestFocus();
-        AndroidUtilities.runOnUIThread(() -> AndroidUtilities.showKeyboard(editText), 300);
+        inputCell.editText.requestFocus();
+        AndroidUtilities.runOnUIThread(() -> AndroidUtilities.showKeyboard(inputCell.editText), 300);
     }
 
     private void sendReport(FeedController.FeedItem item, String reason) {

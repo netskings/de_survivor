@@ -60,6 +60,12 @@ public class FeedSettingsActivity extends BaseFragment {
     private int albumModeHeaderRow;
     private int albumModeRow;
     private int albumModeInfoRow;
+
+    private int filterHeaderRow;
+    private int banListRow;
+    private int hiddenLogRow;
+    private int filterInfoRow;
+
     public FeedSettingsActivity() {
     }
 
@@ -82,6 +88,11 @@ public class FeedSettingsActivity extends BaseFragment {
         albumModeHeaderRow = rowCount++;
         albumModeRow       = rowCount++;
         albumModeInfoRow   = rowCount++;
+
+        filterHeaderRow = rowCount++;
+        banListRow = rowCount++;
+        hiddenLogRow = rowCount++;
+        filterInfoRow = rowCount++;
 
         recommendationsHeaderRow    = rowCount++;
         recommendationsToggleRow    = rowCount++;
@@ -109,7 +120,9 @@ public class FeedSettingsActivity extends BaseFragment {
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
             @Override
             public void onItemClick(int id) {
-                if (id == -1) finishFragment();
+                if (id == -1) {
+                    finishFragment();
+                }
             }
         });
 
@@ -124,7 +137,7 @@ public class FeedSettingsActivity extends BaseFragment {
                 LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
         fragmentView = root;
-        return fragmentView;
+        return root;
     }
 
     @NonNull
@@ -150,6 +163,10 @@ public class FeedSettingsActivity extends BaseFragment {
                 presentFragment(new FeedRecommendationsDetailActivity());
             } else if (position == albumModeRow) {
                 showAlbumModePicker();
+            } else if (position == banListRow) {
+                presentFragment(new FeedBanListActivity());
+            } else if (position == hiddenLogRow) {
+                presentFragment(new FeedHiddenLogActivity());
             }
         });
         return listView;
@@ -202,12 +219,11 @@ public class FeedSettingsActivity extends BaseFragment {
 
         @Override
         public int getItemViewType(int pos) {
-            if (pos == recommendationsHeaderRow || pos == hiddenHeaderRow) return TYPE_HEADER;
+            if (pos == recommendationsHeaderRow || pos == hiddenHeaderRow || pos == filterHeaderRow) return TYPE_HEADER;
             if (pos == recommendationsToggleRow) return TYPE_CHECK;
-            if (pos == recommendationFrequencyRow || pos == recommendationsDetailRow) return TYPE_TEXT_VALUE;
-            if (pos == recommendationsInfoRow || pos == hiddenInfoRow) return TYPE_INFO;
+            if (pos == recommendationFrequencyRow || pos == recommendationsDetailRow || pos == albumModeRow || pos == banListRow || pos == hiddenLogRow) return TYPE_TEXT_VALUE;
+            if (pos == recommendationsInfoRow || pos == hiddenInfoRow || pos == albumModeInfoRow || pos == filterInfoRow) return TYPE_INFO;
             if (pos >= hiddenChannelsStartRow && pos < hiddenChannelsEndRow) return TYPE_CHANNEL;
-            if (pos == albumModeRow) return TYPE_TEXT_VALUE;
             return TYPE_HEADER;
         }
 
@@ -251,13 +267,10 @@ public class FeedSettingsActivity extends BaseFragment {
             switch (holder.getItemViewType()) {
                 case TYPE_HEADER: {
                     HeaderCell cell = (HeaderCell) holder.itemView;
-                    if (pos == albumModeHeaderRow) {
-                        cell.setText("Album Layout");
-                    } else if (pos == recommendationsHeaderRow) {
-                        cell.setText("Recommendations");
-                    } else if (pos == hiddenHeaderRow) {
-                        cell.setText("Hidden Channels");
-                    }
+                    if (pos == albumModeHeaderRow) cell.setText("Album Layout");
+                    else if (pos == recommendationsHeaderRow) cell.setText("Recommendations");
+                    else if (pos == hiddenHeaderRow) cell.setText("Hidden Channels");
+                    else if (pos == filterHeaderRow) cell.setText("Content Filter");
                     break;
                 }
                 case TYPE_CHECK: {
@@ -284,6 +297,16 @@ public class FeedSettingsActivity extends BaseFragment {
                         cell.setTextAndValue("Recommended Channels",
                                 count > 0 ? String.valueOf(count) : "—",
                                 true);
+                    } else if (pos == banListRow) {
+                        int count = 0;
+                        for (CustomSettings.BanGroup g : CustomSettings.getBanGroups()) {
+                            count += g.phrases.size();
+                        }
+                        cell.setTextAndValue("Banned Words & Phrases", count > 0 ? count + " words" : "Off", true);
+                    }
+                    else if (pos == hiddenLogRow) {
+                        int logCount = CustomSettings.getHiddenLog().length();
+                        cell.setTextAndValue("Hidden Posts Log", logCount > 0 ? String.valueOf(logCount) : "Empty", true);
                     }
                     break;
                 }
@@ -306,6 +329,8 @@ public class FeedSettingsActivity extends BaseFragment {
                                 "and mentions to suggest relevant content.");
                     } else if (pos == hiddenInfoRow) {
                         cell.setText("Tap ✕ to show the channel in your feed again.");
+                    } else if (pos == filterInfoRow) {
+                        cell.setText("Posts containing these phrases will be hidden from feed and marked as read automatically.");
                     }
                     break;
                 }

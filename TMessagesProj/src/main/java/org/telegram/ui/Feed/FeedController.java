@@ -116,6 +116,10 @@ public class FeedController implements NotificationCenter.NotificationCenterDele
             boolean changed = false;
 
             for (FeedItem newItem : newItems) {
+                if (isBanned(newItem)) {
+                    handleBannedItem(newItem);
+                    continue;
+                }
                 MessageObject primary = newItem.getPrimaryMessage();
                 long groupedId = primary.messageOwner.grouped_id;
 
@@ -784,6 +788,11 @@ public class FeedController implements NotificationCenter.NotificationCenterDele
 
     private void appendPageToCache(List<FeedItem> pageItems) {
         for (FeedItem item : pageItems) {
+            if (isBanned(item)) {
+                handleBannedItem(item);
+                continue;
+            }
+
             String uid = item.getUniqueId();
             if (loadedItemIds.contains(uid)) continue;
 
@@ -1290,5 +1299,35 @@ public class FeedController implements NotificationCenter.NotificationCenterDele
                 }
             });
         });
+    }
+
+    private boolean isBanned(FeedItem item) {
+        List<CustomSettings.BanGroup> groups = CustomSettings.getBanGroups();
+        for (CustomSettings.BanGroup group : groups) {
+            if (!group.enabled) continue;
+            for (MessageObject msg : item.messages) {
+                String text = msg.messageOwner.message;
+                if (text == null || text.isEmpty()) continue;
+                String lowerText = text.toLowerCase();
+                for (String phrase : group.phrases) {
+                    if (phrase != null && !phrase.isEmpty() && lowerText.contains(phrase.toLowerCase())) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private void handleBannedItem(FeedItem item) {
+        markAsRead(item);
+
+        MessageObject primary = item.getPrimaryMessage();
+        String snippet = "";
+        if (primary != null && primary.messageOwner.message != null) {
+            snippet = primary.messageOwner.message;
+            if (snippet.length() > 100) snippet = snippet.substring(0, 100) + "...";
+        }
+        CustomSettings.addToHiddenLog(item.getUniqueId(), item.channelId, item.getMessageId(), snippet, item.sortDate);
     }
 }
