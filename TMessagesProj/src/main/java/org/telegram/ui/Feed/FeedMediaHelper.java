@@ -138,6 +138,11 @@ public class FeedMediaHelper {
                 result.add(msg);
             } else if (media instanceof TLRPC.TL_messageMediaDocument
                     && media.document != null) {
+
+                if (FeedUtils.isSticker(media.document)) {
+                    continue;
+                }
+
                 for (TLRPC.DocumentAttribute attr : media.document.attributes) {
                     if (attr instanceof TLRPC.TL_documentAttributeVideo
                             || attr instanceof TLRPC.TL_documentAttributeAnimated) {
@@ -238,6 +243,16 @@ public class FeedMediaHelper {
                                 BackupImageView iv,
                                 TextView overlay) {
         TLRPC.Message raw = msg.messageOwner;
+
+        if (raw.media instanceof TLRPC.TL_messageMediaDocument && raw.media.document != null) {
+            if (FeedUtils.isSticker(raw.media.document)) {
+                iv.setImageDrawable(null);
+                iv.getImageReceiver().clearImage();
+                overlay.setVisibility(View.GONE);
+                return dp(200);
+            }
+        }
+
         int displayWidth = AndroidUtilities.displaySize.x - dp(32);
         int height = dp(200);
 

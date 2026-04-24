@@ -1666,6 +1666,7 @@ public class FeedPostCell extends LinearLayout {
 
         isAutoplaying = true;
         videoTextureView.setAlpha(0f);
+
         inlineVideoPlayer.play(videoMsg, videoTextureView, videoTimelineView);
 
         inlineVideoPlayer.setOnFirstFrameListener(() -> {

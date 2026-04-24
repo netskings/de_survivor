@@ -97,7 +97,7 @@ public class FeedInlineVideoPlayer implements VideoPlayer.VideoPlayerDelegate {
         textureView.setAlpha(0f);
         timelineView.setVisibility(android.view.View.VISIBLE);
 
-        videoPlayer = new VideoPlayer(true, false);
+        videoPlayer = new VideoPlayer(true, true);
         videoPlayer.setDelegate(this);
         videoPlayer.setTextureView(textureView);
         videoPlayer.setLooping(true);
@@ -226,6 +226,7 @@ public class FeedInlineVideoPlayer implements VideoPlayer.VideoPlayerDelegate {
 
     public void resume() {
         if (videoPlayer != null && currentMessage != null && !isPlaying) {
+            videoPlayer.setVolume(0f);
             videoPlayer.play();
             isPlaying = true;
             handler.post(progressRunnable);
