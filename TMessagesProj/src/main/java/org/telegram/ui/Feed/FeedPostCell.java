@@ -996,21 +996,19 @@ public class FeedPostCell extends LinearLayout {
                     return true;
                 }
 
-                if (messageTextView.getWidth() <= 0) return true;
+                if (messageTextView.getWidth() <= 0) return false;
 
                 android.text.Layout layout = messageTextView.getLayout();
-                if (layout == null) return true;
+                if (layout == null) return false;
 
-                if (layout.getText() == null
-                        || layout.getText().length() != expectedLength) {
-                    return true;
-                }
+                if (layout.getText() == null) return false;
 
                 int availableWidth = messageTextView.getWidth()
                         - messageTextView.getTotalPaddingLeft()
                         - messageTextView.getTotalPaddingRight();
+
                 if (availableWidth > 0 && layout.getWidth() != availableWidth) {
-                    return true;
+                    return false;
                 }
 
                 cancelPendingTruncate();
@@ -1142,7 +1140,7 @@ public class FeedPostCell extends LinearLayout {
                 }
 
                 android.text.Layout layout = messageTextView.getLayout();
-                if (layout == null || messageTextView.getWidth() <= 0) return true;
+                if (layout == null || messageTextView.getWidth() <= 0) return false;
 
                 if (!truncationApplied) {
                     truncationApplied = true;
