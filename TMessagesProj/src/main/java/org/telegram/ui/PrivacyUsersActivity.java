@@ -55,6 +55,8 @@ public class PrivacyUsersActivity extends BaseFragment implements NotificationCe
     private int rowCount;
     private int blockUserRow;
     private int blockUserDetailRow;
+    private int deleteBotsRow;
+    private int deleteDeletedRow;
     private int usersHeaderRow;
     private int usersStartRow;
     private int usersEndRow;
@@ -171,7 +173,7 @@ public class PrivacyUsersActivity extends BaseFragment implements NotificationCe
         listView.setSections();
         actionBar.setAdaptiveBackground(listView);
         listView.setItemSelectorColorProvider(position -> {
-            if (position == deleteAllRow) {
+            if (position == deleteAllRow || position == deleteBotsRow || position == deleteDeletedRow) {
                 return Theme.multAlpha(Theme.getColor(Theme.key_text_RedRegular), .12f);
             }
             return null;
@@ -196,6 +198,10 @@ public class PrivacyUsersActivity extends BaseFragment implements NotificationCe
                         }, null).create();
                 alert.show();
                 alert.redPositive();
+            } else if (position == deleteBotsRow) {
+                showClearConfirmation(true);
+            } else if (position == deleteDeletedRow) {
+                showClearConfirmation(false);
             } else if (position == blockUserRow) {
                 if (currentType == TYPE_BLOCKED) {
                     presentFragment(new DialogOrContactPickerActivity());
@@ -311,12 +317,48 @@ public class PrivacyUsersActivity extends BaseFragment implements NotificationCe
             .show();
     }
 
+    private void showClearConfirmation(boolean isBots) {
+        ArrayList<Long> toUnblock = new ArrayList<>();
+        for (int i = 0; i < getMessagesController().blockePeers.size(); i++) {
+            long uid = getMessagesController().blockePeers.keyAt(i);
+            if (uid > 0) {
+                TLRPC.User user = getMessagesController().getUser(uid);
+                if (user != null) {
+                    if (isBots && user.bot) {
+                        toUnblock.add(uid);
+                    } else if (!isBots && user.deleted) {
+                        toUnblock.add(uid);
+                    }
+                }
+            }
+        }
+
+        if (toUnblock.isEmpty()) return;
+
+        String title = isBots ? LocaleController.getString(R.string.ClearAllBots) : LocaleController.getString(R.string.ClearAllDeleted);
+        String message = isBots ?
+                String.format(LocaleController.getString(R.string.ClearBotsConfirm), toUnblock.size()) :
+                String.format(LocaleController.getString(R.string.ClearDeletedConfirm), toUnblock.size());
+
+        AlertDialog alert = AlertsCreator.createSimpleAlert(getContext(),
+                title, message, LocaleController.getString(R.string.Clear), () -> {
+                    for (Long uid : toUnblock) {
+                        getMessagesController().unblockPeer(uid);
+                    }
+                }, null).create();
+        alert.show();
+        alert.redPositive();
+    }
+
     private void updateRows() {
         rowCount = 0;
         blockUserRow = -1;
         usersHeaderRow = -1;
         blockUserDetailRow = -1;
         deleteAllRow = -1;
+        deleteBotsRow = -1;
+        deleteDeletedRow = -1;
+
         if (!blockedUsersActivity || getMessagesController().totalBlockedCount >= 0) {
             blockUserRow = rowCount++;
             if (currentType == TYPE_BLOCKED) {
@@ -329,8 +371,29 @@ public class PrivacyUsersActivity extends BaseFragment implements NotificationCe
             } else {
                 count = uidArray.size();
             }
+
             if (count != 0) {
                 if (currentType == TYPE_BLOCKED) {
+                    boolean hasBots = false;
+                    boolean hasDeleted = false;
+                    for (int i = 0; i < getMessagesController().blockePeers.size(); i++) {
+                        long uid = getMessagesController().blockePeers.keyAt(i);
+                        if (uid > 0) {
+                            TLRPC.User user = getMessagesController().getUser(uid);
+                            if (user != null) {
+                                if (user.bot) hasBots = true;
+                                if (user.deleted) hasDeleted = true;
+                            }
+                        }
+                        if (hasBots && hasDeleted) break;
+                    }
+                    if (hasBots) {
+                        deleteBotsRow = rowCount++;
+                    }
+                    if (hasDeleted) {
+                        deleteDeletedRow = rowCount++;
+                    }
+
                     usersHeaderRow = rowCount++;
                 }
                 usersStartRow = rowCount;
@@ -346,6 +409,8 @@ public class PrivacyUsersActivity extends BaseFragment implements NotificationCe
                 usersEndRow = -1;
                 usersDetailRow = -1;
                 deleteAllRow = -1;
+                deleteBotsRow = -1;
+                deleteDeletedRow = -1;
             }
 
 
@@ -435,7 +500,6 @@ public class PrivacyUsersActivity extends BaseFragment implements NotificationCe
                     break;
                 case 4:
                     TextCell textCell = new TextCell(parent.getContext());
-                    textCell.setText(LocaleController.getString(R.string.NotificationsDeleteAllException), false);
                     textCell.setColors(-1, Theme.key_text_RedRegular);
                     view = textCell;
                     break;
@@ -519,12 +583,23 @@ public class PrivacyUsersActivity extends BaseFragment implements NotificationCe
                         }
                     }
                     break;
+                case 4:
+                    TextCell textCell = (TextCell) holder.itemView;
+                    textCell.setColors(-1, Theme.key_text_RedRegular);
+                    if (position == deleteAllRow) {
+                        textCell.setText(LocaleController.getString(R.string.NotificationsDeleteAllException), false);
+                    } else if (position == deleteBotsRow) {
+                        textCell.setText(LocaleController.getString(R.string.ClearAllBots), false);
+                    } else if (position == deleteDeletedRow) {
+                        textCell.setText(LocaleController.getString(R.string.ClearAllDeleted), false);
+                    }
+                    break;
             }
         }
 
         @Override
         public int getItemViewType(int position) {
-            if (position == deleteAllRow) {
+            if (position == deleteAllRow || position == deleteBotsRow || position == deleteDeletedRow) {
                 return 4;
             } else if (position == usersHeaderRow) {
                 return 3;

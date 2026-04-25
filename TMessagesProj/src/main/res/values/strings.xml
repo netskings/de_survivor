@@ -10661,4 +10661,8 @@
     <string name="AIEditorEmojify">emojify</string>
     <string name="TranslateCopy">Copy Translation</string>
     <string name="TranslateEntireChat">Translate Entire Chat</string>
+    <string name="ClearAllBots">Clear all bots</string>
+    <string name="ClearAllDeleted">Clear deleted accounts</string>
+    <string name="ClearBotsConfirm">Are you sure you want to clear %1$d bots from the list?</string>
+    <string name="ClearDeletedConfirm">Are you sure you want to clear %1$d deleted accounts from the list?</string>
 </resources>
