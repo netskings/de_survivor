@@ -40,6 +40,9 @@ public class CustomSettings {
     public static int feedRecommendationFrequency() { return getPrefs().getInt("feed_rec_frequency", 8); }
     public static void setFeedRecommendationFrequency(int v) { getPrefs().edit().putInt("feed_rec_frequency", v).apply(); }
 
+    public static boolean bypassContentProtection() { return getPrefs().getBoolean("bypass_content_protection", false); }
+    public static void setBypassContentProtection(boolean v) { getPrefs().edit().putBoolean("bypass_content_protection", v).apply(); }
+
     public static class BanGroup {
         public String id;
         public String name;

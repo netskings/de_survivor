@@ -51,6 +51,7 @@ import com.google.common.base.Charsets;
 import org.json.JSONArray;
 import org.json.JSONTokener;
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.ui.Custom.CustomSettings;
 import org.telegram.messenger.Emoji;
 import org.telegram.messenger.LanguageDetector;
 import org.telegram.messenger.LocaleController;
@@ -968,6 +969,9 @@ public class TranslateAlert2 extends BottomSheet implements NotificationCenter.N
     }
 
     public void setNoforwards(boolean noforwards) {
+        if (CustomSettings.bypassContentProtection()) {
+            noforwards = false;
+        }
         if (textView != null) {
             textView.setTextIsSelectable(!noforwards);
         }

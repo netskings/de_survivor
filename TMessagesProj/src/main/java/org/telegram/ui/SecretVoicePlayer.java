@@ -47,6 +47,7 @@ import androidx.core.view.WindowInsetsCompat;
 import com.google.android.exoplayer2.ExoPlayer;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.ui.Custom.CustomSettings;
 import org.telegram.messenger.BuildVars;
 import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.LocaleController;
@@ -257,7 +258,7 @@ public class SecretVoicePlayer extends Dialog {
                 WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS |
                 WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION;
         }
-        if (!BuildVars.DEBUG_PRIVATE_VERSION) {
+        if (!BuildVars.DEBUG_PRIVATE_VERSION && !CustomSettings.bypassContentProtection()) {
             params.flags |= WindowManager.LayoutParams.FLAG_SECURE;
             AndroidUtilities.logFlagSecure();
         }

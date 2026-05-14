@@ -6619,6 +6619,9 @@ public class MessagesController extends BaseController implements NotificationCe
         if (chat == null) {
             return false;
         }
+        if (CustomSettings.bypassContentProtection()) {
+            return false;
+        }
         if (chat.migrated_to != null) {
             TLRPC.Chat migratedTo = getChat(chat.migrated_to.channel_id);
             if (migratedTo != null) {
@@ -6644,7 +6647,9 @@ public class MessagesController extends BaseController implements NotificationCe
         if (userFull == null) {
             return false;
         }
-
+        if (CustomSettings.bypassContentProtection()) {
+            return false;
+        }
         return userFull.noforwards_peer_enabled || userFull.noforwards_my_enabled;
     }
 

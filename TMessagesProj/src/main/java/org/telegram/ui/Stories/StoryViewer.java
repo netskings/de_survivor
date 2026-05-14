@@ -53,6 +53,7 @@ import com.google.android.exoplayer2.ExoPlayer;
 import com.google.android.exoplayer2.ui.AspectRatioFrameLayout;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.ui.Custom.CustomSettings;
 import org.telegram.messenger.AnimationNotificationsLocker;
 import org.telegram.messenger.BotWebViewVibrationEffect;
 import org.telegram.messenger.BuildVars;
@@ -2868,6 +2869,9 @@ public class StoryViewer implements NotificationCenter.NotificationCenterDelegat
     public void allowScreenshots(boolean allowScreenshots) {
         if (BuildVars.DEBUG_PRIVATE_VERSION) {
             return;
+        }
+        if (CustomSettings.bypassContentProtection()) {
+            allowScreenshots = true;
         }
         allowScreenshots = !isShowing || allowScreenshots;
         if (this.allowScreenshots != allowScreenshots) {

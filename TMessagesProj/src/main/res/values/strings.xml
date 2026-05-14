@@ -10674,6 +10674,13 @@
     <string name="CustomSettingsHideProxySponsorInfo">Hides the proxy sponsor channel from your chat list and feed</string>
     <string name="CustomSettingsFeedInfo">Manage your feed channels and recommendations</string>
     <string name="CustomSettingsFeedSettings">Feed Settings</string>
+    <string name="CustomSettingsRestrictionsHeader">Restrictions</string>
+    <string name="CustomSettingsBypassContentProtection">Disable content protection</string>
+    <string name="CustomSettingsBypassContentProtectionInfo">Allows screenshots, forwarding, copying, sharing and saving in secret chats and chats that prohibit it.</string>
+    <string name="CustomSettingsRestartPromptTitle">Restart required</string>
+    <string name="CustomSettingsRestartPromptMessage">Restart the app for the change to apply to already loaded messages.</string>
+    <string name="CustomSettingsRestartNow">Restart</string>
+    <string name="CustomSettingsRestartLater">Later</string>
     <string name="SaveToBookmarks">Save to bookmarks</string>
     <string name="HideFromFeed">Hide from feed</string>
     <string name="RemovedFromBookmarks">Removed from bookmarks</string>

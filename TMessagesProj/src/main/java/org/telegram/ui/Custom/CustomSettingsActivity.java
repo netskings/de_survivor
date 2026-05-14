@@ -2,7 +2,10 @@ package org.telegram.ui.Custom;
 
 import static org.telegram.messenger.LocaleController.getString;
 
+import android.app.Activity;
 import android.content.Context;
+import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
@@ -13,6 +16,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.messenger.R;
 import org.telegram.ui.ActionBar.ActionBar;
+import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Cells.HeaderCell;
@@ -37,6 +41,10 @@ public class CustomSettingsActivity extends BaseFragment {
     private int feedSettingsRow;
     private int feedInfoRow;
 
+    private int restrictionsHeaderRow;
+    private int bypassContentProtectionRow;
+    private int bypassContentProtectionInfoRow;
+
     @Override
     public boolean onFragmentCreate() {
         rowCount = 0;
@@ -49,6 +57,9 @@ public class CustomSettingsActivity extends BaseFragment {
         feedHeaderRow = rowCount++;
         feedSettingsRow = rowCount++;
         feedInfoRow = rowCount++;
+        restrictionsHeaderRow = rowCount++;
+        bypassContentProtectionRow = rowCount++;
+        bypassContentProtectionInfoRow = rowCount++;
         return super.onFragmentCreate();
     }
 
@@ -77,6 +88,27 @@ public class CustomSettingsActivity extends BaseFragment {
         return fragmentView;
     }
 
+    private void promptRestart() {
+        Activity activity = getParentActivity();
+        if (activity == null) return;
+        AlertDialog.Builder builder = new AlertDialog.Builder(activity);
+        builder.setTitle(getString(R.string.CustomSettingsRestartPromptTitle));
+        builder.setMessage(getString(R.string.CustomSettingsRestartPromptMessage));
+        builder.setPositiveButton(getString(R.string.CustomSettingsRestartNow), (dialog, which) -> {
+            try {
+                final PackageManager pm = activity.getPackageManager();
+                final Intent intent = pm.getLaunchIntentForPackage(activity.getPackageName());
+                activity.finishAffinity();
+                if (intent != null) {
+                    activity.startActivity(intent);
+                }
+            } catch (Exception ignore) {}
+            System.exit(0);
+        });
+        builder.setNegativeButton(getString(R.string.CustomSettingsRestartLater), null);
+        showDialog(builder.create());
+    }
+
     @NonNull
     private RecyclerListView getRecyclerListView(Context context) {
         ListAdapter adapter = new ListAdapter(context);
@@ -99,6 +131,12 @@ public class CustomSettingsActivity extends BaseFragment {
                     ((TextCheckCell) view).setChecked(val);
             } else if (position == feedSettingsRow) {
                 presentFragment(new FeedSettingsActivity());
+            } else if (position == bypassContentProtectionRow) {
+                boolean val = !CustomSettings.bypassContentProtection();
+                CustomSettings.setBypassContentProtection(val);
+                if (view instanceof TextCheckCell)
+                    ((TextCheckCell) view).setChecked(val);
+                promptRestart();
             }
         });
         return listView;
@@ -130,6 +168,9 @@ public class CustomSettingsActivity extends BaseFragment {
             if (pos == feedHeaderRow)    return TYPE_HEADER;
             if (pos == feedSettingsRow)  return TYPE_TEXT_CELL;
             if (pos == feedInfoRow)      return TYPE_INFO;
+            if (pos == restrictionsHeaderRow) return TYPE_HEADER;
+            if (pos == bypassContentProtectionRow) return TYPE_CHECK;
+            if (pos == bypassContentProtectionInfoRow) return TYPE_INFO;
             return TYPE_HEADER;
         }
 
@@ -180,6 +221,7 @@ public class CustomSettingsActivity extends BaseFragment {
                     if (pos == adsHeaderRow)   cell.setText(getString(R.string.CustomSettingsAdvertisingHeader));
                     if (pos == proxyHeaderRow)  cell.setText(getString(R.string.Proxy));
                     if (pos == feedHeaderRow)   cell.setText(getString(R.string.CustomSettingsFeedHeader));
+                    if (pos == restrictionsHeaderRow) cell.setText(getString(R.string.CustomSettingsRestrictionsHeader));
                     break;
                 }
                 case TYPE_CHECK: {
@@ -191,6 +233,10 @@ public class CustomSettingsActivity extends BaseFragment {
                     if (pos == hideProxySponsorRow) {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsHideProxySponsor),
                                 CustomSettings.hideProxySponsor(), false);
+                    }
+                    if (pos == bypassContentProtectionRow) {
+                        cell.setTextAndCheck(getString(R.string.CustomSettingsBypassContentProtection),
+                                CustomSettings.bypassContentProtection(), false);
                     }
                     break;
                 }
@@ -204,6 +250,9 @@ public class CustomSettingsActivity extends BaseFragment {
                     }
                     if (pos == feedInfoRow) {
                         cell.setText(getString(R.string.CustomSettingsFeedInfo));
+                    }
+                    if (pos == bypassContentProtectionInfoRow) {
+                        cell.setText(getString(R.string.CustomSettingsBypassContentProtectionInfo));
                     }
                     break;
                 }

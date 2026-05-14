@@ -48,6 +48,7 @@ import androidx.core.graphics.ColorUtils;
 
 import org.telegram.PhoneFormat.PhoneFormat;
 import org.telegram.messenger.browser.Browser;
+import org.telegram.ui.Custom.CustomSettings;
 import org.telegram.messenger.ringtone.RingtoneDataStore;
 import org.telegram.messenger.utils.tlutils.AmountUtils;
 import org.telegram.messenger.utils.tlutils.TlUtils;
@@ -1871,6 +1872,9 @@ public class MessageObject {
 
         currentAccount = accountNum;
         messageOwner = message;
+        if (messageOwner != null && messageOwner.noforwards && CustomSettings.bypassContentProtection()) {
+            messageOwner.noforwards = false;
+        }
         replyMessageObject = replyToMessage;
         eventId = eid;
         wasUnread = !messageOwner.out && messageOwner.unread;
