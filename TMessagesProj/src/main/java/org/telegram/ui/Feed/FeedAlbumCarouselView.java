@@ -84,7 +84,7 @@ public class FeedAlbumCarouselView extends FrameLayout {
         setWillNotDraw(false);
         setClipChildren(true);
 
-        bgPaint.setColor(0xBB000000);
+        bgPaint.setColor(0x99000000);
         dotPaint.setColor(0xFFFFFFFF);
         txtPaint.setColor(0xFFFFFFFF);
         txtPaint.setTextSize(dp(12));
@@ -484,10 +484,22 @@ public class FeedAlbumCarouselView extends FrameLayout {
             ImageLocation thumbLoc = small != null
                     ? ImageLocation.getForPhoto(small, photo) : null;
 
-            view.setImage(
-                    ImageLocation.getForPhoto(best, photo), dispW + "_" + h,
-                    thumbLoc, "80_80_b",
-                    0, msg);
+            if (msg.isLivePhoto() && msg.getDocument() != null) {
+                TLRPC.Document videoDoc = msg.getDocument();
+                int videoSize = videoDoc.size > 0 && videoDoc.size <= Integer.MAX_VALUE
+                        ? (int) videoDoc.size : 0;
+                view.setImage(
+                        ImageLocation.getForDocument(videoDoc), dispW + "_" + h,
+                        ImageLocation.getForPhoto(best, photo), dispW + "_" + h,
+                        videoSize, msg);
+                view.getImageReceiver().setAutoRepeat(1);
+                view.getImageReceiver().setAllowStartAnimation(true);
+            } else {
+                view.setImage(
+                        ImageLocation.getForPhoto(best, photo), dispW + "_" + h,
+                        thumbLoc, "80_80_b",
+                        0, msg);
+            }
 
         } else if (raw.media instanceof TLRPC.TL_messageMediaDocument
                 && raw.media.document != null) {
@@ -561,32 +573,7 @@ public class FeedAlbumCarouselView extends FrameLayout {
     private void updateCurrentOverlayText() {
         if (currentIndex >= 0 && currentIndex < size()) {
             MessageObject msg = messages.get(currentIndex);
-            TLRPC.Message raw = msg.messageOwner;
-
-            if (raw.media instanceof TLRPC.TL_messageMediaDocument && raw.media.document != null) {
-                boolean isGif = false;
-                boolean isVideo = false;
-                double duration = 0;
-
-                for (TLRPC.DocumentAttribute attr : raw.media.document.attributes) {
-                    if (attr instanceof TLRPC.TL_documentAttributeAnimated) isGif = true;
-                    if (attr instanceof TLRPC.TL_documentAttributeVideo) {
-                        isVideo = true;
-                        duration = attr.duration;
-                    }
-                }
-
-                if (isGif) {
-                    currentOverlayText = "GIF";
-                } else if (isVideo) {
-                    int d = (int) duration;
-                    currentOverlayText = String.format(java.util.Locale.US, "▶ %d:%02d", d / 60, d % 60);
-                } else {
-                    currentOverlayText = null;
-                }
-            } else {
-                currentOverlayText = null;
-            }
+            currentOverlayText = FeedMediaHelper.overlayLabel(msg);
         } else {
             currentOverlayText = null;
         }

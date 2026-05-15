@@ -62,12 +62,9 @@ public class FeedTextFormatter {
         ExtractResult result = extractRawText(item);
         if (result == null) return null;
 
-        SpannableStringBuilder ssb;
-        if (result.text instanceof SpannableStringBuilder) {
-            ssb = new SpannableStringBuilder(result.text);
-        } else {
-            ssb = new SpannableStringBuilder(result.text);
-        }
+        CharSequence cloned = AnimatedEmojiSpan.cloneSpans(result.text);
+
+        SpannableStringBuilder ssb = new SpannableStringBuilder(cloned);
 
         List<int[]> dateReplacements = applyFormattedDateSpans(ssb, result.sourceMsg);
 

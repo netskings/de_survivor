@@ -84,20 +84,83 @@ class FeedMessageTextView extends AnimatedEmojiSpan.TextViewEmojis {
         codeBlockCopyIconPaint.setStrokeJoin(Paint.Join.ROUND);
     }
 
+    private Layout lastEmojiLayout;
+    private android.view.ViewTreeObserver.OnPreDrawListener pendingEmojiRefresh;
+    private final Runnable deferredEmojiRefresh = this::invalidateEmojis;
+    private boolean inForceEmojiResetSetText;
+
     @Override
     public void setText(CharSequence text, BufferType type) {
+        if (!inForceEmojiResetSetText && getText() != null && getText().length() > 0
+                && text != null && text.length() > 0) {
+            inForceEmojiResetSetText = true;
+            try {
+                super.setText("", BufferType.SPANNABLE);
+            } finally {
+                inForceEmojiResetSetText = false;
+            }
+        }
+
         super.setText(text, BufferType.SPANNABLE);
 
         if (spoilerEffects != null) {
             spoilersRevealed = false;
             invalidateSpoilers();
         }
+
+        lastEmojiLayout = null;
+        scheduleEmojiRefresh();
     }
 
     @Override
     protected void onLayout(boolean changed, int l, int t, int r, int b) {
         super.onLayout(changed, l, t, r, b);
         invalidateSpoilers();
+
+        Layout layout = getLayout();
+        if (layout != null && layout != lastEmojiLayout) {
+            lastEmojiLayout = layout;
+            invalidateEmojis();
+        }
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        cancelEmojiRefresh();
+        removeCallbacks(deferredEmojiRefresh);
+        super.onDetachedFromWindow();
+    }
+
+    private void scheduleEmojiRefresh() {
+        Layout layout = getLayout();
+        if (layout != null && getWidth() > 0) {
+            lastEmojiLayout = layout;
+            invalidateEmojis();
+        } else if (pendingEmojiRefresh == null) {
+            pendingEmojiRefresh = () -> {
+                cancelEmojiRefresh();
+                Layout l = getLayout();
+                if (l != null) {
+                    lastEmojiLayout = l;
+                    invalidateEmojis();
+                }
+                return true;
+            };
+            getViewTreeObserver().addOnPreDrawListener(pendingEmojiRefresh);
+        }
+
+        removeCallbacks(deferredEmojiRefresh);
+        postDelayed(deferredEmojiRefresh, 200);
+        postDelayed(deferredEmojiRefresh, 600);
+    }
+
+    private void cancelEmojiRefresh() {
+        if (pendingEmojiRefresh != null) {
+            try {
+                getViewTreeObserver().removeOnPreDrawListener(pendingEmojiRefresh);
+            } catch (Exception ignored) {}
+            pendingEmojiRefresh = null;
+        }
     }
 
     private void invalidateSpoilers() {

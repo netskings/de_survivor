@@ -455,8 +455,12 @@ public class FeedPostCell extends LinearLayout {
         mediaOverlayLabel = new TextView(context);
         mediaOverlayLabel.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 12);
         mediaOverlayLabel.setTextColor(0xFFFFFFFF);
-        mediaOverlayLabel.setBackgroundColor(0x99000000);
-        mediaOverlayLabel.setPadding(dp(8), dp(3), dp(8), dp(3));
+        mediaOverlayLabel.setTypeface(AndroidUtilities.bold());
+        GradientDrawable overlayBg = new GradientDrawable();
+        overlayBg.setColor(0x99000000);
+        overlayBg.setCornerRadius(dp(10));
+        mediaOverlayLabel.setBackground(overlayBg);
+        mediaOverlayLabel.setPadding(dp(8), dp(2), dp(8), dp(3));
         mediaOverlayLabel.setVisibility(GONE);
         mediaContainer.addView(mediaOverlayLabel, LayoutHelper.createFrame(
                 LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT,
@@ -1596,17 +1600,22 @@ public class FeedPostCell extends LinearLayout {
 
             boolean isVisual = false;
             boolean isVideo = false;
+            boolean isGif = false;
 
             if (media instanceof TLRPC.TL_messageMediaPhoto) {
                 isVisual = true;
             } else if (media instanceof TLRPC.TL_messageMediaDocument && media.document != null) {
                 for (TLRPC.DocumentAttribute attr : media.document.attributes) {
-                    if (attr instanceof TLRPC.TL_documentAttributeVideo) {
+                    if (attr instanceof TLRPC.TL_documentAttributeAnimated) {
+                        isGif = true;
+                        isVisual = true;
+                    } else if (attr instanceof TLRPC.TL_documentAttributeVideo) {
                         isVisual = true;
                         isVideo = true;
                         if (attr.round_message) return false;
                     }
                 }
+                if (isGif) isVideo = false;
             }
 
             if (isVisual) {
@@ -1697,13 +1706,15 @@ public class FeedPostCell extends LinearLayout {
             TLRPC.MessageMedia media = msg.messageOwner.media;
             if (media instanceof TLRPC.TL_messageMediaDocument && media.document != null) {
                 boolean isVideo = false;
+                boolean isGif = false;
                 for (TLRPC.DocumentAttribute attr : media.document.attributes) {
                     if (attr instanceof TLRPC.TL_documentAttributeVideo) {
                         isVideo = true;
-                        break;
+                    } else if (attr instanceof TLRPC.TL_documentAttributeAnimated) {
+                        isGif = true;
                     }
                 }
-                if (isVideo) return msg;
+                if (isVideo && !isGif) return msg;
             }
         }
         return null;

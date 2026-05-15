@@ -114,6 +114,53 @@ public class FeedMediaHelper {
         }
     }
 
+    public static String overlayLabel(MessageObject msg) {
+        if (msg == null || msg.messageOwner == null) return null;
+        TLRPC.MessageMedia media = msg.messageOwner.media;
+        if (media == null) return null;
+
+        if (media instanceof TLRPC.TL_messageMediaPhoto) {
+            return msg.isLivePhoto() ? "LIVE" : null;
+        }
+        if (media instanceof TLRPC.TL_messageMediaDocument && media.document != null) {
+            boolean isGif = false;
+            boolean isVideo = false;
+            int duration = 0;
+            for (TLRPC.DocumentAttribute attr : media.document.attributes) {
+                if (attr instanceof TLRPC.TL_documentAttributeAnimated) {
+                    isGif = true;
+                } else if (attr instanceof TLRPC.TL_documentAttributeVideo) {
+                    isVideo = true;
+                    duration = (int) attr.duration;
+                }
+            }
+            if (isGif) return "GIF";
+            if (isVideo) return formatDurationLabel(duration);
+        }
+        return null;
+    }
+
+    public static void applyOverlayLabel(TextView overlay, MessageObject msg) {
+        String label = overlayLabel(msg);
+        if (label == null) {
+            overlay.setVisibility(View.GONE);
+            return;
+        }
+        overlay.setText(label);
+        overlay.setVisibility(View.VISIBLE);
+    }
+
+    private static String formatDurationLabel(int seconds) {
+        if (seconds < 0) seconds = 0;
+        int h = seconds / 3600;
+        int m = (seconds % 3600) / 60;
+        int s = seconds % 60;
+        if (h > 0) {
+            return String.format(Locale.US, "▶ %d:%02d:%02d", h, m, s);
+        }
+        return String.format(Locale.US, "▶ %d:%02d", m, s);
+    }
+
     public static List<MessageObject> collectVisualMedia(FeedController.FeedItem item) {
         List<MessageObject> result = new ArrayList<>();
 
@@ -303,8 +350,7 @@ public class FeedMediaHelper {
                     }
                 });
 
-                overlay.setText("LIVE");
-                overlay.setVisibility(View.VISIBLE);
+                applyOverlayLabel(overlay, msg);
             } else {
                 if (best != null) {
                     iv.setImage(
@@ -319,7 +365,7 @@ public class FeedMediaHelper {
                         if (loadCallback != null) loadCallback.onMainImageLoaded(memCache);
                     }
                 });
-                overlay.setVisibility(View.GONE);
+                applyOverlayLabel(overlay, msg);
             }
 
         } else if (raw.media instanceof TLRPC.TL_messageMediaDocument
@@ -403,8 +449,7 @@ public class FeedMediaHelper {
                     });
                 }
 
-                overlay.setText("GIF");
-                overlay.setVisibility(View.VISIBLE);
+                applyOverlayLabel(overlay, msg);
             } else {
                 TLRPC.PhotoSize thumbSize = bestSize(doc.thumbs);
                 if (thumbSize != null) {
@@ -425,14 +470,7 @@ public class FeedMediaHelper {
                     }
                 });
 
-                if (isVideo) {
-                    int d = (int) duration;
-                    overlay.setText(String.format(Locale.US,
-                            "▶ %d:%02d", d / 60, d % 60));
-                    overlay.setVisibility(View.VISIBLE);
-                } else {
-                    overlay.setVisibility(View.GONE);
-                }
+                applyOverlayLabel(overlay, msg);
             }
         }
 
@@ -454,7 +492,17 @@ public class FeedMediaHelper {
                 thumbLoc = ImageLocation.getForPhoto(stripped, photo);
             }
 
-            if (best != null) {
+            if (msg.isLivePhoto() && msg.getDocument() != null && best != null) {
+                TLRPC.Document videoDoc = msg.getDocument();
+                int videoSize = videoDoc.size > 0 && videoDoc.size <= Integer.MAX_VALUE
+                        ? (int) videoDoc.size : 0;
+                v.setImage(
+                        ImageLocation.getForDocument(videoDoc), "80_80",
+                        ImageLocation.getForPhoto(best, photo), "80_80",
+                        videoSize, msg);
+                v.getImageReceiver().setAutoRepeat(1);
+                v.getImageReceiver().setAllowStartAnimation(true);
+            } else if (best != null) {
                 v.setImage(
                         ImageLocation.getForPhoto(best, photo), "80_80",
                         thumbLoc, "b", 0, msg);

@@ -15,7 +15,6 @@ import org.telegram.messenger.MessageObject;
 import org.telegram.ui.Components.BackupImageView;
 
 import java.util.List;
-import java.util.Locale;
 
 @SuppressLint("ViewConstructor")
 public class FeedAlbumGridView extends ViewGroup {
@@ -55,7 +54,7 @@ public class FeedAlbumGridView extends ViewGroup {
 
         overlayBgPaint.setColor(0x99000000);
         overlayTxtPaint.setColor(0xFFFFFFFF);
-        overlayTxtPaint.setTextSize(dp(11));
+        overlayTxtPaint.setTextSize(dp(12));
         overlayTxtPaint.setTypeface(AndroidUtilities.bold());
         overlayTxtPaint.setTextAlign(Paint.Align.CENTER);
     }
@@ -272,9 +271,9 @@ public class FeedAlbumGridView extends ViewGroup {
         if (cells == null || messages == null) return;
         int n = cells.length;
 
-        float padW = dp(6);
-        float boxH = dp(18);
-        float margin = dp(6);
+        float padW = dp(8);
+        float boxH = dp(20);
+        float margin = dp(8);
 
         for (int i = 0; i < n; i++) {
             if (i >= messages.size()) break;
@@ -299,15 +298,6 @@ public class FeedAlbumGridView extends ViewGroup {
     }
 
     private String getMediaOverlayText(MessageObject msg) {
-        if (msg == null) return null;
-
-        if (msg.isGif()) {
-            return "GIF";
-        } else if (msg.isVideo() || msg.isRoundVideo()) {
-            int d = (int) msg.getDuration();
-            return String.format(Locale.US, "▶ %d:%02d", d / 60, d % 60);
-        }
-
-        return null;
+        return FeedMediaHelper.overlayLabel(msg);
     }
 }
