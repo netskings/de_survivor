@@ -116,7 +116,7 @@ public class FeedSettingsActivity extends BaseFragment {
     @Override
     public View createView(Context context) {
         actionBar.setBackButtonImage(R.drawable.ic_ab_back);
-        actionBar.setTitle("Feed Settings");
+        actionBar.setTitle(LocaleController.getString(R.string.CustomSettingsFeedSettings));
         actionBar.setAllowOverlayTitle(true);
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
             @Override
@@ -268,16 +268,16 @@ public class FeedSettingsActivity extends BaseFragment {
             switch (holder.getItemViewType()) {
                 case TYPE_HEADER: {
                     HeaderCell cell = (HeaderCell) holder.itemView;
-                    if (pos == albumModeHeaderRow) cell.setText("Album Layout");
-                    else if (pos == recommendationsHeaderRow) cell.setText("Recommendations");
-                    else if (pos == hiddenHeaderRow) cell.setText("Hidden Channels");
-                    else if (pos == filterHeaderRow) cell.setText("Content Filter");
+                    if (pos == albumModeHeaderRow) cell.setText(LocaleController.getString(R.string.FeedAlbumLayout));
+                    else if (pos == recommendationsHeaderRow) cell.setText(LocaleController.getString(R.string.FeedRecommendations));
+                    else if (pos == hiddenHeaderRow) cell.setText(LocaleController.getString(R.string.FeedHiddenChannels));
+                    else if (pos == filterHeaderRow) cell.setText(LocaleController.getString(R.string.FeedContentFilter));
                     break;
                 }
                 case TYPE_CHECK: {
                     TextCheckCell cell = (TextCheckCell) holder.itemView;
                     if (pos == recommendationsToggleRow) {
-                        cell.setTextAndCheck("Channel Recommendations",
+                        cell.setTextAndCheck(LocaleController.getString(R.string.FeedChannelRecommendations),
                                 CustomSettings.feedRecommendations(), true);
                     }
                     break;
@@ -286,16 +286,18 @@ public class FeedSettingsActivity extends BaseFragment {
                     TextCell cell = (TextCell) holder.itemView;
                     if (pos == albumModeRow) {
                         FeedAlbumMode mode = CustomSettings.feedAlbumMode();
-                        String modeStr = mode == FeedAlbumMode.CAROUSEL ? "Carousel" : "Grid";
-                        cell.setTextAndValue("Album display mode", modeStr, true);
+                        String modeStr = mode == FeedAlbumMode.CAROUSEL
+                                ? LocaleController.getString(R.string.FeedAlbumCarousel)
+                                : LocaleController.getString(R.string.FeedAlbumGrid);
+                        cell.setTextAndValue(LocaleController.getString(R.string.FeedAlbumDisplayMode), modeStr, true);
                     } else if (pos == recommendationFrequencyRow) {
-                        cell.setTextAndValue("Show every N posts",
+                        cell.setTextAndValue(LocaleController.getString(R.string.FeedRecommendationEveryNPosts),
                                 String.valueOf(CustomSettings.feedRecommendationFrequency()),
                                 true);
                     } else if (pos == recommendationsDetailRow) {
                         int count = FeedRecommendationEngine.getInstance(currentAccount)
                                 .getRecommendations().size();
-                        cell.setTextAndValue("Recommended Channels",
+                        cell.setTextAndValue(LocaleController.getString(R.string.FeedRecommendedChannels),
                                 count > 0 ? String.valueOf(count) : "—",
                                 true);
                     } else if (pos == banListRow) {
@@ -303,11 +305,15 @@ public class FeedSettingsActivity extends BaseFragment {
                         for (CustomSettings.BanGroup g : CustomSettings.getBanGroups()) {
                             count += g.phrases.size();
                         }
-                        cell.setTextAndValue("Banned Words & Phrases", count > 0 ? count + " words" : "Off", true);
+                        cell.setTextAndValue(LocaleController.getString(R.string.FeedBannedWordsPhrases),
+                                count > 0 ? LocaleController.formatPluralString("FeedWords", count)
+                                        : LocaleController.getString(R.string.FeedOff), true);
                     }
                     else if (pos == hiddenLogRow) {
                         int logCount = CustomSettings.getHiddenLog().length();
-                        cell.setTextAndValue("Hidden Posts Log", logCount > 0 ? String.valueOf(logCount) : "Empty", true);
+                        cell.setTextAndValue(LocaleController.getString(R.string.FeedHiddenPostsLog),
+                                logCount > 0 ? String.valueOf(logCount)
+                                        : LocaleController.getString(R.string.FeedEmptyValue), true);
                     }
                     break;
                 }
@@ -322,16 +328,13 @@ public class FeedSettingsActivity extends BaseFragment {
                 case TYPE_INFO: {
                     TextInfoPrivacyCell cell = (TextInfoPrivacyCell) holder.itemView;
                     if (pos == albumModeInfoRow) {
-                        cell.setText("Carousel: swipe left/right between photos.\n" +
-                                "Grid: all photos visible at once.");
+                        cell.setText(LocaleController.getString(R.string.FeedAlbumModeInfo));
                     } else if (pos == recommendationsInfoRow) {
-                        cell.setText("Discover new channels based on your subscriptions. " +
-                                "The system analyzes similar channels, forwarded posts, " +
-                                "and mentions to suggest relevant content.");
+                        cell.setText(LocaleController.getString(R.string.FeedRecommendationsInfo));
                     } else if (pos == hiddenInfoRow) {
-                        cell.setText("Tap ✕ to show the channel in your feed again.");
+                        cell.setText(LocaleController.getString(R.string.FeedHiddenChannelsInfo));
                     } else if (pos == filterInfoRow) {
-                        cell.setText("Posts containing these phrases will be hidden from feed and marked as read automatically.");
+                        cell.setText(LocaleController.getString(R.string.FeedContentFilterInfo));
                     }
                     break;
                 }
@@ -399,7 +402,7 @@ public class FeedSettingsActivity extends BaseFragment {
                     avatarView.setImageDrawable(avatarDrawable);
                 }
             } else {
-                nameView.setText("Channel " + chatId);
+                nameView.setText(LocaleController.formatString(R.string.FeedChannelId, chatId));
                 avatarDrawable.setInfo(chatId, "", "");
                 avatarView.setImageDrawable(avatarDrawable);
             }
@@ -424,13 +427,13 @@ public class FeedSettingsActivity extends BaseFragment {
         picker.setWrapSelectorWheel(false);
 
         AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
-        builder.setTitle("Show recommendation every N posts");
+        builder.setTitle(LocaleController.getString(R.string.FeedRecommendationEveryNPostsTitle));
         builder.setView(picker);
-        builder.setPositiveButton("OK", (dialog, which) -> {
+        builder.setPositiveButton(LocaleController.getString(R.string.OK), (dialog, which) -> {
             CustomSettings.setFeedRecommendationFrequency(picker.getValue());
             if (adapter != null) adapter.notifyDataSetChanged();
         });
-        builder.setNegativeButton("Cancel", null);
+        builder.setNegativeButton(LocaleController.getString(R.string.Cancel), null);
         showDialog(builder.create());
     }
 
@@ -448,7 +451,7 @@ public class FeedSettingsActivity extends BaseFragment {
         radioGroup.setOrientation(android.widget.RadioGroup.VERTICAL);
 
         android.widget.RadioButton rbCarousel = new android.widget.RadioButton(getParentActivity());
-        rbCarousel.setText("Carousel");
+        rbCarousel.setText(LocaleController.getString(R.string.FeedAlbumCarousel));
         rbCarousel.setId(0);
         rbCarousel.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 15);
         rbCarousel.setPadding(dp(8), dp(12), dp(8), dp(12));
@@ -456,7 +459,7 @@ public class FeedSettingsActivity extends BaseFragment {
                 Theme.getColor(Theme.key_windowBackgroundWhiteBlackText));
 
         android.widget.RadioButton rbGrid = new android.widget.RadioButton(getParentActivity());
-        rbGrid.setText("Grid");
+        rbGrid.setText(LocaleController.getString(R.string.FeedAlbumGrid));
         rbGrid.setId(1);
         rbGrid.setTextSize(android.util.TypedValue.COMPLEX_UNIT_DIP, 15);
         rbGrid.setPadding(dp(8), dp(12), dp(8), dp(12));
@@ -470,9 +473,9 @@ public class FeedSettingsActivity extends BaseFragment {
 
         layout.addView(radioGroup);
         AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
-        builder.setTitle("Album display mode");
+        builder.setTitle(LocaleController.getString(R.string.FeedAlbumDisplayMode));
         builder.setView(layout);
-        builder.setPositiveButton("OK", (dialog, which) -> {
+        builder.setPositiveButton(LocaleController.getString(R.string.OK), (dialog, which) -> {
             int checkedId = radioGroup.getCheckedRadioButtonId();
             FeedAlbumMode newMode = checkedId == 0
                     ? FeedAlbumMode.CAROUSEL

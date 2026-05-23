@@ -6,9 +6,11 @@ import android.widget.Toast;
 
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.Emoji;
+import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
+import org.telegram.messenger.R;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 
@@ -49,15 +51,15 @@ class FeedPostSummaryHelper {
 
         if (raw.summarizedOpen && raw.summaryText != null) {
             showSummaryCard(raw);
-            cell.summarizeBtn.setText("Hide summary");
+            cell.summarizeBtn.setText(LocaleController.getString(R.string.FeedHideSummary));
             setButtonEnabled(true);
         } else if (raw.summaryText != null) {
             cell.summaryCard.setVisibility(android.view.View.GONE);
-            cell.summarizeBtn.setText("✨ Show summary");
+            cell.summarizeBtn.setText(LocaleController.getString(R.string.FeedShowSummary));
             setButtonEnabled(true);
         } else {
             cell.summaryCard.setVisibility(android.view.View.GONE);
-            cell.summarizeBtn.setText("✨ Summarize");
+            cell.summarizeBtn.setText(LocaleController.getString(R.string.FeedSummarize));
             setButtonEnabled(true);
         }
     }
@@ -111,11 +113,12 @@ class FeedPostSummaryHelper {
                         if (error != null && "SUMMARY_FLOOD_PREMIUM"
                                 .equalsIgnoreCase(error.text)) {
                             Toast.makeText(cell.getContext(),
-                                    "Summary limit reached. Upgrade to Premium.",
+                                    LocaleController.getString(R.string.FeedSummaryLimitPremium),
                                     Toast.LENGTH_LONG).show();
                         } else if (error != null) {
                             Toast.makeText(cell.getContext(),
-                                    "Failed to summarize", Toast.LENGTH_SHORT).show();
+                                    LocaleController.getString(R.string.FeedSummarizeFailed),
+                                    Toast.LENGTH_SHORT).show();
                         }
                     }
 
@@ -137,20 +140,20 @@ class FeedPostSummaryHelper {
         TLRPC.Message raw = primary.messageOwner;
 
         if (loading) {
-            cell.summarizeBtn.setText("Summarizing…");
+            cell.summarizeBtn.setText(LocaleController.getString(R.string.FeedSummarizing));
             setButtonEnabled(false);
             cell.summaryCard.setVisibility(android.view.View.GONE);
         } else if (raw.summarizedOpen && raw.summaryText != null) {
             showSummaryCard(raw);
-            cell.summarizeBtn.setText("Hide summary");
+            cell.summarizeBtn.setText(LocaleController.getString(R.string.FeedHideSummary));
             setButtonEnabled(true);
         } else if (raw.summaryText != null) {
             cell.summaryCard.setVisibility(android.view.View.GONE);
-            cell.summarizeBtn.setText("✨ Show summary");
+            cell.summarizeBtn.setText(LocaleController.getString(R.string.FeedShowSummary));
             setButtonEnabled(true);
         } else {
             cell.summaryCard.setVisibility(android.view.View.GONE);
-            cell.summarizeBtn.setText("✨ Summarize");
+            cell.summarizeBtn.setText(LocaleController.getString(R.string.FeedSummarize));
             setButtonEnabled(true);
         }
         cell.requestLayout();

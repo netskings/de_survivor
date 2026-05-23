@@ -18,6 +18,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.messenger.R;
+import org.telegram.messenger.LocaleController;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
@@ -67,7 +68,8 @@ public class FeedBanGroupDetailActivity extends BaseFragment {
 
         actionBar.createMenu().addItem(1, R.drawable.msg_delete).setOnClickListener(v -> new AlertDialog.Builder(getParentActivity())
                 .setTitle(getString(R.string.DeleteMega))
-                .setMessage("Are you sure you want to delete \"" + group.name + "\"?")
+                .setMessage(LocaleController.formatString(R.string.FeedBanDeleteGroupMessage,
+                        group.name))
                 .setPositiveButton(getString(R.string.Delete), (dialog, which) -> {
                     List<CustomSettings.BanGroup> allGroups = CustomSettings.getBanGroups();
                     allGroups.removeIf(g -> g.id.equals(group.id));
@@ -108,13 +110,14 @@ public class FeedBanGroupDetailActivity extends BaseFragment {
 
     private void showAddPhraseDialog() {
         AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
-        builder.setTitle("Add Phrase");
+        builder.setTitle(getString(R.string.FeedBanAddPhraseTitle));
 
-        EditTextCell inputCell = new EditTextCell(getParentActivity(), "Word or phrase (e.g., #ad)", false);
+        EditTextCell inputCell = new EditTextCell(getParentActivity(),
+                getString(R.string.FeedBanPhraseHint), false);
         inputCell.hideKeyboardOnEnter();
 
         builder.setView(inputCell);
-        builder.setPositiveButton("Add", (dialog, which) -> {
+        builder.setPositiveButton(getString(R.string.Add), (dialog, which) -> {
             String phrase = inputCell.getText().toString().trim();
             if (!phrase.isEmpty() && !group.phrases.contains(phrase)) {
                 group.phrases.add(phrase);
@@ -195,16 +198,18 @@ public class FeedBanGroupDetailActivity extends BaseFragment {
             int type = holder.getItemViewType();
             if (type == 0) {
                 TextCheckCell cell = (TextCheckCell) holder.itemView;
-                cell.setTextAndCheck("Group Enabled", group.enabled, true);
+                cell.setTextAndCheck(getString(R.string.FeedBanGroupEnabled),
+                        group.enabled, true);
             } else if (type == 1) {
                 PhraseCell cell = (PhraseCell) holder.itemView;
                 cell.setPhrase(group.phrases.get(position - 1), position - 1);
             } else if (type == 2) {
                 TextCell cell = (TextCell) holder.itemView;
-                cell.setTextAndIcon("Add Phrase", R.drawable.msg_add, false);
+                cell.setTextAndIcon(getString(R.string.FeedBanAddPhrase),
+                        R.drawable.msg_add, false);
             } else if (type == 3) {
                 TextInfoPrivacyCell cell = (TextInfoPrivacyCell) holder.itemView;
-                cell.setText("Posts containing any of these phrases will be hidden. Tap a phrase to remove it.");
+                cell.setText(getString(R.string.FeedBanPhraseInfo));
             }
         }
     }

@@ -23,6 +23,7 @@ import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.messenger.ImageLocation;
+import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.R;
 import org.telegram.tgnet.TLRPC;
@@ -97,7 +98,7 @@ public class FeedRecommendationsDetailActivity extends BaseFragment {
     @Override
     public View createView(Context context) {
         actionBar.setBackButtonImage(R.drawable.ic_ab_back);
-        actionBar.setTitle("Recommended Channels");
+        actionBar.setTitle(LocaleController.getString(R.string.FeedRecommendedChannels));
         actionBar.setAllowOverlayTitle(true);
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
             @Override
@@ -148,7 +149,8 @@ public class FeedRecommendationsDetailActivity extends BaseFragment {
     private void dismissChannel(int index) {
         if (index < 0 || index >= channels.size()) return;
         FeedRecommendationEngine.RecommendedChannel rec = channels.get(index);
-        String name = rec.chat != null ? rec.chat.title : "Channel";
+        String name = rec.chat != null ? rec.chat.title
+                : LocaleController.getString(R.string.FeedChannel);
 
         FeedRecommendationEngine.getInstance(currentAccount).dismiss(rec.channelId);
         expandedIds.remove(rec.channelId);
@@ -158,15 +160,22 @@ public class FeedRecommendationsDetailActivity extends BaseFragment {
 
         BulletinFactory.of(this)
                 .createSimpleBulletin(R.drawable.msg_close,
-                        name + " won't be recommended")
+                        LocaleController.formatString(
+                                R.string.FeedRecommendationDismissed, name))
                 .show();
     }
 
     @SuppressLint("DefaultLocale")
     private String formatSubscribers(int count) {
-        if (count >= 1_000_000) return String.format("%.1fM subscribers", count / 1_000_000f);
-        if (count >= 1_000) return String.format("%.1fK subscribers", count / 1_000f);
-        return count + " subscribers";
+        if (count >= 1_000_000) {
+            return LocaleController.formatString(
+                    R.string.FeedSubscribersShortMillions, count / 1_000_000f);
+        }
+        if (count >= 1_000) {
+            return LocaleController.formatString(
+                    R.string.FeedSubscribersShortThousands, count / 1_000f);
+        }
+        return LocaleController.formatPluralString("FeedSubscribers", count);
     }
 
     private String getChannelNames(Set<Long> ids) {
@@ -227,7 +236,7 @@ public class FeedRecommendationsDetailActivity extends BaseFragment {
                 case TYPE_EMPTY:
                 default:
                     TextView tv = new TextView(ctx);
-                    tv.setText("No recommendations yet.\nEnable recommendations and reload the feed.");
+                    tv.setText(LocaleController.getString(R.string.FeedNoRecommendations));
                     tv.setTextColor(Theme.getColor(Theme.key_windowBackgroundWhiteGrayText));
                     tv.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 15);
                     tv.setGravity(Gravity.CENTER);
@@ -246,7 +255,8 @@ public class FeedRecommendationsDetailActivity extends BaseFragment {
             switch (holder.getItemViewType()) {
                 case TYPE_HEADER: {
                     HeaderCell cell = (HeaderCell) holder.itemView;
-                    cell.setText("Discovered Channels (" + channels.size() + ")");
+                    cell.setText(LocaleController.formatString(
+                            R.string.FeedDiscoveredChannels, channels.size()));
                     break;
                 }
                 case TYPE_CHANNEL: {
@@ -260,10 +270,8 @@ public class FeedRecommendationsDetailActivity extends BaseFragment {
                 }
                 case TYPE_INFO: {
                     TextInfoPrivacyCell cell = (TextInfoPrivacyCell) holder.itemView;
-                    cell.setText("Channels are recommended based on similarity analysis, " +
-                            "forwarded posts, and mentions from your subscriptions.\n\n" +
-                            "Score reflects connection strength. " +
-                            "Tap a channel to see detailed sources.");
+                    cell.setText(LocaleController.getString(
+                            R.string.FeedRecommendationsDetailInfo));
                     break;
                 }
             }
@@ -409,7 +417,8 @@ public class FeedRecommendationsDetailActivity extends BaseFragment {
                     subscribersView.setVisibility(GONE);
                 }
             } else {
-                nameView.setText("Channel " + rec.channelId);
+                nameView.setText(LocaleController.formatString(
+                        R.string.FeedChannelId, rec.channelId));
                 avatarDrawable.setInfo(rec.channelId, "", "");
                 avatarView.setImageDrawable(avatarDrawable);
                 subscribersView.setVisibility(GONE);
@@ -417,14 +426,15 @@ public class FeedRecommendationsDetailActivity extends BaseFragment {
 
             scoreView.setText(String.format("%.1f", rec.score));
 
-            reasonView.setText(rec.reason != null ? rec.reason : "Recommended for you");
+            reasonView.setText(rec.reason != null ? rec.reason
+                    : LocaleController.getString(R.string.FeedRecommendedForYou));
 
             if (expanded) {
-                expandHint.setText("▲ Hide sources");
+                expandHint.setText(LocaleController.getString(R.string.FeedHideSources));
                 sourcesContainer.setVisibility(VISIBLE);
                 buildSources(rec);
             } else {
-                expandHint.setText("▼ Show sources");
+                expandHint.setText(LocaleController.getString(R.string.FeedShowSources));
                 sourcesContainer.setVisibility(GONE);
             }
         }
@@ -435,27 +445,29 @@ public class FeedRecommendationsDetailActivity extends BaseFragment {
 
             if (!rec.similarSourceIds.isEmpty()) {
                 addSourceSection(
-                        "🔗 Similar (" + rec.similarSourceIds.size() + ")",
+                        LocaleController.formatString(R.string.FeedSimilarSources,
+                                rec.similarSourceIds.size()),
                         getChannelNames(rec.similarSourceIds));
             }
             if (!rec.forwardSourceIds.isEmpty()) {
                 addSourceSection(
-                        "↗️ Forwarded by (" + rec.forwardSourceIds.size() + ")",
+                        LocaleController.formatString(R.string.FeedForwardedBySources,
+                                rec.forwardSourceIds.size()),
                         getChannelNames(rec.forwardSourceIds));
             }
             if (!rec.mentionSourceIds.isEmpty()) {
                 addSourceSection(
-                        "💬 Mentioned by (" + rec.mentionSourceIds.size() + ")",
+                        LocaleController.formatString(R.string.FeedMentionedBySources,
+                                rec.mentionSourceIds.size()),
                         getChannelNames(rec.mentionSourceIds));
             }
 
             int total = rec.similarSourceIds.size()
                     + rec.forwardSourceIds.size()
                     + rec.mentionSourceIds.size();
-            addSummaryLine("Total sources: " + total
-                    + " · Sim: " + rec.similarSources
-                    + " · Fwd: " + rec.forwardSources
-                    + " · Mnt: " + rec.mentionSources);
+            addSummaryLine(LocaleController.formatString(
+                    R.string.FeedRecommendationSourcesSummary, total,
+                    rec.similarSources, rec.forwardSources, rec.mentionSources));
         }
 
         private void addSourceSection(String label, String names) {

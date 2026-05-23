@@ -1,6 +1,7 @@
 package org.telegram.ui.Feed;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
+import static org.telegram.messenger.LocaleController.getString;
 import static org.telegram.ui.Feed.FeedMediaHelper.smallestThumb;
 
 import android.annotation.SuppressLint;
@@ -15,6 +16,7 @@ import android.widget.TextView;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ImageLocation;
 import org.telegram.messenger.MessagesController;
+import org.telegram.messenger.R;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.Theme;
@@ -112,7 +114,7 @@ public class FeedReplyView extends LinearLayout {
         }
 
         String name = resolveReplyName(raw, controller);
-        nameView.setText(name != null ? name : "Message");
+        nameView.setText(name != null ? name : getString(R.string.Message));
 
         String replyText = resolveReplyText(raw);
         if (replyText == null || replyText.isEmpty()) {

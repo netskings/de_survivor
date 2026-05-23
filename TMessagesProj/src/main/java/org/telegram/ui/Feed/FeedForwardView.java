@@ -1,6 +1,7 @@
 package org.telegram.ui.Feed;
 
 import static org.telegram.messenger.AndroidUtilities.dp;
+import static org.telegram.messenger.LocaleController.getString;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
@@ -14,6 +15,7 @@ import android.widget.TextView;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ImageLocation;
 import org.telegram.messenger.MessagesController;
+import org.telegram.messenger.R;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.Components.AvatarDrawable;
@@ -60,7 +62,7 @@ public class FeedForwardView extends LinearLayout {
         TextView label = new TextView(context);
         label.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
         label.setTextColor(greenColor);
-        label.setText("Forwarded from");
+        label.setText(getString(R.string.ForwardedFrom));
         content.addView(label, LayoutHelper.createLinear(
                 LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT));
 

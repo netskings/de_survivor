@@ -13,6 +13,7 @@ import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
+import org.telegram.messenger.R;
 import org.telegram.messenger.TranslateController;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
@@ -112,7 +113,7 @@ class FeedPostTranslationHelper {
 
     @SuppressLint("SetTextI18n")
     private void showTranslateButton() {
-        cell.translateBtn.setText("Translate post");
+        cell.translateBtn.setText(LocaleController.getString(R.string.FeedTranslatePost));
         cell.translateBtn.setAlpha(1f);
         cell.translateBtn.setEnabled(true);
         cell.translateBtn.setVisibility(View.VISIBLE);
@@ -128,7 +129,9 @@ class FeedPostTranslationHelper {
                     TranslateAlert2.languageName(raw.originalLanguage));
         }
         cell.translationHeaderView.setText(
-                fromName != null ? "Translated from " + fromName : "Translated");
+                fromName != null
+                        ? LocaleController.formatString(R.string.FeedTranslatedFrom, fromName)
+                        : LocaleController.getString(R.string.FeedTranslated));
 
         CharSequence display;
         if (raw.translatedText.entities != null && !raw.translatedText.entities.isEmpty()) {
@@ -145,7 +148,7 @@ class FeedPostTranslationHelper {
         cell.translationTextView.setText(display);
         cell.translationCard.setVisibility(View.VISIBLE);
 
-        cell.translateBtn.setText("Show original");
+        cell.translateBtn.setText(LocaleController.getString(R.string.FeedShowOriginal));
         cell.translateBtn.setAlpha(1f);
         cell.translateBtn.setEnabled(true);
         cell.translateBtn.setVisibility(View.VISIBLE);
@@ -154,7 +157,7 @@ class FeedPostTranslationHelper {
     @SuppressLint("SetTextI18n")
     private void requestTranslation(MessageObject message) {
         loading = true;
-        cell.translateBtn.setText("Translating…");
+        cell.translateBtn.setText(LocaleController.getString(R.string.FeedTranslating));
         cell.translateBtn.setAlpha(0.5f);
         cell.translateBtn.setEnabled(false);
 
@@ -234,10 +237,12 @@ class FeedPostTranslationHelper {
     @SuppressLint("SetTextI18n")
     private void handleError(TLRPC.TL_error err, FeedController.FeedItem item) {
         if (cell.currentItem == item) showTranslateButton();
-        String msg = "Translation failed";
-        if (err != null && "TO_LANG_INVALID".equals(err.text)) msg = "Invalid target language";
+        String msg = LocaleController.getString(R.string.FeedTranslationFailed);
+        if (err != null && "TO_LANG_INVALID".equals(err.text)) {
+            msg = LocaleController.getString(R.string.FeedInvalidTargetLanguage);
+        }
         else if (err != null && "QUOTA_EXCEEDED".equals(err.text))
-            msg = "Translation quota exceeded, try later";
+            msg = LocaleController.getString(R.string.FeedTranslationQuotaExceeded);
         Toast.makeText(cell.getContext(), msg, Toast.LENGTH_SHORT).show();
     }
 

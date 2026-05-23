@@ -23,11 +23,13 @@ import androidx.core.graphics.ColorUtils;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.ImageLocation;
+import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MediaController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.NotificationCenter;
+import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
 import org.telegram.tgnet.ConnectionsManager;
@@ -396,7 +398,7 @@ public class FeedVoiceView extends LinearLayout implements NotificationCenter.No
         voiceLayout.setVisibility(VISIBLE);
         musicLayout.setVisibility(GONE);
 
-        voiceLabelView.setText("Voice message");
+        voiceLabelView.setText(LocaleController.getString(R.string.FeedVoiceMessage));
         waveformView.setWaveform(waveform);
         waveformView.setProgress(0);
         waveformView.setVisibility(VISIBLE);
@@ -412,7 +414,8 @@ public class FeedVoiceView extends LinearLayout implements NotificationCenter.No
         voiceLayout.setVisibility(GONE);
         musicLayout.setVisibility(VISIBLE);
 
-        musicTitleView.setText(title != null && !title.isEmpty() ? title : "Audio");
+        musicTitleView.setText(title != null && !title.isEmpty()
+                ? title : LocaleController.getString(R.string.FeedAudio));
 
         if (performer != null && !performer.isEmpty()) {
             musicArtistView.setText(performer);
@@ -556,7 +559,7 @@ public class FeedVoiceView extends LinearLayout implements NotificationCenter.No
         String text     = raw.voiceTranscription;
 
         if (transcriptionLoading || (isOpen && !isFinal)) {
-            transcriptionTextView.setText("Transcribing…");
+            transcriptionTextView.setText(LocaleController.getString(R.string.FeedTranscribing));
             transcriptionTextView.setVisibility(VISIBLE);
             transcribeBtn.setAlpha(0.5f);
         } else if (isOpen && text != null && isFinal) {
@@ -600,7 +603,7 @@ public class FeedVoiceView extends LinearLayout implements NotificationCenter.No
             requestTranscription();
         } else {
             android.widget.Toast.makeText(getContext(),
-                    "Telegram Premium is required for voice transcription",
+                    LocaleController.getString(R.string.FeedVoiceTranscriptionPremiumRequired),
                     android.widget.Toast.LENGTH_SHORT).show();
         }
     }
@@ -668,7 +671,7 @@ public class FeedVoiceView extends LinearLayout implements NotificationCenter.No
                         transcriptionLoading = false;
                         updateTranscriptionUI();
                         android.widget.Toast.makeText(getContext(),
-                                "Please wait before trying again",
+                                LocaleController.getString(R.string.FeedPleaseWaitTryAgain),
                                 android.widget.Toast.LENGTH_SHORT).show();
                     });
                     return;

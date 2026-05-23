@@ -35,6 +35,7 @@ import androidx.annotation.RequiresApi;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.Emoji;
 import org.telegram.messenger.ImageLocation;
+import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MediaDataController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
@@ -557,7 +558,7 @@ public class FeedReactionsView extends FrameLayout {
                 starRow.addView(si, new LinearLayout.LayoutParams(dp(20), dp(20)));
             } catch (Exception ignored) {}
             TextView label = new TextView(getContext());
-            label.setText("  Send Star"); label.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
+            label.setText("  " + LocaleController.getString(R.string.FeedSendStar)); label.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 14);
             label.setTextColor(0xFFFFAC1C); label.setTypeface(AndroidUtilities.bold());
             starRow.addView(label);
             starRow.setOnClickListener(v -> {

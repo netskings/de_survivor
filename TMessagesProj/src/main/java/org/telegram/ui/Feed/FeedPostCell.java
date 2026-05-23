@@ -368,7 +368,7 @@ public class FeedPostCell extends LinearLayout {
         summaryCard.setVisibility(GONE);
 
         TextView summaryTitleView = new TextView(context);
-        summaryTitleView.setText("✨ AI Summary");
+        summaryTitleView.setText(LocaleController.getString(R.string.FeedSummaryTitleDecorated));
         summaryTitleView.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
         summaryTitleView.setTextColor(accentColor);
         summaryTitleView.setTypeface(AndroidUtilities.bold());
@@ -651,7 +651,7 @@ public class FeedPostCell extends LinearLayout {
                 LayoutHelper.createLinear(0, LayoutHelper.WRAP_CONTENT, 1f));
 
         subscribeBtn = new TextView(context);
-        subscribeBtn.setText("Subscribe");
+        subscribeBtn.setText(LocaleController.getString(R.string.FeedSubscribe));
         subscribeBtn.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
         subscribeBtn.setTextColor(0xFFFFFFFF);
         subscribeBtn.setTypeface(AndroidUtilities.bold());
@@ -948,7 +948,9 @@ public class FeedPostCell extends LinearLayout {
         }
 
         String timeStr = LocaleController.formatDateAudio(raw.date, true);
-        if (FeedUtils.isReallyEdited(raw)) timeStr += " · edited";
+        if (FeedUtils.isReallyEdited(raw)) {
+            timeStr += " · " + LocaleController.getString(R.string.EditedMessage);
+        }
         timeView.setText(timeStr);
         unreadDot.setVisibility(item.isRead ? GONE : VISIBLE);
     }

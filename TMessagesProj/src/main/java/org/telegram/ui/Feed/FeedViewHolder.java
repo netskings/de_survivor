@@ -7,6 +7,8 @@ import android.view.ViewGroup;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
 
+import org.telegram.messenger.LocaleController;
+import org.telegram.messenger.R;
 import org.telegram.ui.ActionBar.Theme;
 
 public class FeedViewHolder extends RecyclerView.ViewHolder {
@@ -19,7 +21,7 @@ public class FeedViewHolder extends RecyclerView.ViewHolder {
         if (item instanceof FeedController.FeedSeparator
                 && itemView instanceof FeedSeparatorCell) {
             ((FeedSeparatorCell) itemView).setText(
-                    "You're all caught up! Here are some recommendations");
+                    LocaleController.getString(R.string.FeedRecommendationsSeparator));
 
         } else if (item instanceof FeedController.FeedItem
                 && itemView instanceof FeedPostCell) {

@@ -1,6 +1,8 @@
 package org.telegram.ui.Feed;
 
+import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
+import org.telegram.messenger.R;
 import org.telegram.tgnet.TLRPC;
 
 import java.util.Locale;
@@ -53,24 +55,42 @@ public class FeedUtils {
     }
 
     public static String getMediaTypeLabel(TLRPC.MessageMedia media) {
-        if (media instanceof TLRPC.TL_messageMediaPhoto) return "📷 Photo";
+        if (media instanceof TLRPC.TL_messageMediaPhoto) {
+            return LocaleController.getString(R.string.FeedMediaPhoto);
+        }
         if (media instanceof TLRPC.TL_messageMediaDocument && media.document != null) {
             for (TLRPC.DocumentAttribute attr : media.document.attributes) {
-                if (attr instanceof TLRPC.TL_documentAttributeVideo) return "📹 Video";
-                if (attr instanceof TLRPC.TL_documentAttributeAnimated) return "GIF";
-                if (attr instanceof TLRPC.TL_documentAttributeAudio) {
-                    if (attr.voice) return "🎤 Voice message";
-                    return "🎵 Audio";
+                if (attr instanceof TLRPC.TL_documentAttributeVideo) {
+                    return LocaleController.getString(R.string.FeedMediaVideo);
                 }
-                if (attr instanceof TLRPC.TL_documentAttributeSticker) return "Sticker";
+                if (attr instanceof TLRPC.TL_documentAttributeAnimated) {
+                    return LocaleController.getString(R.string.FeedMediaGif);
+                }
+                if (attr instanceof TLRPC.TL_documentAttributeAudio) {
+                    if (attr.voice) {
+                        return LocaleController.getString(R.string.FeedMediaVoiceMessage);
+                    }
+                    return LocaleController.getString(R.string.FeedMediaAudio);
+                }
+                if (attr instanceof TLRPC.TL_documentAttributeSticker) {
+                    return LocaleController.getString(R.string.FeedMediaSticker);
+                }
             }
-            return "📎 Document";
+            return LocaleController.getString(R.string.FeedMediaDocument);
         }
-        if (media instanceof TLRPC.TL_messageMediaPoll) return "📊 Poll";
-        if (media instanceof TLRPC.TL_messageMediaGeo) return "📍 Location";
-        if (media instanceof TLRPC.TL_messageMediaGeoLive) return "📍 Live location";
-        if (media instanceof TLRPC.TL_messageMediaContact) return "👤 Contact";
-        return "Attachment";
+        if (media instanceof TLRPC.TL_messageMediaPoll) {
+            return LocaleController.getString(R.string.FeedMediaPoll);
+        }
+        if (media instanceof TLRPC.TL_messageMediaGeoLive) {
+            return LocaleController.getString(R.string.FeedMediaLiveLocation);
+        }
+        if (media instanceof TLRPC.TL_messageMediaGeo) {
+            return LocaleController.getString(R.string.FeedMediaLocation);
+        }
+        if (media instanceof TLRPC.TL_messageMediaContact) {
+            return LocaleController.getString(R.string.FeedMediaContact);
+        }
+        return LocaleController.getString(R.string.FeedMediaAttachment);
     }
 
     public static Activity getActivity(Context context) {
@@ -99,7 +119,8 @@ public class FeedUtils {
             context.startActivity(android.content.Intent.createChooser(intent, ""));
         } catch (Exception e) {
             android.widget.Toast.makeText(context,
-                    "No app to open this file", android.widget.Toast.LENGTH_SHORT).show();
+                    LocaleController.getString(R.string.FeedNoAppToOpenFile),
+                    android.widget.Toast.LENGTH_SHORT).show();
         }
     }
 

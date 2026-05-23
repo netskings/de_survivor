@@ -5,6 +5,7 @@ import android.annotation.SuppressLint;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.R;
@@ -117,9 +118,10 @@ class FeedReactionHandler {
     private void showPaidUndoBulletin(FeedController.FeedItem item, int totalAmount) {
         if (currentStarBulletin != null) currentStarBulletin.hide();
 
-        String title = "You sent ⭐ " + totalAmount + " anonymously";
-        String subtitle = "You reacted with " + totalAmount + " star"
-                + (totalAmount != 1 ? "s" : "");
+        String title = LocaleController.formatString(
+                R.string.FeedSentStarsAnonymously, totalAmount);
+        String subtitle = LocaleController.formatPluralString(
+                "FeedReactedWithStars", totalAmount);
 
         Bulletin.TwoLineLottieLayout layout = new Bulletin.TwoLineLottieLayout(
                 activity.getParentActivity(), activity.getResProvider());
@@ -129,7 +131,7 @@ class FeedReactionHandler {
 
         Bulletin.UndoButton undoButton = new Bulletin.UndoButton(
                 activity.getParentActivity(), true, false, activity.getResProvider());
-        undoButton.setText("Undo");
+        undoButton.setText(LocaleController.getString(R.string.Undo));
         undoButton.setUndoAction(() -> undoPaidReaction(item, pendingPaidAmount));
         layout.setButton(undoButton);
 

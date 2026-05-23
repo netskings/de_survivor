@@ -20,7 +20,9 @@ import androidx.annotation.NonNull;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.ImageLocation;
+import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
+import org.telegram.messenger.R;
 import org.telegram.messenger.Utilities;
 import org.telegram.messenger.WebFile;
 import org.telegram.tgnet.ConnectionsManager;
@@ -133,7 +135,7 @@ public class FeedPollView extends LinearLayout {
         voteButton.setTextColor(accentColor);
         voteButton.setGravity(Gravity.CENTER);
         voteButton.setPadding(0, dp(12), 0, dp(12));
-        voteButton.setText("Vote");
+        voteButton.setText(LocaleController.getString(R.string.FeedPollVote));
         voteButton.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector, resourceProvider), 2));
         voteButton.setVisibility(GONE);
         voteButton.setOnClickListener(v -> submitVote());
@@ -144,7 +146,7 @@ public class FeedPollView extends LinearLayout {
         retractButton.setTextColor(accentColor);
         retractButton.setGravity(Gravity.CENTER);
         retractButton.setPadding(0, dp(8), 0, dp(4));
-        retractButton.setText("Retract Vote");
+        retractButton.setText(LocaleController.getString(R.string.FeedPollRetractVote));
         retractButton.setBackground(Theme.createSelectorDrawable(Theme.getColor(Theme.key_listSelector, resourceProvider), 2));
         retractButton.setVisibility(GONE);
         retractButton.setOnClickListener(v -> retractVote());
@@ -177,7 +179,7 @@ public class FeedPollView extends LinearLayout {
         explanationLabel.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 13);
         explanationLabel.setTypeface(AndroidUtilities.bold());
         explanationLabel.setTextColor(grayColor);
-        explanationLabel.setText("💡 Explanation");
+        explanationLabel.setText(LocaleController.getString(R.string.FeedPollExplanation));
         explanationContainer.addView(explanationLabel, LayoutHelper.createLinear(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, 0, 0, 0, 4));
 
         explanationText = new TextView(context);
@@ -216,12 +218,20 @@ public class FeedPollView extends LinearLayout {
 
         StringBuilder typeText = new StringBuilder();
         if (quiz) {
-            typeText.append(poll.public_voters ? "Quiz" : "Anonymous Quiz");
+            typeText.append(LocaleController.getString(poll.public_voters
+                    ? R.string.FeedPollQuiz : R.string.FeedPollAnonymousQuiz));
         } else {
-            typeText.append(poll.public_voters ? "Poll" : "Anonymous Poll");
+            typeText.append(LocaleController.getString(poll.public_voters
+                    ? R.string.FeedPollPoll : R.string.FeedPollAnonymousPoll));
         }
-        if (poll.open_answers) typeText.append(" · Open answers");
-        if (closed) typeText.append(" · Final Results");
+        if (poll.open_answers) {
+            typeText.append(" · ")
+                    .append(LocaleController.getString(R.string.FeedPollOpenAnswers));
+        }
+        if (closed) {
+            typeText.append(" · ")
+                    .append(LocaleController.getString(R.string.FeedPollFinalResults));
+        }
         typeLabel.setText(typeText);
 
         questionView.setText(poll.question.text);
@@ -245,7 +255,7 @@ public class FeedPollView extends LinearLayout {
 
         if (multipleChoice && !voted && !closed) {
             voteButton.setVisibility(VISIBLE);
-            voteButton.setText("Vote");
+            voteButton.setText(LocaleController.getString(R.string.FeedPollVote));
             voteButton.setEnabled(false);
         } else {
             voteButton.setVisibility(GONE);
@@ -410,13 +420,16 @@ public class FeedPollView extends LinearLayout {
     }
 
     private String formatShortDuration(int seconds) {
-        if (seconds < 60) return seconds + "s";
+        if (seconds < 60) return LocaleController.formatString(
+                R.string.FeedSecondsShort, seconds);
         int minutes = seconds / 60;
-        if (minutes < 60) return minutes + "m";
+        if (minutes < 60) return LocaleController.formatString(
+                R.string.FeedMinutesShort, minutes);
         int hours = minutes / 60;
-        if (hours < 24) return hours + "h";
+        if (hours < 24) return LocaleController.formatString(
+                R.string.FeedHoursShort, hours);
         int days = hours / 24;
-        return days + "d";
+        return LocaleController.formatString(R.string.FeedDaysShort, days);
     }
 
     private void onAnswerClicked(AnswerRow row) {
@@ -460,7 +473,7 @@ public class FeedPollView extends LinearLayout {
 
         for (AnswerRow r : answerRows) r.container.setClickable(false);
         voteButton.setEnabled(false);
-        voteButton.setText("Sending...");
+        voteButton.setText(LocaleController.getString(R.string.FeedPollSending));
 
         sendVoteRequest(new ArrayList<>(selectedOptions));
     }
@@ -470,7 +483,7 @@ public class FeedPollView extends LinearLayout {
         if (voteSending || quiz || revotingDisabled) return;
         voteSending = true;
         retractButton.setEnabled(false);
-        retractButton.setText("Retracting...");
+        retractButton.setText(LocaleController.getString(R.string.FeedPollRetracting));
 
         sendVoteRequest(new ArrayList<>());
     }
@@ -500,11 +513,14 @@ public class FeedPollView extends LinearLayout {
             if (error != null) {
                 for (AnswerRow r : answerRows) r.container.setClickable(true);
                 voteButton.setEnabled(true);
-                voteButton.setText("Vote");
+                voteButton.setText(LocaleController.getString(R.string.FeedPollVote));
                 retractButton.setEnabled(true);
-                retractButton.setText("Retract Vote");
+                retractButton.setText(LocaleController.getString(R.string.FeedPollRetractVote));
                 try {
-                    Toast.makeText(getContext(), "Vote failed: " + error.text, Toast.LENGTH_SHORT).show();
+                    Toast.makeText(getContext(),
+                            LocaleController.formatString(
+                                    R.string.FeedPollVoteFailed, error.text),
+                            Toast.LENGTH_SHORT).show();
                 } catch (Exception e) { /* ignore */ }
                 return;
             }
@@ -546,8 +562,8 @@ public class FeedPollView extends LinearLayout {
             }
 
             voteButton.setVisibility(multipleChoice && !voted && !closed ? VISIBLE : GONE);
-            voteButton.setText("Vote");
-            retractButton.setText("Retract Vote");
+            voteButton.setText(LocaleController.getString(R.string.FeedPollVote));
+            retractButton.setText(LocaleController.getString(R.string.FeedPollRetractVote));
             retractButton.setEnabled(true);
 
             updateResultsUI();
@@ -667,9 +683,10 @@ public class FeedPollView extends LinearLayout {
         }
 
         if (totalVoters > 0) {
-            totalVotersView.setText(totalVoters + (totalVoters == 1 ? " vote" : " votes"));
+            totalVotersView.setText(LocaleController.formatPluralString(
+                    "Vote", totalVoters));
         } else {
-            totalVotersView.setText("No votes yet");
+            totalVotersView.setText(LocaleController.getString(R.string.FeedPollNoVotesYet));
         }
 
         if (voted && !quiz && !closed && !revotingDisabled) {

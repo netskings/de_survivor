@@ -22,6 +22,8 @@ import androidx.annotation.NonNull;
 import androidx.core.graphics.ColorUtils;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.LocaleController;
+import org.telegram.messenger.R;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.ui.Components.AnimatedEmojiDrawable;
 import org.telegram.ui.Components.AnimatedEmojiSpan;
@@ -519,7 +521,8 @@ class FeedMessageTextView extends AnimatedEmojiSpan.TextViewEmojis {
             cell.linkCollector.clear();
             cell.setPressedLink(null);
             touchedMonoSpan = null;
-            Toast.makeText(getContext(), "Copied", Toast.LENGTH_SHORT).show();
+            Toast.makeText(getContext(),
+                    LocaleController.getString(R.string.TextCopied), Toast.LENGTH_SHORT).show();
             return true;
         }
 
@@ -618,7 +621,8 @@ class FeedMessageTextView extends AnimatedEmojiSpan.TextViewEmojis {
                 if (cm != null) cm.setPrimaryClip(
                         ClipData.newPlainText("date", ds.getFormattedFull()));
                 Toast.makeText(getContext(),
-                        "Copied: " + ds.getFormattedFull(), Toast.LENGTH_SHORT).show();
+                        LocaleController.formatString(R.string.FeedCopiedValue,
+                                ds.getFormattedFull()), Toast.LENGTH_SHORT).show();
             } else if (touchedSpan instanceof URLSpan) {
                 String url = ((URLSpan) touchedSpan).getURL();
                 if (cell.callback != null)
@@ -693,7 +697,8 @@ class FeedMessageTextView extends AnimatedEmojiSpan.TextViewEmojis {
         ClipboardManager cm = (ClipboardManager) getContext()
                 .getSystemService(Context.CLIPBOARD_SERVICE);
         if (cm != null) cm.setPrimaryClip(ClipData.newPlainText("code", block.codeText));
-        Toast.makeText(getContext(), "Copied", Toast.LENGTH_SHORT).show();
+        Toast.makeText(getContext(),
+                LocaleController.getString(R.string.TextCopied), Toast.LENGTH_SHORT).show();
     }
 
     private FeedQuoteSpan.Clickable findQuoteClickable(float viewX, float viewY,

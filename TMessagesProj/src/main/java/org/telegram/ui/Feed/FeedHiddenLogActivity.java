@@ -14,6 +14,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.R;
 import org.telegram.tgnet.TLRPC;
@@ -44,7 +45,7 @@ public class FeedHiddenLogActivity extends BaseFragment {
     @Override
     public View createView(Context context) {
         actionBar.setBackButtonImage(R.drawable.ic_ab_back);
-        actionBar.setTitle("Hidden Posts Log");
+        actionBar.setTitle(LocaleController.getString(R.string.FeedHiddenPostsLog));
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
             @Override
             public void onItemClick(int id) {
@@ -53,14 +54,14 @@ public class FeedHiddenLogActivity extends BaseFragment {
         });
 
         actionBar.createMenu().addItem(1, R.drawable.msg_clear).setOnClickListener(v -> new AlertDialog.Builder(getParentActivity())
-                .setTitle("Clear Log")
-                .setMessage("Are you sure you want to clear the hidden posts log?")
-                .setPositiveButton("Clear", (dialog, which) -> {
+                .setTitle(LocaleController.getString(R.string.FeedClearLog))
+                .setMessage(LocaleController.getString(R.string.FeedClearLogMessage))
+                .setPositiveButton(LocaleController.getString(R.string.FeedClear), (dialog, which) -> {
                     CustomSettings.clearHiddenLog();
                     logArray = new JSONArray();
                     adapter.notifyDataSetChanged();
                 })
-                .setNegativeButton("Cancel", null)
+                .setNegativeButton(LocaleController.getString(R.string.Cancel), null)
                 .show());
 
         FrameLayout root = new FrameLayout(context);
@@ -101,7 +102,8 @@ public class FeedHiddenLogActivity extends BaseFragment {
                 view.setBackgroundColor(Theme.getColor(Theme.key_windowBackgroundWhite));
             } else {
                 view = new TextInfoPrivacyCell(ctx);
-                ((TextInfoPrivacyCell) view).setText("Posts hidden because of your word filter. They are already marked as read in channels.");
+                ((TextInfoPrivacyCell) view).setText(LocaleController.getString(
+                        R.string.FeedHiddenLogInfo));
             }
             view.setLayoutParams(new RecyclerView.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
             return new RecyclerListView.Holder(view);
@@ -118,14 +120,17 @@ public class FeedHiddenLogActivity extends BaseFragment {
                     long date = obj.optLong("date", 0);
 
                     TLRPC.Chat chat = MessagesController.getInstance(currentAccount).getChat(-channelId);
-                    String name = chat != null ? chat.title : "Channel " + channelId;
+                    String name = chat != null ? chat.title
+                            : LocaleController.formatString(R.string.FeedChannelId, channelId);
 
                     @SuppressLint("SimpleDateFormat")
                     String dateStr = new SimpleDateFormat("dd.MM.yy HH:mm", Locale.getDefault()).format(new Date(date * 1000L));
 
-                    ((TextView) holder.itemView).setText("📌 " + name + " · " + dateStr + "\n" + snippet);
+                    ((TextView) holder.itemView).setText(LocaleController.formatString(
+                            R.string.FeedHiddenLogEntry, name, dateStr, snippet));
                 } catch (Exception e) {
-                    ((TextView) holder.itemView).setText("Error reading entry");
+                    ((TextView) holder.itemView).setText(LocaleController.getString(
+                            R.string.FeedHiddenLogEntryError));
                 }
             }
         }

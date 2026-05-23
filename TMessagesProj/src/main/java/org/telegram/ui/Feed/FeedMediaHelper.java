@@ -372,16 +372,13 @@ public class FeedMediaHelper {
                 && raw.media.document != null) {
 
             TLRPC.Document doc = raw.media.document;
-            boolean isGif = false, isVideo = false;
-            double duration = 0;
+            boolean isGif = false;
             int videoW = 0, videoH = 0;
 
             for (TLRPC.DocumentAttribute attr : doc.attributes) {
                 if (attr instanceof TLRPC.TL_documentAttributeVideo) {
                     TLRPC.TL_documentAttributeVideo videoAttr =
                             (TLRPC.TL_documentAttributeVideo) attr;
-                    isVideo = true;
-                    duration = videoAttr.duration;
                     videoW = videoAttr.w;
                     videoH = videoAttr.h;
                 }
@@ -412,42 +409,27 @@ public class FeedMediaHelper {
             }
 
             if (isGif) {
-                if (isVideo) {
-                    TLRPC.PhotoSize thumbSize = bestSize(doc.thumbs);
-                    if (thumbSize != null) {
-                        String vFilter = makeFilter(displayWidth, height);
-                        iv.setImage(
-                                ImageLocation.getForDocument(thumbSize, doc), vFilter,
-                                docThumbLoc, docThumbFilter,
-                                0, msg);
-                    } else if (docThumbLoc != null) {
-                        iv.setImage(docThumbLoc,
-                                displayWidth + "_" + height + "_b",
-                                null, null, 0, msg);
-                    }
-                } else {
-                    String gifFilter = makeFilter(displayWidth, height);
+                String gifFilter = makeFilter(displayWidth, height);
 
-                    int docSize = 0;
-                    if (doc.size > 0 && doc.size <= Integer.MAX_VALUE) {
-                        docSize = (int) doc.size;
-                    }
-
-                    iv.setImage(
-                            ImageLocation.getForDocument(doc), gifFilter,
-                            docThumbLoc, docThumbFilter,
-                            docSize, msg);
-                    iv.getImageReceiver().setAutoRepeat(1);
-                    iv.getImageReceiver().setAllowStartAnimation(true);
-                    iv.getImageReceiver().setDelegate((imageReceiver, set, isThumb, memCache) -> {
-                        if (set && !isThumb) {
-                            if (loadCallback != null) loadCallback.onMainImageLoaded(memCache);
-                            iv.getImageReceiver().setAllowStartAnimation(true);
-                            iv.getImageReceiver().startAnimation();
-                            iv.invalidate();
-                        }
-                    });
+                int docSize = 0;
+                if (doc.size > 0 && doc.size <= Integer.MAX_VALUE) {
+                    docSize = (int) doc.size;
                 }
+
+                iv.setImage(
+                        ImageLocation.getForDocument(doc), gifFilter,
+                        docThumbLoc, docThumbFilter,
+                        docSize, msg);
+                iv.getImageReceiver().setAutoRepeat(1);
+                iv.getImageReceiver().setAllowStartAnimation(true);
+                iv.getImageReceiver().setDelegate((imageReceiver, set, isThumb, memCache) -> {
+                    if (set && !isThumb) {
+                        if (loadCallback != null) loadCallback.onMainImageLoaded(memCache);
+                        iv.getImageReceiver().setAllowStartAnimation(true);
+                        iv.getImageReceiver().startAnimation();
+                        iv.invalidate();
+                    }
+                });
 
                 applyOverlayLabel(overlay, msg);
             } else {

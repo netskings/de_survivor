@@ -222,7 +222,9 @@ public class FeedDocumentView extends LinearLayout implements NotificationCenter
                 break;
             }
         }
-        if (fileName == null || fileName.isEmpty()) fileName = "Document";
+        if (fileName == null || fileName.isEmpty()) {
+            fileName = LocaleController.getString(R.string.FeedDocument);
+        }
         row.nameView.setText(fileName);
         row.sizeView.setText(FeedUtils.formatFileSize(doc.size));
 
