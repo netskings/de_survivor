@@ -10419,6 +10419,7 @@
     <string name="FeedPollRetracting">Retracting…</string>
     <string name="FeedPollVoteFailed">Vote failed: %1$s</string>
     <string name="FeedPollNoVotesYet">No votes yet</string>
+    <string name="FeedPollResultsHidden">Results will be visible when the poll closes</string>
     <string name="FeedSummaryTitleDecorated">✨ AI Summary</string>
     <string name="FeedSubscribe">Subscribe</string>
     <string name="FeedChannel">Channel</string>

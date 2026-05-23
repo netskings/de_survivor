@@ -362,6 +362,12 @@
     <string name="FeedPollRetracting">Отзыв…</string>
     <string name="FeedPollVoteFailed">Не удалось проголосовать: %1$s</string>
     <string name="FeedPollNoVotesYet">Голосов пока нет</string>
+    <string name="FeedPollResultsHidden">Результаты будут видны после завершения опроса</string>
+    <string name="PollAddAnOption">Добавить вариант</string>
+    <string name="PollAddAnOptionHint">Вариант...</string>
+    <string name="PollV2AllowAddingOptions">Разрешить добавлять варианты</string>
+    <string name="PollV2AllowAddingOptionsInfo">Участники смогут предлагать новые варианты</string>
+    <string name="PollAddTextOrRemoveMedia">Добавьте текст или сначала удалите медиа</string>
     <string name="FeedSummaryTitleDecorated">✨ Краткое содержание от ИИ</string>
     <string name="FeedSubscribe">Подписаться</string>
     <string name="FeedChannel">Канал</string>

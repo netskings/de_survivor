@@ -841,7 +841,7 @@ public class FeedPostCell extends LinearLayout {
 
         if (raw.media instanceof TLRPC.TL_messageMediaPoll) {
             TLRPC.TL_messageMediaPoll pollMedia = (TLRPC.TL_messageMediaPoll) raw.media;
-            pollView.setPoll(pollMedia, raw);
+            pollView.setPoll(pollMedia, primary);
             pollView.setVisibility(VISIBLE);
             mediaContainer.setVisibility(GONE);
             mediaRow.setVisibility(GONE);
