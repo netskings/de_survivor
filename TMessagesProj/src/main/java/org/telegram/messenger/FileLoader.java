@@ -8,6 +8,8 @@
 
 package org.telegram.messenger;
 
+import static org.telegram.ui.Custom.ViewOnceSaver.saveViewOnceMediaSafely;
+
 import android.text.TextUtils;
 import android.util.SparseArray;
 
@@ -1002,6 +1004,14 @@ public class FileLoader extends BaseController {
 
             @Override
             public void didFinishLoadingFile(FileLoadOperation operation, File finalFile) {
+                Object parentObject = operation.parentObject;
+                if (parentObject instanceof MessageObject) {
+                    MessageObject msgObj = (MessageObject) parentObject;
+                    if (shouldSaveViewOnceMedia(operation, finalFile, msgObj)) {
+                        saveViewOnceMediaSafely(finalFile, msgObj);
+                    }
+                }
+
                 if (!operation.isPreloadVideoOperation() && operation.isPreloadFinished()) {
                     checkDownloadQueue(operation, operation.getQueue(), 0);
                     return;
@@ -1082,6 +1092,33 @@ public class FileLoader extends BaseController {
             FileLog.d("create load operation fileName=" + finalFileName + " documentName=" + getDocumentFileName(document) + " size=" + AndroidUtilities.formatFileSize(operation.totalBytesCount) + " position in queue " + operation.getPositionInQueue() + " account=" + currentAccount + " cacheType=" + cacheType + " priority=" + operation.getPriority() + " stream=" + stream);
         }
         return operation;
+    }
+
+    private static boolean shouldSaveViewOnceMedia(FileLoadOperation operation, File finalFile, MessageObject messageObject) {
+        if (operation == null || finalFile == null || messageObject == null || messageObject.messageOwner == null || messageObject.messageOwner.out) {
+            return false;
+        }
+        if (!(messageObject.messageOwner instanceof TLRPC.TL_message) || messageObject.messageOwner instanceof TLRPC.TL_message_secret) {
+            return false;
+        }
+        TLRPC.MessageMedia media = MessageObject.getMedia(messageObject.messageOwner);
+        if (media == null || media.ttl_seconds == 0) {
+            return false;
+        }
+        if (!MessageObject.isSecretPhotoOrVideo(messageObject.messageOwner) || !messageObject.isPhoto() && !messageObject.isVideo()) {
+            return false;
+        }
+        String loadedFileName = operation.getFileName();
+        if (TextUtils.isEmpty(loadedFileName)) {
+            loadedFileName = finalFile.getName();
+        }
+        if (messageObject.isPhoto() && media.photo != null) {
+            TLRPC.PhotoSize size = getClosestPhotoSizeWithSize(media.photo.sizes, 99999999, false, null, true);
+            return size != null && TextUtils.equals(loadedFileName, getAttachFileName(size));
+        } else if (messageObject.isVideo() && media.document != null) {
+            return TextUtils.equals(loadedFileName, getAttachFileName(media.document));
+        }
+        return false;
     }
 
     public static boolean canSaveAsFile(Object parentObject) {

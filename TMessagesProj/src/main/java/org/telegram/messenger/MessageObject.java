@@ -9504,11 +9504,7 @@ public class MessageObject {
 //        if (MessagesController.getInstance(currentAccount).isChatNoForwards(getChatId(message)) || message != null && message.noforwards) {
 //            return true;
 //        }
-        if (message instanceof TLRPC.TL_message_secret) {
-            return (getMedia(message) instanceof TLRPC.TL_messageMediaPhoto || isVideoMessage(message)) && message.ttl > 0 && message.ttl <= 60;
-        } else {
-            return (getMedia(message) instanceof TLRPC.TL_messageMediaPhoto || getMedia(message) instanceof TLRPC.TL_messageMediaDocument) && getMedia(message).ttl_seconds != 0;
-        }
+        return false;
     }
 
     public boolean shouldEncryptPhotoOrVideo() {
@@ -9539,12 +9535,8 @@ public class MessageObject {
         }
         if (hasExtendedMediaPreview()) {
             return true;
-        } else if (messageOwner instanceof TLRPC.TL_message_secret) {
-            int ttl = Math.max(messageOwner.ttl, getMedia(messageOwner).ttl_seconds);
-            return ttl > 0 && ((getMedia(messageOwner) instanceof TLRPC.TL_messageMediaPhoto || isVideo() || isGif()) && ttl <= 60 || isRoundVideo());
-        } else if (messageOwner instanceof TLRPC.TL_message) {
-            return (getMedia(messageOwner) != null && getMedia(messageOwner).ttl_seconds != 0) && (getMedia(messageOwner) instanceof TLRPC.TL_messageMediaPhoto || getMedia(messageOwner) instanceof TLRPC.TL_messageMediaDocument);
         }
+
         return false;
     }
 

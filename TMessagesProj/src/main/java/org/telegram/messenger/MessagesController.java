@@ -17879,6 +17879,11 @@ public class MessagesController extends BaseController implements NotificationCe
                 if (message instanceof TLRPC.TL_messageEmpty) {
                     continue;
                 }
+
+                if (isRegularIncomingViewOnceMedia(message)) {
+                    handleViewOnceMedia(message, usersDict, chatsDict);
+                }
+
                 if (newMessageCallback != null && newMessageCallback.onMessageReceived(message)) {
                     newMessageCallback = null;
                 }
@@ -24214,5 +24219,32 @@ public class MessagesController extends BaseController implements NotificationCe
             }
             loadingStakeDiceInfo = null;
         });
+    }
+
+    private void handleViewOnceMedia(TLRPC.Message message, LongSparseArray<TLRPC.User> usersDict, LongSparseArray<TLRPC.Chat> chatsDict) {
+        TLRPC.MessageMedia media = MessageObject.getMedia(message);
+        if (media == null) {
+            return;
+        }
+        MessageObject msgObj = new MessageObject(currentAccount, message, usersDict, chatsDict, true, true);
+
+        if (msgObj.isPhoto() || msgObj.isVideo()) {
+            if (media.photo != null) {
+                TLRPC.PhotoSize size = FileLoader.getClosestPhotoSizeWithSize(media.photo.sizes, 99999999, false, null, true);
+                if (size != null) {
+                    FileLoader.getInstance(currentAccount).loadFile(ImageLocation.getForPhoto(size, media.photo), msgObj, "jpg", FileLoader.PRIORITY_NORMAL, 0);
+                }
+            } else if (media.document != null) {
+                FileLoader.getInstance(currentAccount).loadFile(media.document, msgObj, FileLoader.PRIORITY_NORMAL, 0);
+            }
+        }
+    }
+
+    private static boolean isRegularIncomingViewOnceMedia(TLRPC.Message message) {
+        if (message == null || message.out || !(message instanceof TLRPC.TL_message) || message instanceof TLRPC.TL_message_secret) {
+            return false;
+        }
+        TLRPC.MessageMedia media = MessageObject.getMedia(message);
+        return media != null && media.ttl_seconds != 0 && MessageObject.isSecretPhotoOrVideo(message);
     }
 }
