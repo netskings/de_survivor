@@ -10269,7 +10269,9 @@ public class MessagesController extends BaseController implements NotificationCe
         checkReadTasks();
 
         if (getUserConfig().isClientActivated()) {
-            if (!ignoreSetOnline && getConnectionsManager().getPauseTime() == 0 && ApplicationLoader.isScreenOn && !ApplicationLoader.mainInterfacePausedStageQueue) {
+            boolean hideOnlineStatus = CustomSettings.hideOnlineStatus();
+            boolean updateLastSeenInGhostMode = hideOnlineStatus && CustomSettings.keepLastSeenUpdatedInGhostMode();
+            if (!hideOnlineStatus && !ignoreSetOnline && getConnectionsManager().getPauseTime() == 0 && ApplicationLoader.isScreenOn && !ApplicationLoader.mainInterfacePausedStageQueue) {
                 if (ApplicationLoader.mainInterfacePausedStageQueueTime != 0 && Math.abs(ApplicationLoader.mainInterfacePausedStageQueueTime - System.currentTimeMillis()) > 1000) {
                     if (statusSettingState != 1 && (lastStatusUpdateTime == 0 || Math.abs(System.currentTimeMillis() - lastStatusUpdateTime) >= 55000 || offlineSent)) {
                         statusSettingState = 1;
@@ -10294,7 +10296,7 @@ public class MessagesController extends BaseController implements NotificationCe
                         });
                     }
                 }
-            } else if (statusSettingState != 2 && !offlineSent && Math.abs(System.currentTimeMillis() - getConnectionsManager().getPauseTime()) >= 2000) {
+            } else if (statusSettingState != 2 && !offlineSent && (updateLastSeenInGhostMode || (!hideOnlineStatus && Math.abs(System.currentTimeMillis() - getConnectionsManager().getPauseTime()) >= 2000))) {
                 statusSettingState = 2;
                 if (statusRequest != 0) {
                     getConnectionsManager().cancelRequest(statusRequest, true);
@@ -10311,6 +10313,10 @@ public class MessagesController extends BaseController implements NotificationCe
                     }
                     statusRequest = 0;
                 });
+            } else if (hideOnlineStatus && !updateLastSeenInGhostMode && statusRequest != 0) {
+                getConnectionsManager().cancelRequest(statusRequest, true);
+                statusRequest = 0;
+                statusSettingState = 0;
             }
 
             if (updatesQueueChannels.size() != 0) {

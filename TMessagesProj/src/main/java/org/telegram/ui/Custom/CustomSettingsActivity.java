@@ -41,6 +41,12 @@ public class CustomSettingsActivity extends BaseFragment {
     private int feedSettingsRow;
     private int feedInfoRow;
 
+    private int ghostHeaderRow;
+    private int hideOnlineStatusRow;
+    private int hideOnlineStatusInfoRow;
+    private int keepLastSeenUpdatedInGhostModeRow;
+    private int keepLastSeenUpdatedInGhostModeInfoRow;
+
     private int restrictionsHeaderRow;
     private int antiRecallRow;
     private int antiRecallInfoRow;
@@ -65,6 +71,11 @@ public class CustomSettingsActivity extends BaseFragment {
         feedHeaderRow = rowCount++;
         feedSettingsRow = rowCount++;
         feedInfoRow = rowCount++;
+        ghostHeaderRow = rowCount++;
+        hideOnlineStatusRow = rowCount++;
+        hideOnlineStatusInfoRow = rowCount++;
+        keepLastSeenUpdatedInGhostModeRow = rowCount++;
+        keepLastSeenUpdatedInGhostModeInfoRow = rowCount++;
         restrictionsHeaderRow = rowCount++;
         antiRecallRow = rowCount++;
         antiRecallInfoRow = rowCount++;
@@ -147,6 +158,16 @@ public class CustomSettingsActivity extends BaseFragment {
                     ((TextCheckCell) view).setChecked(val);
             } else if (position == feedSettingsRow) {
                 presentFragment(new FeedSettingsActivity());
+            } else if (position == hideOnlineStatusRow) {
+                boolean val = !CustomSettings.hideOnlineStatus();
+                CustomSettings.setHideOnlineStatus(val);
+                if (view instanceof TextCheckCell)
+                    ((TextCheckCell) view).setChecked(val);
+            } else if (position == keepLastSeenUpdatedInGhostModeRow) {
+                boolean val = !CustomSettings.keepLastSeenUpdatedInGhostMode();
+                CustomSettings.setKeepLastSeenUpdatedInGhostMode(val);
+                if (view instanceof TextCheckCell)
+                    ((TextCheckCell) view).setChecked(val);
             } else if (position == antiRecallRow) {
                 boolean val = !CustomSettings.antiRecall();
                 CustomSettings.setAntiRecall(val);
@@ -204,6 +225,11 @@ public class CustomSettingsActivity extends BaseFragment {
             if (pos == feedHeaderRow)    return TYPE_HEADER;
             if (pos == feedSettingsRow)  return TYPE_TEXT_CELL;
             if (pos == feedInfoRow)      return TYPE_INFO;
+            if (pos == ghostHeaderRow) return TYPE_HEADER;
+            if (pos == hideOnlineStatusRow) return TYPE_CHECK;
+            if (pos == hideOnlineStatusInfoRow) return TYPE_INFO;
+            if (pos == keepLastSeenUpdatedInGhostModeRow) return TYPE_CHECK;
+            if (pos == keepLastSeenUpdatedInGhostModeInfoRow) return TYPE_INFO;
             if (pos == restrictionsHeaderRow) return TYPE_HEADER;
             if (pos == antiRecallRow) return TYPE_CHECK;
             if (pos == antiRecallInfoRow) return TYPE_INFO;
@@ -265,6 +291,7 @@ public class CustomSettingsActivity extends BaseFragment {
                     if (pos == adsHeaderRow)   cell.setText(getString(R.string.CustomSettingsAdvertisingHeader));
                     if (pos == proxyHeaderRow)  cell.setText(getString(R.string.Proxy));
                     if (pos == feedHeaderRow)   cell.setText(getString(R.string.CustomSettingsFeedHeader));
+                    if (pos == ghostHeaderRow) cell.setText(getString(R.string.CustomSettingsGhostHeader));
                     if (pos == restrictionsHeaderRow) cell.setText(getString(R.string.CustomSettingsRestrictionsHeader));
                     break;
                 }
@@ -277,6 +304,14 @@ public class CustomSettingsActivity extends BaseFragment {
                     if (pos == hideProxySponsorRow) {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsHideProxySponsor),
                                 CustomSettings.hideProxySponsor(), false);
+                    }
+                    if (pos == hideOnlineStatusRow) {
+                        cell.setTextAndCheck(getString(R.string.CustomSettingsHideOnlineStatus),
+                                CustomSettings.hideOnlineStatus(), true);
+                    }
+                    if (pos == keepLastSeenUpdatedInGhostModeRow) {
+                        cell.setTextAndCheck(getString(R.string.CustomSettingsKeepLastSeenUpdatedInGhostMode),
+                                CustomSettings.keepLastSeenUpdatedInGhostMode(), true);
                     }
                     if (pos == antiRecallRow) {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsAntiRecall),
@@ -310,6 +345,12 @@ public class CustomSettingsActivity extends BaseFragment {
                     }
                     if (pos == feedInfoRow) {
                         cell.setText(getString(R.string.CustomSettingsFeedInfo));
+                    }
+                    if (pos == hideOnlineStatusInfoRow) {
+                        cell.setText(getString(R.string.CustomSettingsHideOnlineStatusInfo));
+                    }
+                    if (pos == keepLastSeenUpdatedInGhostModeInfoRow) {
+                        cell.setText(getString(R.string.CustomSettingsKeepLastSeenUpdatedInGhostModeInfo));
                     }
                     if (pos == antiRecallInfoRow) {
                         cell.setText(getString(R.string.CustomSettingsAntiRecallInfo));

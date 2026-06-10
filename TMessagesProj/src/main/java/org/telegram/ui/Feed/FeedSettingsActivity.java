@@ -298,7 +298,7 @@ public class FeedSettingsActivity extends BaseFragment {
                         int count = FeedRecommendationEngine.getInstance(currentAccount)
                                 .getRecommendations().size();
                         cell.setTextAndValue(LocaleController.getString(R.string.FeedRecommendedChannels),
-                                count > 0 ? String.valueOf(count) : "—",
+                                count > 0 ? String.valueOf(count) : "-",
                                 true);
                     } else if (pos == banListRow) {
                         int count = 0;

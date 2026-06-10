@@ -13,47 +13,65 @@ import java.util.UUID;
 public class CustomSettings {
 
     private static final String PREFS_NAME = "custom_app_settings";
+    private static final String KEY_FEED_ALBUM_MODE = "feed_album_mode";
+    private static final String KEY_HIDE_ADS = "hide_ads";
+    private static final String KEY_HIDE_PROXY_SPONSOR = "hide_proxy_sponsor";
+    private static final String KEY_FEED_RECOMMENDATIONS = "feed_recommendations";
+    private static final String KEY_FEED_RECOMMENDATION_FREQUENCY = "feed_rec_frequency";
+    private static final String KEY_BYPASS_CONTENT_PROTECTION = "bypass_content_protection";
+    private static final String KEY_ANTI_RECALL = "anti_recall";
+    private static final String KEY_SAVE_TEMPORARY_MEDIA = "save_temporary_media";
+    private static final String KEY_KEEP_TEMPORARY_MEDIA_IN_CHAT = "keep_temporary_media_in_chat";
+    private static final String KEY_KEEP_KICKED_CHATS_CACHE = "keep_kicked_chats_cache";
+    private static final String KEY_HIDE_ONLINE_STATUS = "hide_online_status";
+    private static final String KEY_KEEP_LAST_SEEN_UPDATED_IN_GHOST_MODE = "send_offline_status_in_ghost_mode";
 
     public static FeedAlbumMode feedAlbumMode() {
-        String val = getPrefs().getString("feed_album_mode", FeedAlbumMode.CAROUSEL.name());
+        String val = getPrefs().getString(KEY_FEED_ALBUM_MODE, FeedAlbumMode.CAROUSEL.name());
         try { return FeedAlbumMode.valueOf(val); }
         catch (Exception e) { return FeedAlbumMode.CAROUSEL; }
     }
 
     public static void setFeedAlbumMode(FeedAlbumMode mode) {
-        getPrefs().edit().putString("feed_album_mode", mode.name()).apply();
+        getPrefs().edit().putString(KEY_FEED_ALBUM_MODE, mode.name()).apply();
     }
 
     private static SharedPreferences getPrefs() {
         return ApplicationLoader.applicationContext.getSharedPreferences(PREFS_NAME, 0);
     }
 
-    public static boolean hideAds() { return getPrefs().getBoolean("hide_ads", false); }
-    public static void setHideAds(boolean value) { getPrefs().edit().putBoolean("hide_ads", value).apply(); }
+    public static boolean hideAds() { return getPrefs().getBoolean(KEY_HIDE_ADS, false); }
+    public static void setHideAds(boolean value) { getPrefs().edit().putBoolean(KEY_HIDE_ADS, value).apply(); }
 
-    public static boolean hideProxySponsor() { return getPrefs().getBoolean("hide_proxy_sponsor", true); }
-    public static void setHideProxySponsor(boolean value) { getPrefs().edit().putBoolean("hide_proxy_sponsor", value).apply(); }
+    public static boolean hideProxySponsor() { return getPrefs().getBoolean(KEY_HIDE_PROXY_SPONSOR, true); }
+    public static void setHideProxySponsor(boolean value) { getPrefs().edit().putBoolean(KEY_HIDE_PROXY_SPONSOR, value).apply(); }
 
-    public static boolean feedRecommendations() { return getPrefs().getBoolean("feed_recommendations", false); }
-    public static void setFeedRecommendations(boolean v) { getPrefs().edit().putBoolean("feed_recommendations", v).apply(); }
+    public static boolean feedRecommendations() { return getPrefs().getBoolean(KEY_FEED_RECOMMENDATIONS, false); }
+    public static void setFeedRecommendations(boolean v) { getPrefs().edit().putBoolean(KEY_FEED_RECOMMENDATIONS, v).apply(); }
 
-    public static int feedRecommendationFrequency() { return getPrefs().getInt("feed_rec_frequency", 8); }
-    public static void setFeedRecommendationFrequency(int v) { getPrefs().edit().putInt("feed_rec_frequency", v).apply(); }
+    public static int feedRecommendationFrequency() { return getPrefs().getInt(KEY_FEED_RECOMMENDATION_FREQUENCY, 8); }
+    public static void setFeedRecommendationFrequency(int v) { getPrefs().edit().putInt(KEY_FEED_RECOMMENDATION_FREQUENCY, v).apply(); }
 
-    public static boolean bypassContentProtection() { return getPrefs().getBoolean("bypass_content_protection", false); }
-    public static void setBypassContentProtection(boolean v) { getPrefs().edit().putBoolean("bypass_content_protection", v).apply(); }
+    public static boolean bypassContentProtection() { return getPrefs().getBoolean(KEY_BYPASS_CONTENT_PROTECTION, false); }
+    public static void setBypassContentProtection(boolean v) { getPrefs().edit().putBoolean(KEY_BYPASS_CONTENT_PROTECTION, v).apply(); }
 
-    public static boolean antiRecall() { return getPrefs().getBoolean("anti_recall", true); }
-    public static void setAntiRecall(boolean v) { getPrefs().edit().putBoolean("anti_recall", v).apply(); }
+    public static boolean antiRecall() { return getPrefs().getBoolean(KEY_ANTI_RECALL, true); }
+    public static void setAntiRecall(boolean v) { getPrefs().edit().putBoolean(KEY_ANTI_RECALL, v).apply(); }
 
-    public static boolean saveTemporaryMedia() { return getPrefs().getBoolean("save_temporary_media", true); }
-    public static void setSaveTemporaryMedia(boolean v) { getPrefs().edit().putBoolean("save_temporary_media", v).apply(); }
+    public static boolean saveTemporaryMedia() { return getPrefs().getBoolean(KEY_SAVE_TEMPORARY_MEDIA, true); }
+    public static void setSaveTemporaryMedia(boolean v) { getPrefs().edit().putBoolean(KEY_SAVE_TEMPORARY_MEDIA, v).apply(); }
 
-    public static boolean keepTemporaryMediaInChat() { return getPrefs().getBoolean("keep_temporary_media_in_chat", false); }
-    public static void setKeepTemporaryMediaInChat(boolean v) { getPrefs().edit().putBoolean("keep_temporary_media_in_chat", v).apply(); }
+    public static boolean keepTemporaryMediaInChat() { return getPrefs().getBoolean(KEY_KEEP_TEMPORARY_MEDIA_IN_CHAT, false); }
+    public static void setKeepTemporaryMediaInChat(boolean v) { getPrefs().edit().putBoolean(KEY_KEEP_TEMPORARY_MEDIA_IN_CHAT, v).apply(); }
 
-    public static boolean keepKickedChatsCache() { return getPrefs().getBoolean("keep_kicked_chats_cache", true); }
-    public static void setKeepKickedChatsCache(boolean v) { getPrefs().edit().putBoolean("keep_kicked_chats_cache", v).apply(); }
+    public static boolean keepKickedChatsCache() { return getPrefs().getBoolean(KEY_KEEP_KICKED_CHATS_CACHE, true); }
+    public static void setKeepKickedChatsCache(boolean v) { getPrefs().edit().putBoolean(KEY_KEEP_KICKED_CHATS_CACHE, v).apply(); }
+
+    public static boolean hideOnlineStatus() { return getPrefs().getBoolean(KEY_HIDE_ONLINE_STATUS, false); }
+    public static void setHideOnlineStatus(boolean v) { getPrefs().edit().putBoolean(KEY_HIDE_ONLINE_STATUS, v).apply(); }
+
+    public static boolean keepLastSeenUpdatedInGhostMode() { return getPrefs().getBoolean(KEY_KEEP_LAST_SEEN_UPDATED_IN_GHOST_MODE, false); }
+    public static void setKeepLastSeenUpdatedInGhostMode(boolean v) { getPrefs().edit().putBoolean(KEY_KEEP_LAST_SEEN_UPDATED_IN_GHOST_MODE, v).apply(); }
 
     public static class BanGroup {
         public String id;
