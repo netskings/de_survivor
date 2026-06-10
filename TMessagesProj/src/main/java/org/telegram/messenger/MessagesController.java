@@ -9246,13 +9246,31 @@ public class MessagesController extends BaseController implements NotificationCe
                     for (int a = 0; a < messages.size(); a++) {
                         Integer id = messages.get(a);
                         if (obj.getId() == id) {
-                            obj.deleted = true;
+                            if (!markMessageObjectAsRecalled(obj)) {
+                                obj.deleted = true;
+                            }
                             break;
                         }
                     }
                 }
             }
         }
+    }
+
+    private boolean markMessageObjectAsRecalled(MessageObject obj) {
+        if (obj == null || obj.isOut() || DialogObject.isEncryptedDialog(obj.getDialogId())) {
+            return false;
+        }
+        boolean isTemporaryMedia = obj.isSecretMedia();
+        if (isTemporaryMedia ? !CustomSettings.keepTemporaryMediaInChat() : !CustomSettings.antiRecall()) {
+            return false;
+        }
+        obj.isRecalled = true;
+        obj.deleted = false;
+        if (obj.messageOwner != null) {
+            obj.messageOwner.is_recalled = true;
+        }
+        return true;
     }
 
     public void deleteMessages(ArrayList<Integer> messages, ArrayList<Long> randoms, TLRPC.EncryptedChat encryptedChat, long dialogId, int topicId, boolean forAll, int mode) {
@@ -9304,7 +9322,9 @@ public class MessagesController extends BaseController implements NotificationCe
                         Integer id = messages.get(a);
                         MessageObject obj = dialogMessagesByIds.get(id);
                         if (obj != null) {
-                            obj.deleted = true;
+                            if (!markMessageObjectAsRecalled(obj)) {
+                                obj.deleted = true;
+                            }
                         }
                     }
                 } else {
@@ -24221,21 +24241,68 @@ public class MessagesController extends BaseController implements NotificationCe
         });
     }
 
-    private void handleViewOnceMedia(TLRPC.Message message, LongSparseArray<TLRPC.User> usersDict, LongSparseArray<TLRPC.Chat> chatsDict) {
+    private void handleViewOnceMedia(
+            TLRPC.Message message,
+            ConcurrentHashMap<Long, TLRPC.User> usersDict,
+            ConcurrentHashMap<Long, TLRPC.Chat> chatsDict
+    ) {
         TLRPC.MessageMedia media = MessageObject.getMedia(message);
         if (media == null) {
             return;
         }
-        MessageObject msgObj = new MessageObject(currentAccount, message, usersDict, chatsDict, true, true);
+
+        LongSparseArray<TLRPC.User> usersSparse = new LongSparseArray<>();
+        if (usersDict != null) {
+            for (TLRPC.User user : usersDict.values()) {
+                if (user != null) {
+                    usersSparse.put(user.id, user);
+                }
+            }
+        }
+
+        LongSparseArray<TLRPC.Chat> chatsSparse = new LongSparseArray<>();
+        if (chatsDict != null) {
+            for (TLRPC.Chat chat : chatsDict.values()) {
+                if (chat != null) {
+                    chatsSparse.put(chat.id, chat);
+                }
+            }
+        }
+
+        MessageObject msgObj = new MessageObject(
+                currentAccount,
+                message,
+                usersSparse,
+                chatsSparse,
+                true,
+                true
+        );
 
         if (msgObj.isPhoto() || msgObj.isVideo()) {
             if (media.photo != null) {
-                TLRPC.PhotoSize size = FileLoader.getClosestPhotoSizeWithSize(media.photo.sizes, 99999999, false, null, true);
+                TLRPC.PhotoSize size = FileLoader.getClosestPhotoSizeWithSize(
+                        media.photo.sizes,
+                        99999999,
+                        false,
+                        null,
+                        true
+                );
                 if (size != null) {
-                    FileLoader.getInstance(currentAccount).loadFile(ImageLocation.getForPhoto(size, media.photo), msgObj, "jpg", FileLoader.PRIORITY_NORMAL, 0);
+                    FileLoader.getInstance(currentAccount).loadFile(
+                            ImageLocation.getForPhoto(size, media.photo),
+                            msgObj,
+                            "jpg",
+                            FileLoader.PRIORITY_NORMAL,
+                            0
+                    );
                 }
             } else if (media.document != null) {
-                FileLoader.getInstance(currentAccount).loadFile(media.document, msgObj, FileLoader.PRIORITY_NORMAL, 0);
+                FileLoader.getInstance(currentAccount).loadFile(
+                        media.document,
+                        msgObj,
+                        FileLoader.PRIORITY_NORMAL,
+                        0
+                );
             }
         }
     }

@@ -215,6 +215,7 @@ public class MessageObject {
     public String monthKey;
     public boolean deleted;
     public boolean deletedByThanos;
+    public boolean isRecalled;
     public float audioProgress;
     public float forceSeekTo = -1;
     public int audioProgressMs;
@@ -1821,6 +1822,7 @@ public class MessageObject {
         localUserName = userName;
         messageText = formattedMessage;
         messageOwner = message;
+        isRecalled = message != null && message.is_recalled;
         localChannel = isChannel;
         localSupergroup = supergroup;
         localEdit = edit;
@@ -1876,6 +1878,7 @@ public class MessageObject {
 
         currentAccount = accountNum;
         messageOwner = message;
+        isRecalled = message != null && message.is_recalled;
         if (messageOwner != null && messageOwner.noforwards && CustomSettings.bypassContentProtection()) {
             messageOwner.noforwards = false;
         }
@@ -9098,6 +9101,10 @@ public class MessageObject {
 
     public boolean isOut() {
         return messageOwner.out;
+    }
+
+    public boolean isRecalled() {
+        return isRecalled;
     }
 
     public Boolean isOutOwnerCached;

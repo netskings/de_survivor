@@ -42,6 +42,12 @@ public class CustomSettingsActivity extends BaseFragment {
     private int feedInfoRow;
 
     private int restrictionsHeaderRow;
+    private int antiRecallRow;
+    private int antiRecallInfoRow;
+    private int saveTemporaryMediaRow;
+    private int saveTemporaryMediaInfoRow;
+    private int keepTemporaryMediaInChatRow;
+    private int keepTemporaryMediaInChatInfoRow;
     private int bypassContentProtectionRow;
     private int bypassContentProtectionInfoRow;
 
@@ -58,6 +64,12 @@ public class CustomSettingsActivity extends BaseFragment {
         feedSettingsRow = rowCount++;
         feedInfoRow = rowCount++;
         restrictionsHeaderRow = rowCount++;
+        antiRecallRow = rowCount++;
+        antiRecallInfoRow = rowCount++;
+        saveTemporaryMediaRow = rowCount++;
+        saveTemporaryMediaInfoRow = rowCount++;
+        keepTemporaryMediaInChatRow = rowCount++;
+        keepTemporaryMediaInChatInfoRow = rowCount++;
         bypassContentProtectionRow = rowCount++;
         bypassContentProtectionInfoRow = rowCount++;
         return super.onFragmentCreate();
@@ -131,6 +143,21 @@ public class CustomSettingsActivity extends BaseFragment {
                     ((TextCheckCell) view).setChecked(val);
             } else if (position == feedSettingsRow) {
                 presentFragment(new FeedSettingsActivity());
+            } else if (position == antiRecallRow) {
+                boolean val = !CustomSettings.antiRecall();
+                CustomSettings.setAntiRecall(val);
+                if (view instanceof TextCheckCell)
+                    ((TextCheckCell) view).setChecked(val);
+            } else if (position == saveTemporaryMediaRow) {
+                boolean val = !CustomSettings.saveTemporaryMedia();
+                CustomSettings.setSaveTemporaryMedia(val);
+                if (view instanceof TextCheckCell)
+                    ((TextCheckCell) view).setChecked(val);
+            } else if (position == keepTemporaryMediaInChatRow) {
+                boolean val = !CustomSettings.keepTemporaryMediaInChat();
+                CustomSettings.setKeepTemporaryMediaInChat(val);
+                if (view instanceof TextCheckCell)
+                    ((TextCheckCell) view).setChecked(val);
             } else if (position == bypassContentProtectionRow) {
                 boolean val = !CustomSettings.bypassContentProtection();
                 CustomSettings.setBypassContentProtection(val);
@@ -169,6 +196,12 @@ public class CustomSettingsActivity extends BaseFragment {
             if (pos == feedSettingsRow)  return TYPE_TEXT_CELL;
             if (pos == feedInfoRow)      return TYPE_INFO;
             if (pos == restrictionsHeaderRow) return TYPE_HEADER;
+            if (pos == antiRecallRow) return TYPE_CHECK;
+            if (pos == antiRecallInfoRow) return TYPE_INFO;
+            if (pos == saveTemporaryMediaRow) return TYPE_CHECK;
+            if (pos == saveTemporaryMediaInfoRow) return TYPE_INFO;
+            if (pos == keepTemporaryMediaInChatRow) return TYPE_CHECK;
+            if (pos == keepTemporaryMediaInChatInfoRow) return TYPE_INFO;
             if (pos == bypassContentProtectionRow) return TYPE_CHECK;
             if (pos == bypassContentProtectionInfoRow) return TYPE_INFO;
             return TYPE_HEADER;
@@ -234,6 +267,18 @@ public class CustomSettingsActivity extends BaseFragment {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsHideProxySponsor),
                                 CustomSettings.hideProxySponsor(), false);
                     }
+                    if (pos == antiRecallRow) {
+                        cell.setTextAndCheck(getString(R.string.CustomSettingsAntiRecall),
+                                CustomSettings.antiRecall(), true);
+                    }
+                    if (pos == saveTemporaryMediaRow) {
+                        cell.setTextAndCheck(getString(R.string.CustomSettingsSaveTemporaryMedia),
+                                CustomSettings.saveTemporaryMedia(), true);
+                    }
+                    if (pos == keepTemporaryMediaInChatRow) {
+                        cell.setTextAndCheck(getString(R.string.CustomSettingsKeepTemporaryMediaInChat),
+                                CustomSettings.keepTemporaryMediaInChat(), true);
+                    }
                     if (pos == bypassContentProtectionRow) {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsBypassContentProtection),
                                 CustomSettings.bypassContentProtection(), false);
@@ -250,6 +295,15 @@ public class CustomSettingsActivity extends BaseFragment {
                     }
                     if (pos == feedInfoRow) {
                         cell.setText(getString(R.string.CustomSettingsFeedInfo));
+                    }
+                    if (pos == antiRecallInfoRow) {
+                        cell.setText(getString(R.string.CustomSettingsAntiRecallInfo));
+                    }
+                    if (pos == saveTemporaryMediaInfoRow) {
+                        cell.setText(getString(R.string.CustomSettingsSaveTemporaryMediaInfo));
+                    }
+                    if (pos == keepTemporaryMediaInChatInfoRow) {
+                        cell.setText(getString(R.string.CustomSettingsKeepTemporaryMediaInChatInfo));
                     }
                     if (pos == bypassContentProtectionInfoRow) {
                         cell.setText(getString(R.string.CustomSettingsBypassContentProtectionInfo));

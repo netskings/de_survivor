@@ -1194,6 +1194,12 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     private int imageBackgroundSideWidth;
     private boolean drawJoinGroupView;
     private boolean drawJoinChannelView;
+    private boolean isRecalledMedia;
+    private static final Paint recalledOverlayPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private static final Paint temporaryMediaBadgePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private CharSequence temporaryMediaBadgeText;
+    private StaticLayout temporaryMediaBadgeLayout;
+    private int temporaryMediaBadgeWidth;
     private int instantTextX;
     private int instantTextLeftX;
     private int instantWidth;
@@ -1228,6 +1234,13 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     private boolean nameStatusPressed;
 
     private RoundVideoPlayingDrawable roundVideoPlayingDrawable;
+
+    static {
+        recalledOverlayPaint.setColor(0x40000000);
+        recalledOverlayPaint.setStyle(Paint.Style.FILL);
+        temporaryMediaBadgePaint.setColor(0x99000000);
+        temporaryMediaBadgePaint.setStyle(Paint.Style.FILL);
+    }
 
     private StaticLayout docTitleLayout;
     private int docTitleWidth;
@@ -6623,10 +6636,13 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     public MultiLayoutTypingAnimator botDraftTypingAnimator;
 
     private void setMessageContent(MessageObject messageObject, MessageObject.GroupedMessages groupedMessages, boolean bottomNear, boolean topNear, boolean firstInChat, boolean lastInChatList) {
+        applyAntiRecallTextStyle(messageObject);
         if (messageObject.checkLayout() || currentPosition != null && lastHeight != AndroidUtilities.displaySize.y) {
             currentMessageObject = null;
         }
         messageObject.isOutOwnerCached = null;
+        isRecalledMedia = messageObject.isRecalled() && (messageObject.isPhoto() || messageObject.isVideo() || messageObject.getDocument() != null);
+        updateTemporaryMediaBadge(messageObject);
         boolean widthChanged = lastWidth != getParentWidth();
         lastHeight = AndroidUtilities.displaySize.y;
         lastWidth = getParentWidth();
@@ -13172,6 +13188,78 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         }
     }
 
+    private static final class RecalledStrikethroughSpan extends StrikethroughSpan {
+    }
+
+    private void appendRecalledTimeIcon(SpannableStringBuilder builder) {
+        int start = builder.length();
+        builder.append("d");
+        ColoredImageSpan span = new ColoredImageSpan(R.drawable.msg_delete, ColoredImageSpan.ALIGN_CENTER);
+        span.setSize(dp(11));
+        span.setOverrideColor(Theme.getColor(Theme.key_text_RedRegular, resourcesProvider));
+        builder.setSpan(span, start, builder.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+    }
+
+    private CharSequence createRecalledTimeString(String time, boolean edited) {
+        SpannableStringBuilder builder = new SpannableStringBuilder();
+        if (edited) {
+            builder.append(getString(R.string.EditedMessage)).append(" ").append(time).append(" ");
+            appendRecalledTimeIcon(builder);
+        } else {
+            builder.append(time).append(" ");
+            appendRecalledTimeIcon(builder);
+        }
+        return builder;
+    }
+
+    private void applyAntiRecallTextStyle(MessageObject messageObject) {
+        if (messageObject == null || messageObject.messageText == null) {
+            return;
+        }
+        boolean changed = false;
+        if (messageObject.isRecalled()) {
+            Spannable spannableText;
+            if (messageObject.messageText instanceof Spannable) {
+                spannableText = (Spannable) messageObject.messageText;
+            } else {
+                spannableText = new SpannableString(messageObject.messageText);
+                messageObject.messageText = spannableText;
+                changed = true;
+            }
+            if (spannableText.getSpans(0, spannableText.length(), RecalledStrikethroughSpan.class).length == 0) {
+                spannableText.setSpan(new RecalledStrikethroughSpan(), 0, spannableText.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+                changed = true;
+            }
+        } else if (messageObject.messageText instanceof Spannable) {
+            Spannable spannableText = (Spannable) messageObject.messageText;
+            RecalledStrikethroughSpan[] spans = spannableText.getSpans(0, spannableText.length(), RecalledStrikethroughSpan.class);
+            for (RecalledStrikethroughSpan span : spans) {
+                spannableText.removeSpan(span);
+                changed = true;
+            }
+        }
+        if (changed) {
+            messageObject.resetLayout();
+        }
+    }
+
+    private void updateTemporaryMediaBadge(MessageObject messageObject) {
+        temporaryMediaBadgeText = null;
+        temporaryMediaBadgeLayout = null;
+        temporaryMediaBadgeWidth = 0;
+        if (messageObject == null || !messageObject.isSecretMedia() || !(messageObject.isPhoto() || messageObject.isVideo() || messageObject.getDocument() != null)) {
+            return;
+        }
+        CharSequence text = messageObject.getSecretTimeString();
+        if (TextUtils.isEmpty(text)) {
+            return;
+        }
+        temporaryMediaBadgeText = text;
+        int textWidth = Math.max(1, (int) Math.ceil(Layout.getDesiredWidth(text, Theme.chat_timePaint)));
+        temporaryMediaBadgeWidth = Math.max(dp(30), textWidth + dp(12));
+        temporaryMediaBadgeLayout = new StaticLayout(text, Theme.chat_timePaint, textWidth + dp(2), Layout.Alignment.ALIGN_NORMAL, 1.0f, 0.0f, false);
+    }
+
     private boolean frozen;
     public void freezeCell(boolean freeze) {
         this.frozen = freeze;
@@ -18310,7 +18398,7 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 signString = null;
             }
         }
-        String timeString;
+        CharSequence timeString;
         TLRPC.User author = null;
         if (currentMessageObject.isFromUser()) {
             author = MessagesController.getInstance(currentAccount).getUser(fromId);
@@ -18341,8 +18429,12 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
             timeString = LocaleController.formatSmallDateChat(currentMessageObject.realDate) + ", " + LocaleController.getInstance().getFormatterDay().format((long) (currentMessageObject.realDate) * 1000);
         } else if (currentMessageObject.isRepostPreview) {
             timeString = LocaleController.formatSmallDateChat(messageObject.messageOwner.date) + ", " + LocaleController.getInstance().getFormatterDay().format((long) (messageObject.messageOwner.date) * 1000);
+        } else if (edited && currentMessageObject.isRecalled()) {
+            timeString = createRecalledTimeString(LocaleController.getInstance().getFormatterDay().format((long) (messageObject.messageOwner.date) * 1000), true);
         } else if (edited) {
             timeString = getString(R.string.EditedMessage) + " " + LocaleController.getInstance().getFormatterDay().format((long) (messageObject.messageOwner.date) * 1000);
+        } else if (currentMessageObject.isRecalled()) {
+            timeString = createRecalledTimeString(LocaleController.getInstance().getFormatterDay().format((long) (messageObject.messageOwner.date) * 1000), false);
         } else if (currentMessageObject.isSaved && currentMessageObject.messageOwner.fwd_from != null && (currentMessageObject.messageOwner.fwd_from.date != 0 || currentMessageObject.messageOwner.fwd_from.saved_date != 0)) {
             int date = currentMessageObject.messageOwner.fwd_from.saved_date;
             if (date == 0) {
@@ -18357,11 +18449,11 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         }
         if (signString != null) {
             if (messageObject.messageOwner.via_business_bot_id != 0) {
-                currentTimeString = timeString + ", ";
+                currentTimeString = TextUtils.concat(timeString, ", ");
             } else if (messageObject.messageOwner.fwd_from != null && messageObject.messageOwner.fwd_from.imported) {
-                currentTimeString = " " + timeString;
+                currentTimeString = TextUtils.concat(" ", timeString);
             } else {
-                currentTimeString = ", " + timeString;
+                currentTimeString = TextUtils.concat(", ", timeString);
             }
         } else {
             currentTimeString = timeString;
@@ -24497,10 +24589,58 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
 
     private Paint srcOutPaint;
 
+    private void drawRecalledMediaOverlay(Canvas canvas) {
+        if (!isRecalledMedia || currentMessageObject == null || !photoImage.getVisible()) {
+            return;
+        }
+        int[] rad = photoImage.getRoundRadius();
+        mediaSpoilerRadii[0] = mediaSpoilerRadii[1] = rad[0];
+        mediaSpoilerRadii[2] = mediaSpoilerRadii[3] = rad[1];
+        mediaSpoilerRadii[4] = mediaSpoilerRadii[5] = rad[2];
+        mediaSpoilerRadii[6] = mediaSpoilerRadii[7] = rad[3];
+        rectPath.rewind();
+        AndroidUtilities.rectTmp.set(photoImage.getImageX(), photoImage.getImageY(), photoImage.getImageX2(), photoImage.getImageY2());
+        rectPath.addRoundRect(AndroidUtilities.rectTmp, mediaSpoilerRadii, Path.Direction.CW);
+        canvas.save();
+        canvas.clipPath(rectPath);
+        canvas.drawRect(AndroidUtilities.rectTmp, recalledOverlayPaint);
+        canvas.restore();
+    }
+
+    private void drawTemporaryMediaBadge(Canvas canvas) {
+        if (temporaryMediaBadgeLayout == null || currentMessageObject == null || !currentMessageObject.isSecretMedia() || !drawPhotoImage || !photoImage.getVisible()) {
+            return;
+        }
+        float alpha = controlsAlpha * photoImage.getCurrentAlpha();
+        if (alpha <= 0) {
+            return;
+        }
+        int badgeHeight = dp(22);
+        float badgeX = photoImage.getImageX() + dp(6);
+        float badgeY = photoImage.getImageY() + dp(6);
+        int oldBadgeAlpha = temporaryMediaBadgePaint.getAlpha();
+        int oldTextAlpha = Theme.chat_timePaint.getAlpha();
+        int oldTextColor = Theme.chat_timePaint.getColor();
+        temporaryMediaBadgePaint.setAlpha((int) (oldBadgeAlpha * alpha));
+        Theme.chat_timePaint.setColor(Color.WHITE);
+        Theme.chat_timePaint.setAlpha((int) (255 * alpha));
+        AndroidUtilities.rectTmp.set(badgeX, badgeY, badgeX + temporaryMediaBadgeWidth, badgeY + badgeHeight);
+        canvas.drawRoundRect(AndroidUtilities.rectTmp, dp(11), dp(11), temporaryMediaBadgePaint);
+        canvas.save();
+        canvas.translate(badgeX + dp(6), badgeY + (badgeHeight - temporaryMediaBadgeLayout.getHeight()) / 2f);
+        SpoilerEffect.layoutDrawMaybe(temporaryMediaBadgeLayout, canvas);
+        canvas.restore();
+        temporaryMediaBadgePaint.setAlpha(oldBadgeAlpha);
+        Theme.chat_timePaint.setColor(oldTextColor);
+        Theme.chat_timePaint.setAlpha(oldTextAlpha);
+    }
+
     public void drawOverlays(Canvas canvas) {
         if (!drawFromPinchToZoom && delegate != null && delegate.getPinchToZoomHelper() != null && delegate.getPinchToZoomHelper().isInOverlayModeFor(this)) {
             return;
         }
+        drawRecalledMediaOverlay(canvas);
+        drawTemporaryMediaBadge(canvas);
         long newAnimationTime = SystemClock.elapsedRealtime();
         long animationDt = newAnimationTime - lastAnimationTime;
         if (animationDt > 17) {

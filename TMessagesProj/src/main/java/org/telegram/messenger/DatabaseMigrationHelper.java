@@ -1662,6 +1662,18 @@ public class DatabaseMigrationHelper {
 
             version = 173;
         }
+        if (version == 173) {
+            database.executeFast("CREATE TABLE IF NOT EXISTS deleted_messages_v2(mid INTEGER, dialog_id INTEGER, data BLOB, date INTEGER, media_exists INTEGER DEFAULT 0, PRIMARY KEY(mid, dialog_id))").stepThis().dispose();
+            database.executeFast("CREATE INDEX IF NOT EXISTS dialog_date_idx_deleted_messages_v2 ON deleted_messages_v2(dialog_id, date);").stepThis().dispose();
+            database.executeFast("PRAGMA user_version = 174").stepThis().dispose();
+            version = 174;
+        }
+        if (version == 174) {
+            database.executeFast("ALTER TABLE messages_v2 ADD COLUMN is_recalled INTEGER DEFAULT 0").stepThis().dispose();
+            database.executeFast("ALTER TABLE messages_topics ADD COLUMN is_recalled INTEGER DEFAULT 0").stepThis().dispose();
+            database.executeFast("PRAGMA user_version = 175").stepThis().dispose();
+            version = 175;
+        }
 
         return version;
     }

@@ -935,7 +935,7 @@ public class MainTabsActivity extends ViewPagerActivity implements NotificationC
         final float factor = animatorTabsVisible.getFloatValue();
         final float scale = lerp(0.85f, 1f, factor);
 
-        tabsViewWrapper.setTranslationY(lerp(hiddenY, normalY, factor));
+        tabsView.setTranslationY(lerp(hiddenY, normalY, factor));
         //tabsView.setScaleX(scale);
         //tabsView.setScaleY(scale);
         tabsView.setClickable(factor > 1);

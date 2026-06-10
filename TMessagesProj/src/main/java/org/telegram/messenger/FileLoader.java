@@ -17,6 +17,7 @@ import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_stories;
+import org.telegram.ui.Custom.CustomSettings;
 import org.telegram.ui.LaunchActivity;
 
 import java.io.File;
@@ -1095,6 +1096,9 @@ public class FileLoader extends BaseController {
     }
 
     private static boolean shouldSaveViewOnceMedia(FileLoadOperation operation, File finalFile, MessageObject messageObject) {
+        if (!CustomSettings.saveTemporaryMedia()) {
+            return false;
+        }
         if (operation == null || finalFile == null || messageObject == null || messageObject.messageOwner == null || messageObject.messageOwner.out) {
             return false;
         }

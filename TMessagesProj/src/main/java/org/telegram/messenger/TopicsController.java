@@ -442,13 +442,14 @@ public class TopicsController extends BaseController {
                     if (topicsToUpdate != null) {
                         for (int i = 0; i < topicsToUpdate.size(); i++) {
                             TLRPC.TL_forumTopic topic = topicsToUpdate.get(i);
-                            cursor = getMessagesStorage().getDatabase().queryFinalized(String.format(Locale.US, "SELECT mid, data FROM messages_topics WHERE uid = %d AND topic_id = %d ORDER BY mid DESC LIMIT 1", dialogId, topic.id));
+                            cursor = getMessagesStorage().getDatabase().queryFinalized(String.format(Locale.US, "SELECT mid, data, is_recalled FROM messages_topics WHERE uid = %d AND topic_id = %d ORDER BY mid DESC LIMIT 1", dialogId, topic.id));
 
                             if (cursor.next()) {
                                 NativeByteBuffer data = cursor.byteBufferValue(1);
                                 if (data != null) {
                                     TLRPC.Message message = TLRPC.Message.TLdeserialize(data, data.readInt32(false), false);
                                     message.readAttachPath(data, getUserConfig().clientUserId);
+                                    message.is_recalled = cursor.intValue(2) != 0;
                                     data.reuse();
                                     topicsByTopMsgId.remove(messageHash(topic.top_message, chatId));
                                     topic.top_message = message.id;

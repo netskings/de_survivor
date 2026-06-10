@@ -10043,6 +10043,7 @@ public class ChatActivity extends BaseFragment implements
         actionMode.setItemVisibility(edit, canEditMessagesCount == 1 && selectedMessagesIds[0].size() + selectedMessagesIds[1].size() == 1 ? View.VISIBLE : View.GONE);
         actionMode.setItemVisibility(copy, !isPeerNoForwards() && selectedMessagesCanCopyIds[0].size() + selectedMessagesCanCopyIds[1].size() != 0 ? View.VISIBLE : View.GONE);
         actionMode.setItemVisibility(star, selectedMessagesCanStarIds[0].size() + selectedMessagesCanStarIds[1].size() != 0 ? View.VISIBLE : View.GONE);
+        actionMode.setItemVisibility(forward, hasSelectedRecalledMessage() ? View.GONE : View.VISIBLE);
         actionMode.setItemVisibility(delete, cantDeleteMessagesCount == 0 ? View.VISIBLE : View.GONE);
         actionMode.setItemVisibility(tag_message, getUserConfig().isPremium() ? View.VISIBLE : View.GONE);
         actionMode.setItemVisibility(share, View.GONE);
@@ -11862,6 +11863,23 @@ public class ChatActivity extends BaseFragment implements
                 for (int j = 0; j < selectedMessagesIds[i].size(); ++j) {
                     MessageObject msg = selectedMessagesIds[i].valueAt(j);
                     if (msg != null && msg.messageOwner != null && msg.messageOwner.noforwards) {
+                        return true;
+                    }
+                }
+            }
+        } catch (Exception ignore) {}
+        return false;
+    }
+
+    private boolean isAntiRecallActionRestricted(MessageObject msg) {
+        return msg != null && msg.isRecalled();
+    }
+
+    private boolean hasSelectedRecalledMessage() {
+        try {
+            for (int i = 0; i < selectedMessagesIds.length; ++i) {
+                for (int j = 0; j < selectedMessagesIds[i].size(); ++j) {
+                    if (isAntiRecallActionRestricted(selectedMessagesIds[i].valueAt(j))) {
                         return true;
                     }
                 }
@@ -18798,7 +18816,7 @@ public class ChatActivity extends BaseFragment implements
                         cantDeleteMessagesCount--;
                     }
                     boolean noforwards = isPeerNoForwards();
-                    if (chatMode == MODE_SCHEDULED || !messageObject.canForwardMessage() || noforwards) {
+                    if (chatMode == MODE_SCHEDULED || !messageObject.canForwardMessage() || noforwards || isAntiRecallActionRestricted(messageObject)) {
                         cantForwardMessagesCount--;
                     } else {
                         canForwardMessagesCount--;
@@ -18835,7 +18853,7 @@ public class ChatActivity extends BaseFragment implements
                         cantDeleteMessagesCount++;
                     }
                     boolean noforwards = isPeerNoForwards();
-                    if (chatMode == MODE_SCHEDULED || !messageObject.canForwardMessage() || noforwards) {
+                    if (chatMode == MODE_SCHEDULED || !messageObject.canForwardMessage() || noforwards || isAntiRecallActionRestricted(messageObject)) {
                         cantForwardMessagesCount++;
                     } else {
                         canForwardMessagesCount++;
@@ -18870,10 +18888,12 @@ public class ChatActivity extends BaseFragment implements
                 ActionBarMenuItem shareItem = actionBar.createActionMode().getItem(share);
 
                 boolean noforwards = isPeerNoForwards() || hasSelectedNoforwardsMessage();
+                boolean hasRecalledMessage = hasSelectedRecalledMessage();
                 if (prevCantForwardCount == 0 && cantForwardMessagesCount != 0 || prevCantForwardCount != 0 && cantForwardMessagesCount == 0) {
                     forwardButtonAnimation = new AnimatorSet();
                     ArrayList<Animator> animators = new ArrayList<>();
                     if (forwardItem != null) {
+                        forwardItem.setVisibility(hasRecalledMessage ? View.GONE : View.VISIBLE);
                         forwardItem.setEnabled(cantForwardMessagesCount == 0 || noforwards);
                         animators.add(ObjectAnimator.ofFloat(forwardItem, View.ALPHA, cantForwardMessagesCount == 0 ? 1.0f : 0.5f));
 
@@ -18897,6 +18917,7 @@ public class ChatActivity extends BaseFragment implements
                     forwardButtonAnimation.start();
                 } else {
                     if (forwardItem != null) {
+                        forwardItem.setVisibility(hasRecalledMessage ? View.GONE : View.VISIBLE);
                         forwardItem.setEnabled(cantForwardMessagesCount == 0 || noforwards);
                         forwardItem.setAlpha(cantForwardMessagesCount == 0 ? 1.0f : 0.5f);
                         if (noforwards) {
@@ -18954,7 +18975,7 @@ public class ChatActivity extends BaseFragment implements
 
                     int newVisibility;
 
-                    if (chatMode == MODE_SCHEDULED || !allowChatActions || selectedMessagesIds[0].size() != 0 && selectedMessagesIds[1].size() != 0) {
+                    if (chatMode == MODE_SCHEDULED || !allowChatActions || hasRecalledMessage || selectedMessagesIds[0].size() != 0 && selectedMessagesIds[1].size() != 0) {
                         newVisibility = View.GONE;
                     } else if (selectedCount == 1) {
                         newVisibility = View.VISIBLE;
@@ -25628,9 +25649,26 @@ public class ChatActivity extends BaseFragment implements
     private void processDeletedMessages(ArrayList<Integer> markAsDeletedMessages, long channelId, boolean sent) {
         processDeletedMessages(markAsDeletedMessages, channelId, sent, true);
     }
+    private boolean shouldKeepDeletedMessageInChat(MessageObject obj) {
+        if (obj == null || obj.scheduled || obj.isOut() || DialogObject.isEncryptedDialog(obj.getDialogId())) {
+            return false;
+        }
+        boolean isTemporaryMedia = obj.isSecretMedia();
+        if (isTemporaryMedia ? !CustomSettings.keepTemporaryMediaInChat() : !CustomSettings.antiRecall()) {
+            return false;
+        }
+        obj.isRecalled = true;
+        obj.deleted = false;
+        if (obj.messageOwner != null) {
+            obj.messageOwner.is_recalled = true;
+        }
+        return true;
+    }
+
     private void processDeletedMessages(ArrayList<Integer> markAsDeletedMessages, long channelId, boolean sent, boolean thanos) {
         ArrayList<Integer> removedIndexes = new ArrayList<>();
         ArrayList<Integer> thanosMessagesIndexes = new ArrayList<>();
+        ArrayList<Integer> recalledIndexes = new ArrayList<>();
         final int currentTime = getConnectionsManager().getCurrentTime();
         int loadIndex = 0;
         if (ChatObject.isChannel(currentChat)) {
@@ -25644,7 +25682,7 @@ public class ChatActivity extends BaseFragment implements
         } else if (channelId != 0) {
             return;
         }
-        if (replyingMessageObject != null && markAsDeletedMessages.contains(replyingMessageObject.getId())) {
+        if (replyingMessageObject != null && markAsDeletedMessages.contains(replyingMessageObject.getId()) && !shouldKeepDeletedMessageInChat(replyingMessageObject)) {
             replyingMessageObject = null;
             replyingQuote = null;
             fallbackFieldPanel();
@@ -25659,6 +25697,7 @@ public class ChatActivity extends BaseFragment implements
         boolean updateScheduled = false;
         boolean hasChatInBack = false;
         boolean updatedReplies = false;
+        boolean recalledUpdated = false;
 
         if (threadMessageObject != null && !isTopic && parentLayout != null) {
             for (int a = 0, N = parentLayout.getFragmentStack().size() - 1; a < N; a++) {
@@ -25677,6 +25716,14 @@ public class ChatActivity extends BaseFragment implements
         for (int a = 0; a < size; a++) {
             Integer mid = markAsDeletedMessages.get(a);
             MessageObject obj = chatAdapter != null && chatAdapter.isFiltered ? filteredMessagesDict.get(mid) :  messagesDict[loadIndex].get(mid);
+            if (shouldKeepDeletedMessageInChat(obj)) {
+                int index = chatAdapter != null && chatAdapter.isFiltered && filteredMessagesDict != null ? chatAdapter.filteredMessages.indexOf(filteredMessagesDict.get(mid)) : messages.indexOf(obj);
+                if (index != -1 && chatAdapter != null) {
+                    recalledIndexes.add(chatAdapter.messagesStartRow + index);
+                }
+                recalledUpdated = true;
+                continue;
+            }
             if (selectedObject != null && obj == selectedObject || obj != null && selectedObjectGroup != null && selectedObjectGroup == groupedMessagesMap.get(obj.getGroupId())) {
                 closeMenu();
             }
@@ -25956,6 +26003,13 @@ public class ChatActivity extends BaseFragment implements
             if (chatMode == MODE_QUICK_REPLIES) {
                 updateBottomOverlay();
             }
+        } else if (recalledUpdated) {
+            if (chatAdapter != null && !chatAdapter.isFrozen) {
+                for (int a = 0, N = recalledIndexes.size(); a < N; a++) {
+                    chatAdapter.notifyItemChanged(recalledIndexes.get(a));
+                }
+            }
+            updateVisibleRows();
         } else if (threadMessageId == 0) {
             first_unread_id = 0;
             last_message_id = 0;
@@ -30176,6 +30230,7 @@ public class ChatActivity extends BaseFragment implements
         allowPin = allowPin && message.getId() > 0 && (message.messageOwner.action == null || message.messageOwner.action instanceof TLRPC.TL_messageActionEmpty) && !message.isExpiredStory() && message.type != MessageObject.TYPE_STORY_MENTION;
         boolean noforwards = isPeerNoForwards() || message.messageOwner.noforwards || getDialogId() == UserObject.VERIFY;
         boolean noforwardsOrPaidMedia = noforwards || message.type == MessageObject.TYPE_PAID_MEDIA;
+        boolean restrictAntiRecallActions = isAntiRecallActionRestricted(message);
         boolean allowUnpin = message.getDialogId() != mergeDialogId && allowPin && (pinnedMessageObjects.containsKey(message.getId()) || groupedMessages != null && !groupedMessages.messages.isEmpty() && pinnedMessageObjects.containsKey(groupedMessages.messages.get(0).getId())) && !message.isExpiredStory();
         boolean allowEdit = message.canEditMessage(currentChat) && !chatActivityEnterView.hasAudioToSend() && message.getDialogId() != mergeDialogId && message.type != MessageObject.TYPE_STORY && message.type != MessageObject.TYPE_POLL;
         if (allowEdit && groupedMessages != null) {
@@ -30275,6 +30330,18 @@ public class ChatActivity extends BaseFragment implements
                 selectedObject = message;
                 selectedObjectGroup = groupedMessages;
                 fillMessageMenu(primaryMessage, icons, items, options);
+            }
+
+            if (restrictAntiRecallActions) {
+                for (int i = 0; i < options.size(); ++i) {
+                    final int option = options.get(i);
+                    if (option == OPTION_FORWARD || option == OPTION_REPLY) {
+                        options.remove(i);
+                        items.remove(i);
+                        icons.remove(i);
+                        i--;
+                    }
+                }
             }
 
             if (selectedObject != null && selectedObject.isHiddenSensitive() && !selectedObject.isMediaSpoilersRevealed) {
@@ -32521,6 +32588,18 @@ public class ChatActivity extends BaseFragment implements
         }
         if (TextUtils.isEmpty(path)) {
             File f = FileLoader.getInstance(currentAccount).getPathToMessage(messageObject.messageOwner);
+            if (f != null && f.exists()) {
+                path = f.getPath();
+            }
+        }
+        if (TextUtils.isEmpty(path)) {
+            File f = FileLoader.getInstance(currentAccount).getPathToMessage(messageObject.messageOwner, true, true);
+            if (f != null && f.exists()) {
+                path = f.getPath();
+            }
+        }
+        if (TextUtils.isEmpty(path) && messageObject.getDocument() != null) {
+            File f = FileLoader.getInstance(currentAccount).getPathToAttach(messageObject.getDocument(), null, true, true);
             if (f != null && f.exists()) {
                 path = f.getPath();
             }
@@ -44646,6 +44725,7 @@ public class ChatActivity extends BaseFragment implements
         allowPin = allowPin && message.getId() > 0 && (message.messageOwner.action == null || message.messageOwner.action instanceof TLRPC.TL_messageActionEmpty) && !message.isExpiredStory() && message.type != MessageObject.TYPE_STORY_MENTION;
         boolean noforwards = isPeerNoForwards() || message.messageOwner.noforwards || getDialogId() == UserObject.VERIFY;
         boolean noforwardsOrPaidMedia = noforwards || message.type == MessageObject.TYPE_PAID_MEDIA;
+        boolean restrictAntiRecallActions = isAntiRecallActionRestricted(message);
         boolean allowUnpin = message.getDialogId() != mergeDialogId && allowPin && (pinnedMessageObjects.containsKey(message.getId()) || groupedMessages != null && !groupedMessages.messages.isEmpty() && pinnedMessageObjects.containsKey(groupedMessages.messages.get(0).getId())) && !message.isExpiredStory();
         boolean allowEdit = message.canEditMessage(currentChat) && !chatActivityEnterView.hasAudioToSend() && message.getDialogId() != mergeDialogId && message.type != MessageObject.TYPE_STORY && message.type != MessageObject.TYPE_POLL;
         if (allowEdit && groupedMessages != null) {
@@ -44731,7 +44811,7 @@ public class ChatActivity extends BaseFragment implements
             icons.add(deleteIconRes);
         } else if (type == 1) {
             if (currentChat != null) {
-                if (allowChatActions && !isInsideContainer) {
+                if (allowChatActions && !restrictAntiRecallActions && !isInsideContainer) {
                     items.add(LocaleController.getString(R.string.Reply));
                     options.add(OPTION_REPLY);
                     icons.add(R.drawable.menu_reply);
@@ -44781,7 +44861,7 @@ public class ChatActivity extends BaseFragment implements
                     icons.add(R.drawable.msg_report);
                 }
             } else {
-                if (selectedObject.getId() > 0 && allowChatActions && !isInsideContainer) {
+                if (selectedObject.getId() > 0 && allowChatActions && !restrictAntiRecallActions && !isInsideContainer) {
                     items.add(LocaleController.getString(R.string.Reply));
                     options.add(OPTION_REPLY);
                     icons.add(R.drawable.menu_reply);
@@ -44827,7 +44907,7 @@ public class ChatActivity extends BaseFragment implements
                         icons.add(R.drawable.msg_fave);
                     }
                 }
-                if ((allowChatActions || !noforwardsOrPaidMedia && ChatObject.isChannelAndNotMegaGroup(currentChat) && !selectedObject.isSponsored() && selectedObject.contentType == 0 && chatMode == MODE_DEFAULT) && !isInsideContainer) {
+                if ((allowChatActions || !noforwardsOrPaidMedia && ChatObject.isChannelAndNotMegaGroup(currentChat) && !selectedObject.isSponsored() && selectedObject.contentType == 0 && chatMode == MODE_DEFAULT) && !restrictAntiRecallActions && !isInsideContainer) {
                     items.add(LocaleController.getString(R.string.Reply));
                     options.add(OPTION_REPLY);
                     icons.add(R.drawable.menu_reply);
@@ -45065,7 +45145,7 @@ public class ChatActivity extends BaseFragment implements
                 if (!selectedObject.isSponsored() && chatMode != MODE_QUICK_REPLIES && chatMode != MODE_SCHEDULED && (!selectedObject.needDrawBluredPreview() || selectedObject.hasExtendedMediaPreview()) &&
                     !selectedObject.isLiveLocation() && selectedObject.type != MessageObject.TYPE_PHONE_CALL && !noforwards && selectedObject.type != MessageObject.TYPE_SHARING_OFFER &&
                     selectedObject.type != MessageObject.TYPE_GIFT_PREMIUM && selectedObject.type != MessageObject.TYPE_GIFT_OFFER && selectedObject.type != MessageObject.TYPE_GIFT_OFFER_REJECTED && selectedObject.type != MessageObject.TYPE_GIFT_PREMIUM_CHANNEL && selectedObject.type != MessageObject.TYPE_SUGGEST_PHOTO && !selectedObject.isWallpaperAction()
-                    && !message.isExpiredStory() && message.type != MessageObject.TYPE_STORY_MENTION && message.type != MessageObject.TYPE_GIFT_STARS) {
+                    && !restrictAntiRecallActions && !message.isExpiredStory() && message.type != MessageObject.TYPE_STORY_MENTION && message.type != MessageObject.TYPE_GIFT_STARS) {
                     items.add(LocaleController.getString(R.string.Forward));
                     options.add(OPTION_FORWARD);
                     icons.add(R.drawable.msg_forward);
@@ -45122,7 +45202,7 @@ public class ChatActivity extends BaseFragment implements
                     icons.add(deleteIconRes);
                 }
             } else {
-                if (allowChatActions && !isInsideContainer) {
+                if (allowChatActions && !restrictAntiRecallActions && !isInsideContainer) {
                     items.add(LocaleController.getString(R.string.Reply));
                     options.add(OPTION_REPLY);
                     icons.add(R.drawable.menu_reply);

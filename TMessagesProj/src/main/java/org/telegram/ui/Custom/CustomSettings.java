@@ -43,6 +43,15 @@ public class CustomSettings {
     public static boolean bypassContentProtection() { return getPrefs().getBoolean("bypass_content_protection", false); }
     public static void setBypassContentProtection(boolean v) { getPrefs().edit().putBoolean("bypass_content_protection", v).apply(); }
 
+    public static boolean antiRecall() { return getPrefs().getBoolean("anti_recall", true); }
+    public static void setAntiRecall(boolean v) { getPrefs().edit().putBoolean("anti_recall", v).apply(); }
+
+    public static boolean saveTemporaryMedia() { return getPrefs().getBoolean("save_temporary_media", true); }
+    public static void setSaveTemporaryMedia(boolean v) { getPrefs().edit().putBoolean("save_temporary_media", v).apply(); }
+
+    public static boolean keepTemporaryMediaInChat() { return getPrefs().getBoolean("keep_temporary_media_in_chat", false); }
+    public static void setKeepTemporaryMediaInChat(boolean v) { getPrefs().edit().putBoolean("keep_temporary_media_in_chat", v).apply(); }
+
     public static class BanGroup {
         public String id;
         public String name;
