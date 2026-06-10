@@ -10931,6 +10931,8 @@
     <string name="CustomSettingsSaveTemporaryMediaInfo">Auto-saves view-once photos and videos.</string>
     <string name="CustomSettingsKeepTemporaryMediaInChat">Keep after viewing</string>
     <string name="CustomSettingsKeepTemporaryMediaInChatInfo">Leaves self-destructing media in chat.</string>
+    <string name="CustomSettingsKeepKickedChatsCache">Keep kicked chats</string>
+    <string name="CustomSettingsKeepKickedChatsCacheInfo">Keeps local history after ban or kick.</string>
     <string name="CustomSettingsBypassContentProtection">Disable content protection</string>
     <string name="CustomSettingsBypassContentProtectionInfo">Allows screenshots, forwarding, copying, sharing and saving in secret chats and chats that prohibit it.</string>
     <string name="CustomSettingsRestartPromptTitle">Restart required</string>

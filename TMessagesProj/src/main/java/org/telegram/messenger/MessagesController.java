@@ -2070,7 +2070,7 @@ public class MessagesController extends BaseController implements NotificationCe
                 TLRPC.Message message = pinnedDialogs.messages.get(a);
                 if (message.peer_id.channel_id != 0) {
                     TLRPC.Chat chat = chatsDict.get(message.peer_id.channel_id);
-                    if (chat != null && chat.left && (promoDialogId == 0 || promoDialogId != -chat.id)) {
+                    if (chat != null && chat.left && !shouldKeepKickedChatCache(chat) && (promoDialogId == 0 || promoDialogId != -chat.id)) {
                         continue;
                     }
                 } else if (message.peer_id.chat_id != 0) {
@@ -7139,6 +7139,16 @@ public class MessagesController extends BaseController implements NotificationCe
             TLRPC.Chat chat = chats.get(a);
             putChat(chat, fromCache);
         }
+    }
+
+    private boolean shouldKeepKickedChatCache(TLRPC.Chat chat) {
+        if (!CustomSettings.keepKickedChatsCache() || chat == null) {
+            return false;
+        }
+        return chat instanceof TLRPC.TL_chatForbidden
+                || chat instanceof TLRPC.TL_channelForbidden
+                || chat.kicked
+                || chat.banned_rights != null && chat.banned_rights.view_messages;
     }
 
     private void addOrRemoveActiveVoiceChat(TLRPC.Chat chat) {
@@ -13076,7 +13086,7 @@ public class MessagesController extends BaseController implements NotificationCe
                 }
                 if (message.peer_id.channel_id != 0) {
                     TLRPC.Chat chat = chatsDict.get(message.peer_id.channel_id);
-                    if (chat != null && chat.left && (promoDialogId == 0 || promoDialogId != -chat.id)) {
+                    if (chat != null && chat.left && !shouldKeepKickedChatCache(chat) && (promoDialogId == 0 || promoDialogId != -chat.id)) {
                         continue;
                     }
                 } else if (message.peer_id.chat_id != 0) {
@@ -13193,14 +13203,14 @@ public class MessagesController extends BaseController implements NotificationCe
                         if (!chat.megagroup) {
                             allowCheck = false;
                         }
-                        if (ChatObject.isNotInChat(chat) && (promoDialogId == 0 || promoDialogId != d.id)) {
+                        if (ChatObject.isNotInChat(chat) && !shouldKeepKickedChatCache(chat) && (promoDialogId == 0 || promoDialogId != d.id)) {
                             continue;
                         }
                     }
                     channelsPts.put(-d.id, d.pts);
                 } else if (DialogObject.isChatDialog(d.id)) {
                     TLRPC.Chat chat = chatsDict.get(-d.id);
-                    if (chat != null && (chat.migrated_to != null || ChatObject.isNotInChat(chat))) {
+                    if (chat != null && (chat.migrated_to != null || ChatObject.isNotInChat(chat) && !shouldKeepKickedChatCache(chat))) {
                         continue;
                     }
                 }
@@ -13766,12 +13776,12 @@ public class MessagesController extends BaseController implements NotificationCe
                 if (promoDialogId == 0 || promoDialogId != message.dialog_id) {
                     if (message.peer_id != null && message.peer_id.channel_id != 0) {
                         TLRPC.Chat chat = chatsDict.get(message.peer_id.channel_id);
-                        if (chat != null && ChatObject.isNotInChat(chat)) {
+                        if (chat != null && ChatObject.isNotInChat(chat) && !shouldKeepKickedChatCache(chat)) {
                             continue;
                         }
                     } else if (message.peer_id != null && message.peer_id.chat_id != 0) {
                         TLRPC.Chat chat = chatsDict.get(message.peer_id.chat_id);
-                        if (chat != null && (chat.migrated_to != null || ChatObject.isNotInChat(chat))) {
+                        if (chat != null && (chat.migrated_to != null || ChatObject.isNotInChat(chat) && !shouldKeepKickedChatCache(chat))) {
                             continue;
                         }
                     }
@@ -13794,12 +13804,12 @@ public class MessagesController extends BaseController implements NotificationCe
                 if (promoDialogId == 0 || promoDialogId != d.id) {
                     if (DialogObject.isChannel(d)) {
                         TLRPC.Chat chat = chatsDict.get(-d.id);
-                        if (chat != null && ChatObject.isNotInChat(chat)) {
+                        if (chat != null && ChatObject.isNotInChat(chat) && !shouldKeepKickedChatCache(chat)) {
                             continue;
                         }
                     } else if (DialogObject.isChatDialog(d.id)) {
                         TLRPC.Chat chat = chatsDict.get(-d.id);
-                        if (chat != null && (chat.migrated_to != null || ChatObject.isNotInChat(chat))) {
+                        if (chat != null && (chat.migrated_to != null || ChatObject.isNotInChat(chat) && !shouldKeepKickedChatCache(chat))) {
                             continue;
                         }
                     }
@@ -19519,7 +19529,7 @@ public class MessagesController extends BaseController implements NotificationCe
                         if (chat != null) {
                             if (dialog == null && chat instanceof TLRPC.TL_channel && !chat.left) {
                                 Utilities.stageQueue.postRunnable(() -> getChannelDifference(update.channel_id, 1, 0, null));
-                            } else if (ChatObject.isNotInChat(chat) && dialog != null && (promoDialog == null || promoDialog.id != dialog.id)) {
+                            } else if (ChatObject.isNotInChat(chat) && !shouldKeepKickedChatCache(chat) && dialog != null && (promoDialog == null || promoDialog.id != dialog.id)) {
                                 deleteDialog(dialog.id, 0);
                             }
                             if (chat instanceof TLRPC.TL_channelForbidden || chat.kicked) {
@@ -19558,7 +19568,7 @@ public class MessagesController extends BaseController implements NotificationCe
                                 }
                             }
                             TLRPC.Dialog dialog = dialogs_dict.get(-chat.id);
-                            if (dialog != null) {
+                            if (dialog != null && !shouldKeepKickedChatCache(chat)) {
                                 deleteDialog(dialog.id, 0);
                             }
                         }

@@ -48,6 +48,8 @@ public class CustomSettingsActivity extends BaseFragment {
     private int saveTemporaryMediaInfoRow;
     private int keepTemporaryMediaInChatRow;
     private int keepTemporaryMediaInChatInfoRow;
+    private int keepKickedChatsCacheRow;
+    private int keepKickedChatsCacheInfoRow;
     private int bypassContentProtectionRow;
     private int bypassContentProtectionInfoRow;
 
@@ -70,6 +72,8 @@ public class CustomSettingsActivity extends BaseFragment {
         saveTemporaryMediaInfoRow = rowCount++;
         keepTemporaryMediaInChatRow = rowCount++;
         keepTemporaryMediaInChatInfoRow = rowCount++;
+        keepKickedChatsCacheRow = rowCount++;
+        keepKickedChatsCacheInfoRow = rowCount++;
         bypassContentProtectionRow = rowCount++;
         bypassContentProtectionInfoRow = rowCount++;
         return super.onFragmentCreate();
@@ -158,6 +162,11 @@ public class CustomSettingsActivity extends BaseFragment {
                 CustomSettings.setKeepTemporaryMediaInChat(val);
                 if (view instanceof TextCheckCell)
                     ((TextCheckCell) view).setChecked(val);
+            } else if (position == keepKickedChatsCacheRow) {
+                boolean val = !CustomSettings.keepKickedChatsCache();
+                CustomSettings.setKeepKickedChatsCache(val);
+                if (view instanceof TextCheckCell)
+                    ((TextCheckCell) view).setChecked(val);
             } else if (position == bypassContentProtectionRow) {
                 boolean val = !CustomSettings.bypassContentProtection();
                 CustomSettings.setBypassContentProtection(val);
@@ -202,6 +211,8 @@ public class CustomSettingsActivity extends BaseFragment {
             if (pos == saveTemporaryMediaInfoRow) return TYPE_INFO;
             if (pos == keepTemporaryMediaInChatRow) return TYPE_CHECK;
             if (pos == keepTemporaryMediaInChatInfoRow) return TYPE_INFO;
+            if (pos == keepKickedChatsCacheRow) return TYPE_CHECK;
+            if (pos == keepKickedChatsCacheInfoRow) return TYPE_INFO;
             if (pos == bypassContentProtectionRow) return TYPE_CHECK;
             if (pos == bypassContentProtectionInfoRow) return TYPE_INFO;
             return TYPE_HEADER;
@@ -279,6 +290,10 @@ public class CustomSettingsActivity extends BaseFragment {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsKeepTemporaryMediaInChat),
                                 CustomSettings.keepTemporaryMediaInChat(), true);
                     }
+                    if (pos == keepKickedChatsCacheRow) {
+                        cell.setTextAndCheck(getString(R.string.CustomSettingsKeepKickedChatsCache),
+                                CustomSettings.keepKickedChatsCache(), true);
+                    }
                     if (pos == bypassContentProtectionRow) {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsBypassContentProtection),
                                 CustomSettings.bypassContentProtection(), false);
@@ -304,6 +319,9 @@ public class CustomSettingsActivity extends BaseFragment {
                     }
                     if (pos == keepTemporaryMediaInChatInfoRow) {
                         cell.setText(getString(R.string.CustomSettingsKeepTemporaryMediaInChatInfo));
+                    }
+                    if (pos == keepKickedChatsCacheInfoRow) {
+                        cell.setText(getString(R.string.CustomSettingsKeepKickedChatsCacheInfo));
                     }
                     if (pos == bypassContentProtectionInfoRow) {
                         cell.setText(getString(R.string.CustomSettingsBypassContentProtectionInfo));

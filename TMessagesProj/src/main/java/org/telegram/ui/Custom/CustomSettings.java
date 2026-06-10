@@ -52,6 +52,9 @@ public class CustomSettings {
     public static boolean keepTemporaryMediaInChat() { return getPrefs().getBoolean("keep_temporary_media_in_chat", false); }
     public static void setKeepTemporaryMediaInChat(boolean v) { getPrefs().edit().putBoolean("keep_temporary_media_in_chat", v).apply(); }
 
+    public static boolean keepKickedChatsCache() { return getPrefs().getBoolean("keep_kicked_chats_cache", true); }
+    public static void setKeepKickedChatsCache(boolean v) { getPrefs().edit().putBoolean("keep_kicked_chats_cache", v).apply(); }
+
     public static class BanGroup {
         public String id;
         public String name;
