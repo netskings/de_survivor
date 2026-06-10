@@ -32,6 +32,7 @@ import org.telegram.tgnet.NativeByteBuffer;
 import org.telegram.tgnet.TLObject;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_stories;
+import org.telegram.ui.Custom.CustomSettings;
 import org.telegram.ui.Components.PermissionRequest;
 
 import java.util.ArrayList;
@@ -902,6 +903,9 @@ public class LocationController extends BaseController implements NotificationCe
     }
 
     public void markLiveLoactionsAsRead(long dialogId) {
+        if (CustomSettings.hideReadStatus()) {
+            return;
+        }
         if (DialogObject.isEncryptedDialog(dialogId)) {
             return;
         }

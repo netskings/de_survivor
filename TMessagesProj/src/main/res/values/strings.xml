@@ -10927,10 +10927,12 @@
     <string name="CustomSettingsGhostHeader">Ghost Mode</string>
     <string name="CustomSettingsHideOnlineStatus">Hide Online Status</string>
     <string name="CustomSettingsHideOnlineStatusInfo">Prevents Telegram from sending online status while the app is open, including when you send messages.</string>
-    <string name="CustomSettingsHideTypingStatus">Hide Typing Status</string>
-    <string name="CustomSettingsHideTypingStatusInfo">Hides typing and recording indicators in chats while you write messages or record audio/video.</string>
     <string name="CustomSettingsKeepLastSeenUpdatedInGhostMode">Update Last Seen in Ghost Mode</string>
     <string name="CustomSettingsKeepLastSeenUpdatedInGhostModeInfo">Keeps Last Seen moving forward while Online is hidden, so contacts may still see a recent Last Seen time.</string>
+    <string name="CustomSettingsHideTypingStatus">Hide Typing Status</string>
+    <string name="CustomSettingsHideTypingStatusInfo">Hides typing and recording indicators in chats while you write messages or record audio/video.</string>
+    <string name="CustomSettingsHideReadStatus">Hide Read Status</string>
+    <string name="CustomSettingsHideReadStatusInfo">Prevents messages, stories, and opened media from being marked as read. Voice and video messages stay unread after playback.</string>
     <string name="CustomSettingsRestrictionsHeader">Privacy and History</string>
     <string name="CustomSettingsAntiRecall">Keep Deleted Messages</string>
     <string name="CustomSettingsAntiRecallInfo">Keeps incoming messages locally when the sender deletes them. Reply and Forward are hidden for saved deleted messages.</string>

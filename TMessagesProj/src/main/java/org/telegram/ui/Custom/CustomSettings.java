@@ -25,6 +25,7 @@ public class CustomSettings {
     private static final String KEY_KEEP_KICKED_CHATS_CACHE = "keep_kicked_chats_cache";
     private static final String KEY_HIDE_ONLINE_STATUS = "hide_online_status";
     private static final String KEY_HIDE_TYPING_STATUS = "hide_typing_status";
+    private static final String KEY_HIDE_READ_STATUS = "hide_read_status";
     private static final String KEY_KEEP_LAST_SEEN_UPDATED_IN_GHOST_MODE = "send_offline_status_in_ghost_mode";
 
     public static FeedAlbumMode feedAlbumMode() {
@@ -73,6 +74,9 @@ public class CustomSettings {
 
     public static boolean hideTypingStatus() { return getPrefs().getBoolean(KEY_HIDE_TYPING_STATUS, false); }
     public static void setHideTypingStatus(boolean v) { getPrefs().edit().putBoolean(KEY_HIDE_TYPING_STATUS, v).apply(); }
+
+    public static boolean hideReadStatus() { return getPrefs().getBoolean(KEY_HIDE_READ_STATUS, false); }
+    public static void setHideReadStatus(boolean v) { getPrefs().edit().putBoolean(KEY_HIDE_READ_STATUS, v).apply(); }
 
     public static boolean keepLastSeenUpdatedInGhostMode() { return getPrefs().getBoolean(KEY_KEEP_LAST_SEEN_UPDATED_IN_GHOST_MODE, false); }
     public static void setKeepLastSeenUpdatedInGhostMode(boolean v) { getPrefs().edit().putBoolean(KEY_KEEP_LAST_SEEN_UPDATED_IN_GHOST_MODE, v).apply(); }

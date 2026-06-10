@@ -62,6 +62,7 @@ import org.telegram.ui.Components.Premium.LimitReachedBottomSheet;
 import org.telegram.ui.Components.Premium.PremiumFeatureBottomSheet;
 import org.telegram.ui.Components.Reactions.ReactionImageHolder;
 import org.telegram.ui.Components.Reactions.ReactionsLayoutInBubble;
+import org.telegram.ui.Custom.CustomSettings;
 import org.telegram.ui.FilterCreateActivity;
 import org.telegram.ui.LaunchActivity;
 import org.telegram.ui.PremiumPreviewFragment;
@@ -1285,6 +1286,9 @@ public class StoriesController {
             return false;
         }
         final long dialogId = DialogObject.getPeerDialogId(userStories.peer);
+        if (CustomSettings.hideReadStatus() && dialogId != getSelfUserId()) {
+            return false;
+        }
         if (storyItem.justUploaded) {
             storyItem.justUploaded = false;
         }
@@ -3722,6 +3726,9 @@ public class StoriesController {
         }
 
         protected boolean markAsRead(int storyId) {
+            if (CustomSettings.hideReadStatus() && dialogId != getSelfUserId()) {
+                return false;
+            }
             if (seenStories.contains(storyId)) return false;
             seenStories.add(storyId);
             saveCache();

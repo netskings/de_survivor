@@ -46,6 +46,8 @@ public class CustomSettingsActivity extends BaseFragment {
     private int hideOnlineStatusInfoRow;
     private int hideTypingStatusRow;
     private int hideTypingStatusInfoRow;
+    private int hideReadStatusRow;
+    private int hideReadStatusInfoRow;
     private int keepLastSeenUpdatedInGhostModeRow;
     private int keepLastSeenUpdatedInGhostModeInfoRow;
 
@@ -76,10 +78,12 @@ public class CustomSettingsActivity extends BaseFragment {
         ghostHeaderRow = rowCount++;
         hideOnlineStatusRow = rowCount++;
         hideOnlineStatusInfoRow = rowCount++;
-        hideTypingStatusRow = rowCount++;
-        hideTypingStatusInfoRow = rowCount++;
         keepLastSeenUpdatedInGhostModeRow = rowCount++;
         keepLastSeenUpdatedInGhostModeInfoRow = rowCount++;
+        hideTypingStatusRow = rowCount++;
+        hideTypingStatusInfoRow = rowCount++;
+        hideReadStatusRow = rowCount++;
+        hideReadStatusInfoRow = rowCount++;
         restrictionsHeaderRow = rowCount++;
         antiRecallRow = rowCount++;
         antiRecallInfoRow = rowCount++;
@@ -172,6 +176,11 @@ public class CustomSettingsActivity extends BaseFragment {
                 CustomSettings.setHideTypingStatus(val);
                 if (view instanceof TextCheckCell)
                     ((TextCheckCell) view).setChecked(val);
+            } else if (position == hideReadStatusRow) {
+                boolean val = !CustomSettings.hideReadStatus();
+                CustomSettings.setHideReadStatus(val);
+                if (view instanceof TextCheckCell)
+                    ((TextCheckCell) view).setChecked(val);
             } else if (position == keepLastSeenUpdatedInGhostModeRow) {
                 boolean val = !CustomSettings.keepLastSeenUpdatedInGhostMode();
                 CustomSettings.setKeepLastSeenUpdatedInGhostMode(val);
@@ -237,10 +246,12 @@ public class CustomSettingsActivity extends BaseFragment {
             if (pos == ghostHeaderRow) return TYPE_HEADER;
             if (pos == hideOnlineStatusRow) return TYPE_CHECK;
             if (pos == hideOnlineStatusInfoRow) return TYPE_INFO;
-            if (pos == hideTypingStatusRow) return TYPE_CHECK;
-            if (pos == hideTypingStatusInfoRow) return TYPE_INFO;
             if (pos == keepLastSeenUpdatedInGhostModeRow) return TYPE_CHECK;
             if (pos == keepLastSeenUpdatedInGhostModeInfoRow) return TYPE_INFO;
+            if (pos == hideTypingStatusRow) return TYPE_CHECK;
+            if (pos == hideTypingStatusInfoRow) return TYPE_INFO;
+            if (pos == hideReadStatusRow) return TYPE_CHECK;
+            if (pos == hideReadStatusInfoRow) return TYPE_INFO;
             if (pos == restrictionsHeaderRow) return TYPE_HEADER;
             if (pos == antiRecallRow) return TYPE_CHECK;
             if (pos == antiRecallInfoRow) return TYPE_INFO;
@@ -324,6 +335,10 @@ public class CustomSettingsActivity extends BaseFragment {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsHideTypingStatus),
                                 CustomSettings.hideTypingStatus(), true);
                     }
+                    if (pos == hideReadStatusRow) {
+                        cell.setTextAndCheck(getString(R.string.CustomSettingsHideReadStatus),
+                                CustomSettings.hideReadStatus(), true);
+                    }
                     if (pos == keepLastSeenUpdatedInGhostModeRow) {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsKeepLastSeenUpdatedInGhostMode),
                                 CustomSettings.keepLastSeenUpdatedInGhostMode(), true);
@@ -366,6 +381,9 @@ public class CustomSettingsActivity extends BaseFragment {
                     }
                     if (pos == hideTypingStatusInfoRow) {
                         cell.setText(getString(R.string.CustomSettingsHideTypingStatusInfo));
+                    }
+                    if (pos == hideReadStatusInfoRow) {
+                        cell.setText(getString(R.string.CustomSettingsHideReadStatusInfo));
                     }
                     if (pos == keepLastSeenUpdatedInGhostModeInfoRow) {
                         cell.setText(getString(R.string.CustomSettingsKeepLastSeenUpdatedInGhostModeInfo));
