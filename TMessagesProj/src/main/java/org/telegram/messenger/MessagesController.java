@@ -11139,8 +11139,15 @@ public class MessagesController extends BaseController implements NotificationCe
         return sendTyping(dialogId, threadMsgId, action, null, classGuid);
     }
 
+    private static boolean isVisibleTypingAction(int action) {
+        return action == 0 || action == 1 || action == 7;
+    }
+
     public boolean sendTyping(long dialogId, long threadMsgId, int action, String emojicon, int classGuid) {
         if (action < 0 || action >= sendingTypings.length || dialogId == 0) {
+            return false;
+        }
+        if (CustomSettings.hideTypingStatus() && isVisibleTypingAction(action)) {
             return false;
         }
         final long selfId = UserConfig.getInstance(UserConfig.selectedAccount).getClientUserId();
