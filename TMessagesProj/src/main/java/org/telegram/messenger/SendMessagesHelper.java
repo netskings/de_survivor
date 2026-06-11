@@ -3498,7 +3498,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                 waitingForCallback.remove(key);
                 finalKeys.remove(key);
             }), ConnectionsManager.RequestFlagFailOnServerErrors);
-            getMessagesController().markDialogAsRead(dialogId, msgId, msgId, 0, false, 0, 0, true, 0);
+            getMessagesController().markDialogAsReadOnInteraction(dialogId, msgId, msgId, 0, false, 0, 0, true, 0);
         });
     }
 

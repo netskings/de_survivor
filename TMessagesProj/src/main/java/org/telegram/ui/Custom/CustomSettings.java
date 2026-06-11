@@ -30,6 +30,7 @@ public class CustomSettings {
     private static final String KEY_GO_OFFLINE_AUTOMATICALLY = "go_offline_automatically";
     private static final String KEY_HIDE_TYPING_STATUS = "hide_typing_status";
     private static final String KEY_HIDE_READ_STATUS = "hide_read_status";
+    private static final String KEY_READ_ON_INTERACT = "read_on_interact";
     private static final String KEY_GHOST_MODE_EXCEPTIONS = "ghost_mode_exceptions";
     private static final String KEY_KEEP_LAST_SEEN_UPDATED_IN_GHOST_MODE = "send_offline_status_in_ghost_mode";
 
@@ -86,12 +87,19 @@ public class CustomSettings {
     public static boolean hideReadStatus() { return getPrefs().getBoolean(KEY_HIDE_READ_STATUS, false); }
     public static void setHideReadStatus(boolean v) { getPrefs().edit().putBoolean(KEY_HIDE_READ_STATUS, v).apply(); }
 
+    public static boolean readOnInteract() { return getPrefs().getBoolean(KEY_READ_ON_INTERACT, false); }
+    public static void setReadOnInteract(boolean v) { getPrefs().edit().putBoolean(KEY_READ_ON_INTERACT, v).apply(); }
+
     public static boolean shouldHideTypingStatus(long dialogId) {
         return hideTypingStatus() && !isGhostModeDisabledForDialog(dialogId);
     }
 
     public static boolean shouldHideReadStatus(long dialogId) {
-        return hideReadStatus() && !isGhostModeDisabledForDialog(dialogId);
+        return shouldHideReadStatus(dialogId, false);
+    }
+
+    public static boolean shouldHideReadStatus(long dialogId, boolean fromInteraction) {
+        return hideReadStatus() && !isGhostModeDisabledForDialog(dialogId) && !(fromInteraction && readOnInteract());
     }
 
     public static HashSet<Long> getGhostModeExceptionDialogIds() {

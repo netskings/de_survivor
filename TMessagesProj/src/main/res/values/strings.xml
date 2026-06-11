@@ -10935,6 +10935,8 @@
     <string name="CustomSettingsHideTypingStatusInfo">Hides typing and recording indicators in chats while you write messages or record audio/video.</string>
     <string name="CustomSettingsHideReadStatus">Hide Read Status</string>
     <string name="CustomSettingsHideReadStatusInfo">Prevents messages, stories, and opened media from being marked as read. Voice and video messages stay unread after playback.</string>
+    <string name="CustomSettingsReadOnInteract">Read on Interact</string>
+    <string name="CustomSettingsReadOnInteractInfo">Marks messages as read only after you send a message or use an in-chat action. Simply viewing the chat stays hidden.</string>
     <string name="CustomSettingsGhostModeExceptions">Ghost Mode Exceptions</string>
     <string name="CustomSettingsGhostModeExceptionsInfo">Choose chats where typing, read, story, and media view status are sent normally. Online and Last Seen stay account-wide.</string>
     <string name="CustomSettingsAddGhostModeException">Add Exception</string>

@@ -1887,6 +1887,59 @@ public class ChatActivity extends BaseFragment implements
         }
     };
 
+    private void markReadOnInteract() {
+        if (!CustomSettings.readOnInteract() || !CustomSettings.shouldHideReadStatus(dialog_id) || dialog_id == 0 || chatMode == MODE_SCHEDULED || chatMode == MODE_QUICK_REPLIES) {
+            return;
+        }
+
+        long threadId = threadMessageId;
+        int maxPositiveUnreadId = Integer.MIN_VALUE;
+        int maxNegativeUnreadId = Integer.MAX_VALUE;
+        int maxUnreadDate = 0;
+        int counterDecrement = 0;
+
+        if (messages != null) {
+            for (int i = 0; i < messages.size(); i++) {
+                MessageObject messageObject = messages.get(i);
+                if (messageObject == null || messageObject.messageOwner == null || messageObject.getDialogId() != dialog_id || messageObject.isOut() || !messageObject.isUnread()) {
+                    continue;
+                }
+                int id = messageObject.getId();
+                if (id > 0) {
+                    maxPositiveUnreadId = Math.max(maxPositiveUnreadId, id);
+                } else if (id < 0 && threadId == 0) {
+                    maxNegativeUnreadId = Math.min(maxNegativeUnreadId, id);
+                }
+                maxUnreadDate = Math.max(maxUnreadDate, messageObject.messageOwner.date);
+                messageObject.setIsRead();
+                counterDecrement++;
+            }
+        }
+
+        if (threadId == 0) {
+            TLRPC.Dialog dialog = getMessagesController().dialogs_dict.get(dialog_id);
+            if (dialog != null) {
+                if (dialog.top_message > 0) {
+                    maxPositiveUnreadId = Math.max(maxPositiveUnreadId, dialog.top_message);
+                } else if (dialog.top_message < 0) {
+                    maxNegativeUnreadId = Math.min(maxNegativeUnreadId, dialog.top_message);
+                }
+                maxUnreadDate = Math.max(maxUnreadDate, dialog.last_message_date);
+                counterDecrement = Math.max(counterDecrement, dialog.unread_count);
+            }
+        }
+
+        boolean hasUnreadMessage = maxPositiveUnreadId != Integer.MIN_VALUE || maxNegativeUnreadId != Integer.MAX_VALUE;
+        boolean missingSecretChatDate = maxUnreadDate == 0 && DialogObject.isEncryptedDialog(dialog_id);
+        if (!hasUnreadMessage || missingSecretChatDate) {
+            return;
+        }
+        if (counterDecrement > 0 && newUnreadMessageCount > 0) {
+            newUnreadMessageCount = Math.max(newUnreadMessageCount - counterDecrement, 0);
+        }
+        getMessagesController().markDialogAsReadOnInteraction(dialog_id, maxPositiveUnreadId, maxNegativeUnreadId, maxUnreadDate, false, threadId, counterDecrement, true, 0);
+    }
+
     private class ChatActivityEnterViewDelegate implements ChatActivityEnterView.ChatActivityEnterViewDelegate {
 
         int lastSize;
@@ -1964,6 +2017,9 @@ public class ChatActivity extends BaseFragment implements
             }
 
             hideFieldPanel(notify, scheduleDate, payStars, true);
+            if (scheduleDate == 0 && scheduleRepeatPeriod == 0) {
+                markReadOnInteract();
+            }
             if (chatActivityEnterView != null && chatActivityEnterView.getEmojiView() != null) {
                 chatActivityEnterView.getEmojiView().onMessageSend();
             }

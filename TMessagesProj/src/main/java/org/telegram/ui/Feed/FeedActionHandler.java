@@ -739,7 +739,7 @@ class FeedActionHandler {
                 .dialogs_dict.get(dialogId);
         if (dialog == null) return;
 
-        MessagesController.getInstance(account).markDialogAsRead(
+        MessagesController.getInstance(account).markDialogAsReadOnInteraction(
                 dialogId, dialog.top_message, dialog.top_message,
                 dialog.last_message_date, false, 0, 0, true, 0);
 

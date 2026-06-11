@@ -14420,7 +14420,15 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public void markDialogAsRead(long dialogId, int maxPositiveId, int maxNegativeId, int maxDate, boolean popup, long threadId, int countDiff, boolean readNow, int scheduledCount) {
-        if (CustomSettings.shouldHideReadStatus(dialogId)) {
+        markDialogAsRead(dialogId, maxPositiveId, maxNegativeId, maxDate, popup, threadId, countDiff, readNow, scheduledCount, false);
+    }
+
+    public void markDialogAsReadOnInteraction(long dialogId, int maxPositiveId, int maxNegativeId, int maxDate, boolean popup, long threadId, int countDiff, boolean readNow, int scheduledCount) {
+        markDialogAsRead(dialogId, maxPositiveId, maxNegativeId, maxDate, popup, threadId, countDiff, readNow, scheduledCount, true);
+    }
+
+    private void markDialogAsRead(long dialogId, int maxPositiveId, int maxNegativeId, int maxDate, boolean popup, long threadId, int countDiff, boolean readNow, int scheduledCount, boolean fromInteraction) {
+        if (CustomSettings.shouldHideReadStatus(dialogId, fromInteraction)) {
             return;
         }
         boolean createReadTask;

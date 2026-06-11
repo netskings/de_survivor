@@ -52,6 +52,8 @@ public class CustomSettingsActivity extends BaseFragment {
     private int hideTypingStatusInfoRow;
     private int hideReadStatusRow;
     private int hideReadStatusInfoRow;
+    private int readOnInteractRow;
+    private int readOnInteractInfoRow;
     private int ghostModeExceptionsRow;
     private int ghostModeExceptionsInfoRow;
     private int keepLastSeenUpdatedInGhostModeRow;
@@ -92,6 +94,8 @@ public class CustomSettingsActivity extends BaseFragment {
         hideTypingStatusInfoRow = rowCount++;
         hideReadStatusRow = rowCount++;
         hideReadStatusInfoRow = rowCount++;
+        readOnInteractRow = rowCount++;
+        readOnInteractInfoRow = rowCount++;
         ghostModeExceptionsRow = rowCount++;
         ghostModeExceptionsInfoRow = rowCount++;
         restrictionsHeaderRow = rowCount++;
@@ -204,6 +208,11 @@ public class CustomSettingsActivity extends BaseFragment {
                 CustomSettings.setHideReadStatus(val);
                 if (view instanceof TextCheckCell)
                     ((TextCheckCell) view).setChecked(val);
+            } else if (position == readOnInteractRow) {
+                boolean val = !CustomSettings.readOnInteract();
+                CustomSettings.setReadOnInteract(val);
+                if (view instanceof TextCheckCell)
+                    ((TextCheckCell) view).setChecked(val);
             } else if (position == keepLastSeenUpdatedInGhostModeRow) {
                 boolean val = !CustomSettings.keepLastSeenUpdatedInGhostMode();
                 CustomSettings.setKeepLastSeenUpdatedInGhostMode(val);
@@ -279,6 +288,8 @@ public class CustomSettingsActivity extends BaseFragment {
             if (pos == hideTypingStatusInfoRow) return TYPE_INFO;
             if (pos == hideReadStatusRow) return TYPE_CHECK;
             if (pos == hideReadStatusInfoRow) return TYPE_INFO;
+            if (pos == readOnInteractRow) return TYPE_CHECK;
+            if (pos == readOnInteractInfoRow) return TYPE_INFO;
             if (pos == ghostModeExceptionsRow) return TYPE_TEXT_CELL;
             if (pos == ghostModeExceptionsInfoRow) return TYPE_INFO;
             if (pos == restrictionsHeaderRow) return TYPE_HEADER;
@@ -372,6 +383,10 @@ public class CustomSettingsActivity extends BaseFragment {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsHideReadStatus),
                                 CustomSettings.hideReadStatus(), true);
                     }
+                    if (pos == readOnInteractRow) {
+                        cell.setTextAndCheck(getString(R.string.CustomSettingsReadOnInteract),
+                                CustomSettings.readOnInteract(), true);
+                    }
                     if (pos == keepLastSeenUpdatedInGhostModeRow) {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsKeepLastSeenUpdatedInGhostMode),
                                 CustomSettings.keepLastSeenUpdatedInGhostMode(), true);
@@ -420,6 +435,9 @@ public class CustomSettingsActivity extends BaseFragment {
                     }
                     if (pos == hideReadStatusInfoRow) {
                         cell.setText(getString(R.string.CustomSettingsHideReadStatusInfo));
+                    }
+                    if (pos == readOnInteractInfoRow) {
+                        cell.setText(getString(R.string.CustomSettingsReadOnInteractInfo));
                     }
                     if (pos == ghostModeExceptionsInfoRow) {
                         cell.setText(getString(R.string.CustomSettingsGhostModeExceptionsInfo));
