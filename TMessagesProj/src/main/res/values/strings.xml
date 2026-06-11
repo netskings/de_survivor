@@ -10951,6 +10951,12 @@
     <string name="CustomSettingsClearGhostModeExceptions">Delete All Exceptions</string>
     <string name="CustomSettingsClearGhostModeExceptionsTitle">Delete all exceptions?</string>
     <string name="CustomSettingsClearGhostModeExceptionsInfo">Ghost Mode will apply in all chats again.</string>
+    <string name="ViewDeletedMessages">View Deleted</string>
+    <string name="ViewDeletedMessagesEmpty">No deleted messages here yet.</string>
+    <string name="ViewDeletedMessagesSearchEmpty">No deleted messages found.</string>
+    <string name="ViewDeletedUnknownSender">Unknown sender</string>
+    <string name="ViewDeletedYou">You</string>
+    <string name="ViewDeletedSavedAt">Saved %1$s</string>
     <string name="CustomSettingsStoryGhostAlertTitle">Open Story?</string>
     <string name="CustomSettingsStoryGhostAlertMessage">Viewing this story may send your view status. Enable Ghost Mode first?</string>
     <string name="CustomSettingsEnableGhostMode">Enable Ghost</string>
