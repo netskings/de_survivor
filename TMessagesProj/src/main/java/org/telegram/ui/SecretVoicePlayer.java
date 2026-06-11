@@ -713,7 +713,7 @@ public class SecretVoicePlayer extends Dialog {
         });
         containerView.addView(closeButton, LayoutHelper.createFrame(LayoutHelper.WRAP_CONTENT, LayoutHelper.WRAP_CONTENT, Gravity.BOTTOM | Gravity.CENTER, 0, 0, 0, 18));
 
-        if (!isOut && !CustomSettings.hideReadStatus() && myCell != null && myCell.getMessageObject() != null && myCell.getMessageObject().messageOwner != null) {
+        if (!isOut && myCell != null && myCell.getMessageObject() != null && !CustomSettings.shouldHideReadStatus(myCell.getMessageObject().getDialogId()) && myCell.getMessageObject().messageOwner != null) {
             myCell.getMessageObject().messageOwner.media_unread = false;
             myCell.invalidate();
         }

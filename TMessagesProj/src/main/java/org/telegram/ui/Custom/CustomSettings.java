@@ -7,7 +7,10 @@ import org.telegram.ui.Feed.FeedAlbumMode;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 public class CustomSettings {
@@ -26,6 +29,7 @@ public class CustomSettings {
     private static final String KEY_HIDE_ONLINE_STATUS = "hide_online_status";
     private static final String KEY_HIDE_TYPING_STATUS = "hide_typing_status";
     private static final String KEY_HIDE_READ_STATUS = "hide_read_status";
+    private static final String KEY_GHOST_MODE_EXCEPTIONS = "ghost_mode_exceptions";
     private static final String KEY_KEEP_LAST_SEEN_UPDATED_IN_GHOST_MODE = "send_offline_status_in_ghost_mode";
 
     public static FeedAlbumMode feedAlbumMode() {
@@ -77,6 +81,56 @@ public class CustomSettings {
 
     public static boolean hideReadStatus() { return getPrefs().getBoolean(KEY_HIDE_READ_STATUS, false); }
     public static void setHideReadStatus(boolean v) { getPrefs().edit().putBoolean(KEY_HIDE_READ_STATUS, v).apply(); }
+
+    public static boolean shouldHideTypingStatus(long dialogId) {
+        return hideTypingStatus() && !isGhostModeDisabledForDialog(dialogId);
+    }
+
+    public static boolean shouldHideReadStatus(long dialogId) {
+        return hideReadStatus() && !isGhostModeDisabledForDialog(dialogId);
+    }
+
+    public static HashSet<Long> getGhostModeExceptionDialogIds() {
+        Set<String> stored = getPrefs().getStringSet(KEY_GHOST_MODE_EXCEPTIONS, Collections.emptySet());
+        HashSet<Long> result = new HashSet<>();
+        for (String value : stored) {
+            try {
+                result.add(Long.parseLong(value));
+            } catch (Exception e) {
+                FileLog.e(e);
+            }
+        }
+        return result;
+    }
+
+    public static int ghostModeExceptionsCount() {
+        return getPrefs().getStringSet(KEY_GHOST_MODE_EXCEPTIONS, Collections.emptySet()).size();
+    }
+
+    public static boolean isGhostModeDisabledForDialog(long dialogId) {
+        if (dialogId == 0) {
+            return false;
+        }
+        return getPrefs().getStringSet(KEY_GHOST_MODE_EXCEPTIONS, Collections.emptySet()).contains(String.valueOf(dialogId));
+    }
+
+    public static void setGhostModeDisabledForDialog(long dialogId, boolean disabled) {
+        if (dialogId == 0) {
+            return;
+        }
+        Set<String> stored = getPrefs().getStringSet(KEY_GHOST_MODE_EXCEPTIONS, Collections.emptySet());
+        HashSet<String> updated = new HashSet<>(stored);
+        if (disabled) {
+            updated.add(String.valueOf(dialogId));
+        } else {
+            updated.remove(String.valueOf(dialogId));
+        }
+        getPrefs().edit().putStringSet(KEY_GHOST_MODE_EXCEPTIONS, updated).apply();
+    }
+
+    public static void clearGhostModeExceptions() {
+        getPrefs().edit().remove(KEY_GHOST_MODE_EXCEPTIONS).apply();
+    }
 
     public static boolean keepLastSeenUpdatedInGhostMode() { return getPrefs().getBoolean(KEY_KEEP_LAST_SEEN_UPDATED_IN_GHOST_MODE, false); }
     public static void setKeepLastSeenUpdatedInGhostMode(boolean v) { getPrefs().edit().putBoolean(KEY_KEEP_LAST_SEEN_UPDATED_IN_GHOST_MODE, v).apply(); }

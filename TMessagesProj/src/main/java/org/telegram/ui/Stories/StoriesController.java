@@ -1286,7 +1286,7 @@ public class StoriesController {
             return false;
         }
         final long dialogId = DialogObject.getPeerDialogId(userStories.peer);
-        if (CustomSettings.hideReadStatus() && dialogId != getSelfUserId()) {
+        if (CustomSettings.shouldHideReadStatus(dialogId) && dialogId != getSelfUserId()) {
             return false;
         }
         if (storyItem.justUploaded) {
@@ -3726,7 +3726,7 @@ public class StoriesController {
         }
 
         protected boolean markAsRead(int storyId) {
-            if (CustomSettings.hideReadStatus() && dialogId != getSelfUserId()) {
+            if (CustomSettings.shouldHideReadStatus(dialogId) && dialogId != UserConfig.getInstance(currentAccount).getClientUserId()) {
                 return false;
             }
             if (seenStories.contains(storyId)) return false;

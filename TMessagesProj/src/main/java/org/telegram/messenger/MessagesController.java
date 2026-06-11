@@ -11147,7 +11147,7 @@ public class MessagesController extends BaseController implements NotificationCe
         if (action < 0 || action >= sendingTypings.length || dialogId == 0) {
             return false;
         }
-        if (CustomSettings.hideTypingStatus() && isVisibleTypingAction(action)) {
+        if (CustomSettings.shouldHideTypingStatus(dialogId) && isVisibleTypingAction(action)) {
             return false;
         }
         final long selfId = UserConfig.getInstance(UserConfig.selectedAccount).getClientUserId();
@@ -14117,7 +14117,8 @@ public class MessagesController extends BaseController implements NotificationCe
         if (messageObject.scheduled) {
             return;
         }
-        if (CustomSettings.hideReadStatus()) {
+        long dialogId = messageObject.getDialogId();
+        if (CustomSettings.shouldHideReadStatus(dialogId)) {
             return;
         }
         ArrayList<Integer> arrayList = new ArrayList<>();
@@ -14125,7 +14126,6 @@ public class MessagesController extends BaseController implements NotificationCe
             getMessagesStorage().markMentionMessageAsRead(-messageObject.messageOwner.peer_id.channel_id, messageObject.getId(), messageObject.getDialogId());
         }
         arrayList.add(messageObject.getId());
-        long dialogId = messageObject.getDialogId();
         getMessagesStorage().markMessagesContentAsRead(dialogId, arrayList, 0, 0);
         getNotificationCenter().postNotificationName(NotificationCenter.messagesReadContent, dialogId, arrayList);
         if (messageObject.getId() < 0) {
@@ -14155,7 +14155,7 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public void markMentionMessageAsRead(int mid, long channelId, long did) {
-        if (CustomSettings.hideReadStatus()) {
+        if (CustomSettings.shouldHideReadStatus(did)) {
             return;
         }
         getMessagesStorage().markMentionMessageAsRead(-channelId, mid, did);
@@ -14209,7 +14209,7 @@ public class MessagesController extends BaseController implements NotificationCe
         if (mid == 0 || ttl < 0) {
             return;
         }
-        if (CustomSettings.hideReadStatus()) {
+        if (CustomSettings.shouldHideReadStatus(dialogId)) {
             return;
         }
         if (DialogObject.isChatDialog(dialogId) && inputChannel == null) {
@@ -14269,7 +14269,7 @@ public class MessagesController extends BaseController implements NotificationCe
         if (randomId == 0 || dialogId == 0 || ttl <= 0 && ttl != Integer.MIN_VALUE) {
             return;
         }
-        if (CustomSettings.hideReadStatus()) {
+        if (CustomSettings.shouldHideReadStatus(dialogId)) {
             return;
         }
         if (!DialogObject.isEncryptedDialog(dialogId)) {
@@ -14289,7 +14289,7 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     private void completeReadTask(ReadTask task) {
-        if (CustomSettings.hideReadStatus()) {
+        if (CustomSettings.shouldHideReadStatus(task.dialogId)) {
             return;
         }
         if (task.replyId != 0 && task.monoForumPeerId == 0) {
@@ -14371,7 +14371,7 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public void markDialogAsReadNow(long dialogId, long replyId) {
-        if (CustomSettings.hideReadStatus()) {
+        if (CustomSettings.shouldHideReadStatus(dialogId)) {
             return;
         }
         Utilities.stageQueue.postRunnable(() -> {
@@ -14400,7 +14400,7 @@ public class MessagesController extends BaseController implements NotificationCe
         if (DialogObject.isEncryptedDialog(dialogId) || dialogId == getUserConfig().getClientUserId()) {
             return;
         }
-        if (CustomSettings.hideReadStatus()) {
+        if (CustomSettings.shouldHideReadStatus(dialogId)) {
             return;
         }
         getMessagesStorage().resetMentionsCount(dialogId, topicId, 0);
@@ -14414,7 +14414,7 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public void markDialogAsRead(long dialogId, int maxPositiveId, int maxNegativeId, int maxDate, boolean popup, long threadId, int countDiff, boolean readNow, int scheduledCount) {
-        if (CustomSettings.hideReadStatus()) {
+        if (CustomSettings.shouldHideReadStatus(dialogId)) {
             return;
         }
         boolean createReadTask;

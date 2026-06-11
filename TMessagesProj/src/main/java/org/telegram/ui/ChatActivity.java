@@ -29111,7 +29111,7 @@ public class ChatActivity extends BaseFragment implements
                 } else if (view instanceof ChatActionCell) {
                     message = ((ChatActionCell) view).getMessageObject();
                 }
-                if (!CustomSettings.hideReadStatus() && message != null && message.messageOwner != null && message.messageOwner.media_unread && message.messageOwner.mentioned) {
+                if (message != null && !CustomSettings.shouldHideReadStatus(message.getDialogId()) && message.messageOwner != null && message.messageOwner.media_unread && message.messageOwner.mentioned) {
                     if (!message.isVoice() && !message.isRoundVideo()) {
                         newMentionsCount--;
                         if (newMentionsCount <= 0) {
@@ -37368,7 +37368,7 @@ public class ChatActivity extends BaseFragment implements
 
                 MessageObject message = messages.get(position - messagesStartRow);
                 View view = holder.itemView;
-                if (!CustomSettings.hideReadStatus() && message != null && message.messageOwner != null && message.messageOwner.media_unread && message.messageOwner.mentioned) {
+                if (message != null && !CustomSettings.shouldHideReadStatus(message.getDialogId()) && message.messageOwner != null && message.messageOwner.media_unread && message.messageOwner.mentioned) {
                     if (!inPreviewMode && chatMode == 0) {
                         if (!message.isVoice() && !message.isRoundVideo()) {
                             newMentionsCount--;
@@ -45688,7 +45688,7 @@ public class ChatActivity extends BaseFragment implements
         if (buttonId == ChatActivitySideControlsButtonsLayout.BUTTON_MENTION) {
             type = ReadAllMentionsMenu.TYPE_MENTIONS;
             onRead = () -> {
-                if (CustomSettings.hideReadStatus()) {
+                if (CustomSettings.shouldHideReadStatus(dialog_id)) {
                     if (scrimPopupWindow != null) {
                         scrimPopupWindow.dismiss();
                     }

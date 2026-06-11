@@ -903,7 +903,7 @@ public class LocationController extends BaseController implements NotificationCe
     }
 
     public void markLiveLoactionsAsRead(long dialogId) {
-        if (CustomSettings.hideReadStatus()) {
+        if (CustomSettings.shouldHideReadStatus(dialogId)) {
             return;
         }
         if (DialogObject.isEncryptedDialog(dialogId)) {

@@ -14,6 +14,7 @@ import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.AlertDialog;
@@ -30,6 +31,7 @@ import org.telegram.ui.Feed.FeedSettingsActivity;
 public class CustomSettingsActivity extends BaseFragment {
 
     private int rowCount;
+    private ListAdapter listAdapter;
     private int adsHeaderRow;
     private int hideAdsRow;
     private int hideAdsInfoRow;
@@ -48,6 +50,8 @@ public class CustomSettingsActivity extends BaseFragment {
     private int hideTypingStatusInfoRow;
     private int hideReadStatusRow;
     private int hideReadStatusInfoRow;
+    private int ghostModeExceptionsRow;
+    private int ghostModeExceptionsInfoRow;
     private int keepLastSeenUpdatedInGhostModeRow;
     private int keepLastSeenUpdatedInGhostModeInfoRow;
 
@@ -84,6 +88,8 @@ public class CustomSettingsActivity extends BaseFragment {
         hideTypingStatusInfoRow = rowCount++;
         hideReadStatusRow = rowCount++;
         hideReadStatusInfoRow = rowCount++;
+        ghostModeExceptionsRow = rowCount++;
+        ghostModeExceptionsInfoRow = rowCount++;
         restrictionsHeaderRow = rowCount++;
         antiRecallRow = rowCount++;
         antiRecallInfoRow = rowCount++;
@@ -96,6 +102,14 @@ public class CustomSettingsActivity extends BaseFragment {
         bypassContentProtectionRow = rowCount++;
         bypassContentProtectionInfoRow = rowCount++;
         return super.onFragmentCreate();
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        if (listAdapter != null) {
+            listAdapter.notifyDataSetChanged();
+        }
     }
 
     @Override
@@ -146,11 +160,11 @@ public class CustomSettingsActivity extends BaseFragment {
 
     @NonNull
     private RecyclerListView getRecyclerListView(Context context) {
-        ListAdapter adapter = new ListAdapter(context);
+        listAdapter = new ListAdapter(context);
 
         RecyclerListView listView = new RecyclerListView(context);
         listView.setLayoutManager(new LinearLayoutManager(context));
-        listView.setAdapter(adapter);
+        listView.setAdapter(listAdapter);
         listView.setVerticalScrollBarEnabled(false);
 
         listView.setOnItemClickListener((view, position) -> {
@@ -186,6 +200,8 @@ public class CustomSettingsActivity extends BaseFragment {
                 CustomSettings.setKeepLastSeenUpdatedInGhostMode(val);
                 if (view instanceof TextCheckCell)
                     ((TextCheckCell) view).setChecked(val);
+            } else if (position == ghostModeExceptionsRow) {
+                presentFragment(new GhostModeExceptionsActivity());
             } else if (position == antiRecallRow) {
                 boolean val = !CustomSettings.antiRecall();
                 CustomSettings.setAntiRecall(val);
@@ -252,6 +268,8 @@ public class CustomSettingsActivity extends BaseFragment {
             if (pos == hideTypingStatusInfoRow) return TYPE_INFO;
             if (pos == hideReadStatusRow) return TYPE_CHECK;
             if (pos == hideReadStatusInfoRow) return TYPE_INFO;
+            if (pos == ghostModeExceptionsRow) return TYPE_TEXT_CELL;
+            if (pos == ghostModeExceptionsInfoRow) return TYPE_INFO;
             if (pos == restrictionsHeaderRow) return TYPE_HEADER;
             if (pos == antiRecallRow) return TYPE_CHECK;
             if (pos == antiRecallInfoRow) return TYPE_INFO;
@@ -385,6 +403,9 @@ public class CustomSettingsActivity extends BaseFragment {
                     if (pos == hideReadStatusInfoRow) {
                         cell.setText(getString(R.string.CustomSettingsHideReadStatusInfo));
                     }
+                    if (pos == ghostModeExceptionsInfoRow) {
+                        cell.setText(getString(R.string.CustomSettingsGhostModeExceptionsInfo));
+                    }
                     if (pos == keepLastSeenUpdatedInGhostModeInfoRow) {
                         cell.setText(getString(R.string.CustomSettingsKeepLastSeenUpdatedInGhostModeInfo));
                     }
@@ -409,6 +430,11 @@ public class CustomSettingsActivity extends BaseFragment {
                     TextCell cell = (TextCell) holder.itemView;
                     if (pos == feedSettingsRow) {
                         cell.setTextAndIcon(getString(R.string.CustomSettingsFeedSettings), R.drawable.msg_channel, true);
+                    }
+                    if (pos == ghostModeExceptionsRow) {
+                        int count = CustomSettings.ghostModeExceptionsCount();
+                        cell.setTextAndValue(getString(R.string.CustomSettingsGhostModeExceptions),
+                                count == 0 ? "" : LocaleController.formatPluralString("Chats", count), true);
                     }
                     break;
                 }

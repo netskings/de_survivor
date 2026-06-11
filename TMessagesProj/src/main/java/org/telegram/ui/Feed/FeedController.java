@@ -342,7 +342,7 @@ public class FeedController implements NotificationCenter.NotificationCenterDele
 
     public void markAsRead(FeedItem item) {
         if (item == null) return;
-        if (CustomSettings.hideReadStatus()) return;
+        if (CustomSettings.shouldHideReadStatus(item.channelId)) return;
         String uid = item.getUniqueId();
         if (localReadIds.contains(uid)) return;
         item.isRead = true;
