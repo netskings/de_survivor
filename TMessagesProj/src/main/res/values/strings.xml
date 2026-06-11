@@ -10937,6 +10937,8 @@
     <string name="CustomSettingsHideTypingStatusInfo">Hides typing and recording indicators in chats while you write messages or record audio/video.</string>
     <string name="CustomSettingsHideReadStatus">Hide Read Status</string>
     <string name="CustomSettingsHideReadStatusInfo">Prevents messages, stories, and opened media from being marked as read. Voice and video messages stay unread after playback.</string>
+    <string name="CustomSettingsAlertBeforeOpeningStory">Alert Before Opening Story</string>
+    <string name="CustomSettingsAlertBeforeOpeningStoryInfo">Warns before opening stories when your view status may be sent.</string>
     <string name="CustomSettingsReadOnInteract">Read on Interact</string>
     <string name="CustomSettingsReadOnInteractInfo">Marks messages as read only after you send a message or use an in-chat action. Simply viewing the chat stays hidden.</string>
     <string name="CustomSettingsGhostModeExceptions">Ghost Mode Exceptions</string>
@@ -10949,6 +10951,10 @@
     <string name="CustomSettingsClearGhostModeExceptions">Delete All Exceptions</string>
     <string name="CustomSettingsClearGhostModeExceptionsTitle">Delete all exceptions?</string>
     <string name="CustomSettingsClearGhostModeExceptionsInfo">Ghost Mode will apply in all chats again.</string>
+    <string name="CustomSettingsStoryGhostAlertTitle">Open Story?</string>
+    <string name="CustomSettingsStoryGhostAlertMessage">Viewing this story may send your view status. Enable Ghost Mode first?</string>
+    <string name="CustomSettingsEnableGhostMode">Enable Ghost</string>
+    <string name="CustomSettingsOpenAnyway">Open Anyway</string>
     <string name="CustomSettingsRestrictionsHeader">Privacy and History</string>
     <string name="CustomSettingsAntiRecall">Keep Deleted Messages</string>
     <string name="CustomSettingsAntiRecallInfo">Keeps incoming messages locally when the sender deletes them. Reply and Forward are hidden for saved deleted messages.</string>

@@ -62,9 +62,11 @@ import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.FileStreamLoadOperation;
 import org.telegram.messenger.ImageReceiver;
+import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
+import org.telegram.messenger.R;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.Utilities;
@@ -78,6 +80,7 @@ import org.telegram.messenger.voip.VoIPService;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.tgnet.tl.TL_stories;
 import org.telegram.ui.ActionBar.AdjustPanLayoutHelper;
+import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
 import org.telegram.ui.ArticleViewer;
@@ -239,6 +242,7 @@ public class StoryViewer implements NotificationCenter.NotificationCenterDelegat
     private boolean isOverlayVisible;
     Bitmap playerStubBitmap;
     public Paint playerStubPaint;
+    private boolean skipStoryOpenWarning;
     private boolean isSwiping;
     private boolean isCaptionPartVisible;
     private Runnable delayedTapRunnable;
@@ -316,6 +320,75 @@ public class StoryViewer implements NotificationCenter.NotificationCenterDelegat
         }
     }
 
+    private ArrayList<Long> getStoryOpenWarningDialogIds(TL_stories.StoryItem storyItem, ArrayList<Long> peerIds, StoriesController.StoriesList storiesList, TL_stories.PeerStories userStories) {
+        ArrayList<Long> dialogIds = new ArrayList<>();
+        if (storyItem != null) {
+            addStoryOpenWarningDialogId(dialogIds, storyItem.dialogId);
+        }
+        if (peerIds != null) {
+            for (int i = 0, count = peerIds.size(); i < count; i++) {
+                addStoryOpenWarningDialogId(dialogIds, peerIds.get(i));
+            }
+        }
+        if (storiesList != null) {
+            addStoryOpenWarningDialogId(dialogIds, storiesList.dialogId);
+        }
+        if (userStories != null) {
+            addStoryOpenWarningDialogId(dialogIds, DialogObject.getPeerDialogId(userStories.peer));
+        }
+        return dialogIds;
+    }
+
+    private void addStoryOpenWarningDialogId(ArrayList<Long> dialogIds, long dialogId) {
+        if (dialogId != 0 && !dialogIds.contains(dialogId)) {
+            dialogIds.add(dialogId);
+        }
+    }
+
+    private boolean shouldShowStoryOpenWarning(ArrayList<Long> dialogIds) {
+        if (!CustomSettings.alertBeforeOpeningStory()) {
+            return false;
+        }
+        long selfUserId = UserConfig.getInstance(currentAccount).getClientUserId();
+        if (dialogIds.isEmpty()) {
+            return !CustomSettings.hideReadStatus();
+        }
+        for (int i = 0, count = dialogIds.size(); i < count; i++) {
+            long dialogId = dialogIds.get(i);
+            if (dialogId != selfUserId && !CustomSettings.shouldHideReadStatus(dialogId)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void showStoryOpenWarning(Context context, ArrayList<Long> dialogIds, Runnable openRunnable) {
+        AlertDialog.Builder builder = new AlertDialog.Builder(context, resourcesProvider);
+        builder.setTitle(LocaleController.getString(R.string.CustomSettingsStoryGhostAlertTitle));
+        builder.setMessage(LocaleController.getString(R.string.CustomSettingsStoryGhostAlertMessage));
+        builder.setPositiveButton(LocaleController.getString(R.string.CustomSettingsEnableGhostMode), (dialog, which) -> {
+            CustomSettings.setFullGhostMode(true);
+            long selfUserId = UserConfig.getInstance(currentAccount).getClientUserId();
+            for (int i = 0, count = dialogIds.size(); i < count; i++) {
+                long dialogId = dialogIds.get(i);
+                if (dialogId != selfUserId) {
+                    CustomSettings.setGhostModeDisabledForDialog(dialogId, false);
+                }
+            }
+            openStoryAfterWarning(openRunnable);
+        });
+        builder.setNegativeButton(LocaleController.getString(R.string.CustomSettingsOpenAnyway), (dialog, which) -> openStoryAfterWarning(openRunnable));
+        builder.setNeutralButton(LocaleController.getString(R.string.Cancel), (dialog, which) -> doOnAnimationReadyRunnables.clear());
+        AlertDialog alertDialog = builder.create();
+        alertDialog.setOnCancelListener(dialog -> doOnAnimationReadyRunnables.clear());
+        alertDialog.show();
+    }
+
+    private void openStoryAfterWarning(Runnable openRunnable) {
+        skipStoryOpenWarning = true;
+        openRunnable.run();
+    }
+
     public void open(Context context, TL_stories.StoryItem storyItem, PlaceProvider placeProvider) {
         open(UserConfig.selectedAccount, context, storyItem, placeProvider);
     }
@@ -376,9 +449,19 @@ public class StoryViewer implements NotificationCenter.NotificationCenterDelegat
         open(UserConfig.selectedAccount, context, storyItem, peerIds, position, storiesList, userStories, placeProvider, reversed);
     }
     public void open(int account, Context context, TL_stories.StoryItem storyItem, ArrayList<Long> peerIds, int position, StoriesController.StoriesList storiesList, TL_stories.PeerStories userStories, PlaceProvider placeProvider, boolean reversed) {
+        currentAccount = account;
+        boolean shouldSkipStoryOpenWarning = skipStoryOpenWarning;
+        skipStoryOpenWarning = false;
         if (!isContextSafe(context)) {
             doOnAnimationReadyRunnables.clear();
             return;
+        }
+        if (!shouldSkipStoryOpenWarning) {
+            ArrayList<Long> warningDialogIds = getStoryOpenWarningDialogIds(storyItem, peerIds, storiesList, userStories);
+            if (shouldShowStoryOpenWarning(warningDialogIds)) {
+                showStoryOpenWarning(context, warningDialogIds, () -> open(account, context, storyItem, peerIds, position, storiesList, userStories, placeProvider, reversed));
+                return;
+            }
         }
         if (openCloseAnimator != null) {
             openCloseAnimator.cancel();
@@ -402,7 +485,6 @@ public class StoryViewer implements NotificationCenter.NotificationCenterDelegat
         overrideUserStories = userStories;
         this.placeProvider = placeProvider;
         this.reversed = reversed;
-        currentAccount = account;
         swipeToDismissOffset = 0;
         swipeToDismissHorizontalOffset = 0;
         if (storiesViewPager != null) {

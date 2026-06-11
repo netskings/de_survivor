@@ -30,6 +30,7 @@ public class CustomSettings {
     private static final String KEY_GO_OFFLINE_AUTOMATICALLY = "go_offline_automatically";
     private static final String KEY_HIDE_TYPING_STATUS = "hide_typing_status";
     private static final String KEY_HIDE_READ_STATUS = "hide_read_status";
+    private static final String KEY_ALERT_BEFORE_OPENING_STORY = "alert_before_opening_story";
     private static final String KEY_READ_ON_INTERACT = "read_on_interact";
     private static final String KEY_SCHEDULE_MESSAGES_IN_GHOST_MODE = "schedule_messages_in_ghost_mode";
     private static final String KEY_GHOST_MODE_EXCEPTIONS = "ghost_mode_exceptions";
@@ -88,6 +89,9 @@ public class CustomSettings {
     public static boolean hideReadStatus() { return getPrefs().getBoolean(KEY_HIDE_READ_STATUS, false); }
     public static void setHideReadStatus(boolean v) { getPrefs().edit().putBoolean(KEY_HIDE_READ_STATUS, v).apply(); }
 
+    public static boolean alertBeforeOpeningStory() { return getPrefs().getBoolean(KEY_ALERT_BEFORE_OPENING_STORY, false); }
+    public static void setAlertBeforeOpeningStory(boolean v) { getPrefs().edit().putBoolean(KEY_ALERT_BEFORE_OPENING_STORY, v).apply(); }
+
     public static boolean readOnInteract() { return getPrefs().getBoolean(KEY_READ_ON_INTERACT, false) && !scheduleMessagesInGhostMode(); }
     public static void setReadOnInteract(boolean v) {
         SharedPreferences.Editor editor = getPrefs().edit().putBoolean(KEY_READ_ON_INTERACT, v);
@@ -108,6 +112,15 @@ public class CustomSettings {
 
     public static boolean isFullGhostMode() {
         return hideOnlineStatus() && goOfflineAutomatically() && hideTypingStatus() && hideReadStatus();
+    }
+
+    public static void setFullGhostMode(boolean v) {
+        getPrefs().edit()
+                .putBoolean(KEY_HIDE_ONLINE_STATUS, v)
+                .putBoolean(KEY_GO_OFFLINE_AUTOMATICALLY, v)
+                .putBoolean(KEY_HIDE_TYPING_STATUS, v)
+                .putBoolean(KEY_HIDE_READ_STATUS, v)
+                .apply();
     }
 
     public static boolean shouldScheduleMessagesInGhostMode(long dialogId) {
