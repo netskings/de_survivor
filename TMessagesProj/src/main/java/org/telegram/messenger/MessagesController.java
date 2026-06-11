@@ -10270,7 +10270,11 @@ public class MessagesController extends BaseController implements NotificationCe
 
         if (getUserConfig().isClientActivated()) {
             boolean hideOnlineStatus = CustomSettings.hideOnlineStatus();
+            boolean goOfflineAutomatically = hideOnlineStatus && CustomSettings.goOfflineAutomatically();
             boolean updateLastSeenInGhostMode = hideOnlineStatus && CustomSettings.keepLastSeenUpdatedInGhostMode();
+            boolean shouldSendOfflineAfterPause = !hideOnlineStatus && !offlineSent && Math.abs(currentTime - getConnectionsManager().getPauseTime()) >= 2000;
+            boolean shouldGoOfflineInGhostMode = goOfflineAutomatically && !offlineSent;
+            boolean shouldRefreshLastSeenInGhostMode = updateLastSeenInGhostMode && (lastStatusUpdateTime == 0 || Math.abs(currentTime - lastStatusUpdateTime) >= 55000 || !offlineSent);
             if (!hideOnlineStatus && !ignoreSetOnline && getConnectionsManager().getPauseTime() == 0 && ApplicationLoader.isScreenOn && !ApplicationLoader.mainInterfacePausedStageQueue) {
                 if (ApplicationLoader.mainInterfacePausedStageQueueTime != 0 && Math.abs(ApplicationLoader.mainInterfacePausedStageQueueTime - System.currentTimeMillis()) > 1000) {
                     if (statusSettingState != 1 && (lastStatusUpdateTime == 0 || Math.abs(System.currentTimeMillis() - lastStatusUpdateTime) >= 55000 || offlineSent)) {
@@ -10296,7 +10300,7 @@ public class MessagesController extends BaseController implements NotificationCe
                         });
                     }
                 }
-            } else if (statusSettingState != 2 && !offlineSent && (updateLastSeenInGhostMode || (!hideOnlineStatus && Math.abs(System.currentTimeMillis() - getConnectionsManager().getPauseTime()) >= 2000))) {
+            } else if (statusSettingState != 2 && (shouldSendOfflineAfterPause || shouldGoOfflineInGhostMode || shouldRefreshLastSeenInGhostMode)) {
                 statusSettingState = 2;
                 if (statusRequest != 0) {
                     getConnectionsManager().cancelRequest(statusRequest, true);
@@ -10305,7 +10309,9 @@ public class MessagesController extends BaseController implements NotificationCe
                 req.offline = true;
                 statusRequest = getConnectionsManager().sendRequest(req, (response, error) -> {
                     if (error == null) {
+                        lastStatusUpdateTime = System.currentTimeMillis();
                         offlineSent = true;
+                        statusSettingState = 0;
                     } else {
                         if (lastStatusUpdateTime != 0) {
                             lastStatusUpdateTime += 5000;
@@ -10313,7 +10319,7 @@ public class MessagesController extends BaseController implements NotificationCe
                     }
                     statusRequest = 0;
                 });
-            } else if (hideOnlineStatus && !updateLastSeenInGhostMode && statusRequest != 0) {
+            } else if (hideOnlineStatus && !goOfflineAutomatically && !updateLastSeenInGhostMode && statusRequest != 0) {
                 getConnectionsManager().cancelRequest(statusRequest, true);
                 statusRequest = 0;
                 statusSettingState = 0;

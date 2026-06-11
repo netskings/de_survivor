@@ -10927,6 +10927,8 @@
     <string name="CustomSettingsGhostHeader">Ghost Mode</string>
     <string name="CustomSettingsHideOnlineStatus">Hide Online Status</string>
     <string name="CustomSettingsHideOnlineStatusInfo">Prevents Telegram from sending online status while the app is open, including when you send messages.</string>
+    <string name="CustomSettingsGoOfflineAutomatically">Go Offline Automatically</string>
+    <string name="CustomSettingsGoOfflineAutomaticallyInfo">Sends offline status once when Hide Online Status is active, so Telegram stops showing you online faster. This may update Last Seen once.</string>
     <string name="CustomSettingsKeepLastSeenUpdatedInGhostMode">Update Last Seen in Ghost Mode</string>
     <string name="CustomSettingsKeepLastSeenUpdatedInGhostModeInfo">Keeps Last Seen moving forward while Online is hidden, so contacts may still see a recent Last Seen time.</string>
     <string name="CustomSettingsHideTypingStatus">Hide Typing Status</string>

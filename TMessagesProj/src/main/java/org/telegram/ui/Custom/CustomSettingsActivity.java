@@ -46,6 +46,8 @@ public class CustomSettingsActivity extends BaseFragment {
     private int ghostHeaderRow;
     private int hideOnlineStatusRow;
     private int hideOnlineStatusInfoRow;
+    private int goOfflineAutomaticallyRow;
+    private int goOfflineAutomaticallyInfoRow;
     private int hideTypingStatusRow;
     private int hideTypingStatusInfoRow;
     private int hideReadStatusRow;
@@ -82,6 +84,8 @@ public class CustomSettingsActivity extends BaseFragment {
         ghostHeaderRow = rowCount++;
         hideOnlineStatusRow = rowCount++;
         hideOnlineStatusInfoRow = rowCount++;
+        goOfflineAutomaticallyRow = rowCount++;
+        goOfflineAutomaticallyInfoRow = rowCount++;
         keepLastSeenUpdatedInGhostModeRow = rowCount++;
         keepLastSeenUpdatedInGhostModeInfoRow = rowCount++;
         hideTypingStatusRow = rowCount++;
@@ -185,6 +189,11 @@ public class CustomSettingsActivity extends BaseFragment {
                 CustomSettings.setHideOnlineStatus(val);
                 if (view instanceof TextCheckCell)
                     ((TextCheckCell) view).setChecked(val);
+            } else if (position == goOfflineAutomaticallyRow) {
+                boolean val = !CustomSettings.goOfflineAutomatically();
+                CustomSettings.setGoOfflineAutomatically(val);
+                if (view instanceof TextCheckCell)
+                    ((TextCheckCell) view).setChecked(val);
             } else if (position == hideTypingStatusRow) {
                 boolean val = !CustomSettings.hideTypingStatus();
                 CustomSettings.setHideTypingStatus(val);
@@ -262,6 +271,8 @@ public class CustomSettingsActivity extends BaseFragment {
             if (pos == ghostHeaderRow) return TYPE_HEADER;
             if (pos == hideOnlineStatusRow) return TYPE_CHECK;
             if (pos == hideOnlineStatusInfoRow) return TYPE_INFO;
+            if (pos == goOfflineAutomaticallyRow) return TYPE_CHECK;
+            if (pos == goOfflineAutomaticallyInfoRow) return TYPE_INFO;
             if (pos == keepLastSeenUpdatedInGhostModeRow) return TYPE_CHECK;
             if (pos == keepLastSeenUpdatedInGhostModeInfoRow) return TYPE_INFO;
             if (pos == hideTypingStatusRow) return TYPE_CHECK;
@@ -349,6 +360,10 @@ public class CustomSettingsActivity extends BaseFragment {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsHideOnlineStatus),
                                 CustomSettings.hideOnlineStatus(), true);
                     }
+                    if (pos == goOfflineAutomaticallyRow) {
+                        cell.setTextAndCheck(getString(R.string.CustomSettingsGoOfflineAutomatically),
+                                CustomSettings.goOfflineAutomatically(), true);
+                    }
                     if (pos == hideTypingStatusRow) {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsHideTypingStatus),
                                 CustomSettings.hideTypingStatus(), true);
@@ -396,6 +411,9 @@ public class CustomSettingsActivity extends BaseFragment {
                     }
                     if (pos == hideOnlineStatusInfoRow) {
                         cell.setText(getString(R.string.CustomSettingsHideOnlineStatusInfo));
+                    }
+                    if (pos == goOfflineAutomaticallyInfoRow) {
+                        cell.setText(getString(R.string.CustomSettingsGoOfflineAutomaticallyInfo));
                     }
                     if (pos == hideTypingStatusInfoRow) {
                         cell.setText(getString(R.string.CustomSettingsHideTypingStatusInfo));
