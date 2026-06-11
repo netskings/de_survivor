@@ -92,6 +92,7 @@ import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.Premium.LimitReachedBottomSheet;
 import org.telegram.ui.Components.Reactions.ReactionsLayoutInBubble;
 import org.telegram.ui.Components.Reactions.ReactionsUtils;
+import org.telegram.ui.Custom.CustomSettings;
 import org.telegram.ui.PaymentFormActivity;
 import org.telegram.ui.Stories.MessageMediaStoryFull;
 import org.telegram.ui.TwoStepVerificationActivity;
@@ -2028,6 +2029,53 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         return sendMessage(messages, peer, forwardFromMyName, hideCaption, notify, scheduleDate, 0, replyToTopMsg, video_timestamp, payStars, 0, null);
     }
 
+    private static final int GHOST_SCHEDULE_TEXT_DELAY = 12;
+    private static final int GHOST_SCHEDULE_MEDIA_DELAY = 22;
+    private static final int GHOST_SCHEDULE_DOCUMENT_DELAY = 27;
+
+    private int getGhostScheduleDate(long peer, int scheduleDate, int scheduleRepeatPeriod, int delaySeconds) {
+        if (scheduleDate != 0 || scheduleRepeatPeriod != 0 || delaySeconds <= 0 || DialogObject.isEncryptedDialog(peer) || !CustomSettings.shouldScheduleMessagesInGhostMode(peer)) {
+            return scheduleDate;
+        }
+        return getConnectionsManager().getCurrentTime() + delaySeconds;
+    }
+
+    private int getGhostScheduleDelayForMessages(ArrayList<MessageObject> messages) {
+        int delay = GHOST_SCHEDULE_TEXT_DELAY;
+        for (int i = 0, count = messages.size(); i < count; i++) {
+            int messageDelay = getGhostScheduleDelayForForwardedMessage(messages.get(i));
+            if (messageDelay >= GHOST_SCHEDULE_DOCUMENT_DELAY) {
+                return GHOST_SCHEDULE_DOCUMENT_DELAY;
+            }
+            delay = Math.max(delay, messageDelay);
+        }
+        return delay;
+    }
+
+    private int getGhostScheduleDelayForForwardedMessage(MessageObject messageObject) {
+        if (messageObject == null || messageObject.messageOwner == null) {
+            return GHOST_SCHEDULE_TEXT_DELAY;
+        }
+        TLRPC.MessageMedia media = messageObject.messageOwner.media;
+        if (media == null || media instanceof TLRPC.TL_messageMediaEmpty || media instanceof TLRPC.TL_messageMediaWebPage) {
+            return GHOST_SCHEDULE_TEXT_DELAY;
+        }
+        if (media instanceof TLRPC.TL_messageMediaDocument) {
+            return GHOST_SCHEDULE_DOCUMENT_DELAY;
+        }
+        return GHOST_SCHEDULE_MEDIA_DELAY;
+    }
+
+    private int getGhostScheduleDelayForSingleMessage(TLRPC.TL_photo photo, TLRPC.TL_document document, TLRPC.MessageMedia location, TLRPC.TL_messageMediaPoll poll, TLRPC.TL_messageMediaToDo todo, TLRPC.TL_messageMediaInvoice invoice, TLRPC.TL_game game, TLRPC.User user) {
+        if (document != null) {
+            return GHOST_SCHEDULE_DOCUMENT_DELAY;
+        }
+        if (photo != null || location != null || poll != null || todo != null || invoice != null || game != null || user != null) {
+            return GHOST_SCHEDULE_MEDIA_DELAY;
+        }
+        return GHOST_SCHEDULE_TEXT_DELAY;
+    }
+
     public int sendMessage(
         ArrayList<MessageObject> messages,
         final long peer,
@@ -2044,6 +2092,10 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
     ) {
         if (messages == null || messages.isEmpty()) {
             return 0;
+        }
+        int ghostScheduleDate = getGhostScheduleDate(peer, scheduleDate, scheduleRepeatPeriod, getGhostScheduleDelayForMessages(messages));
+        if (ghostScheduleDate != scheduleDate) {
+            return sendMessage(messages, peer, forwardFromMyName, hideCaption, notify, ghostScheduleDate, scheduleRepeatPeriod, replyToTopMsg, video_timestamp, payStars, monoForumPeerId, suggestionParams);
         }
         int sendResult = 0;
         long myId = getUserConfig().getClientUserId();
@@ -4086,6 +4138,14 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         }
         if (message == null && caption == null) {
             caption = "";
+        }
+        if (retryMessageObject == null) {
+            int ghostScheduleDate = getGhostScheduleDate(peer, scheduleDate, scheduleRepeatPeriod, getGhostScheduleDelayForSingleMessage(photo, document, location, poll, todo, invoice, game, user));
+            if (ghostScheduleDate != scheduleDate) {
+                sendMessageParams.scheduleDate = ghostScheduleDate;
+                sendMessage(sendMessageParams);
+                return;
+            }
         }
 
         long _payStars = getMessagesController().getSendPaidMessagesStars(peer);

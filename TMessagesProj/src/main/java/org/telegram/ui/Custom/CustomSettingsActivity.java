@@ -48,6 +48,8 @@ public class CustomSettingsActivity extends BaseFragment {
     private int hideOnlineStatusInfoRow;
     private int goOfflineAutomaticallyRow;
     private int goOfflineAutomaticallyInfoRow;
+    private int scheduleMessagesInGhostModeRow;
+    private int scheduleMessagesInGhostModeInfoRow;
     private int hideTypingStatusRow;
     private int hideTypingStatusInfoRow;
     private int hideReadStatusRow;
@@ -88,6 +90,8 @@ public class CustomSettingsActivity extends BaseFragment {
         hideOnlineStatusInfoRow = rowCount++;
         goOfflineAutomaticallyRow = rowCount++;
         goOfflineAutomaticallyInfoRow = rowCount++;
+        scheduleMessagesInGhostModeRow = rowCount++;
+        scheduleMessagesInGhostModeInfoRow = rowCount++;
         keepLastSeenUpdatedInGhostModeRow = rowCount++;
         keepLastSeenUpdatedInGhostModeInfoRow = rowCount++;
         hideTypingStatusRow = rowCount++;
@@ -198,6 +202,12 @@ public class CustomSettingsActivity extends BaseFragment {
                 CustomSettings.setGoOfflineAutomatically(val);
                 if (view instanceof TextCheckCell)
                     ((TextCheckCell) view).setChecked(val);
+            } else if (position == scheduleMessagesInGhostModeRow) {
+                boolean val = !CustomSettings.scheduleMessagesInGhostMode();
+                CustomSettings.setScheduleMessagesInGhostMode(val);
+                if (listAdapter != null) {
+                    listAdapter.notifyDataSetChanged();
+                }
             } else if (position == hideTypingStatusRow) {
                 boolean val = !CustomSettings.hideTypingStatus();
                 CustomSettings.setHideTypingStatus(val);
@@ -211,8 +221,9 @@ public class CustomSettingsActivity extends BaseFragment {
             } else if (position == readOnInteractRow) {
                 boolean val = !CustomSettings.readOnInteract();
                 CustomSettings.setReadOnInteract(val);
-                if (view instanceof TextCheckCell)
-                    ((TextCheckCell) view).setChecked(val);
+                if (listAdapter != null) {
+                    listAdapter.notifyDataSetChanged();
+                }
             } else if (position == keepLastSeenUpdatedInGhostModeRow) {
                 boolean val = !CustomSettings.keepLastSeenUpdatedInGhostMode();
                 CustomSettings.setKeepLastSeenUpdatedInGhostMode(val);
@@ -282,6 +293,8 @@ public class CustomSettingsActivity extends BaseFragment {
             if (pos == hideOnlineStatusInfoRow) return TYPE_INFO;
             if (pos == goOfflineAutomaticallyRow) return TYPE_CHECK;
             if (pos == goOfflineAutomaticallyInfoRow) return TYPE_INFO;
+            if (pos == scheduleMessagesInGhostModeRow) return TYPE_CHECK;
+            if (pos == scheduleMessagesInGhostModeInfoRow) return TYPE_INFO;
             if (pos == keepLastSeenUpdatedInGhostModeRow) return TYPE_CHECK;
             if (pos == keepLastSeenUpdatedInGhostModeInfoRow) return TYPE_INFO;
             if (pos == hideTypingStatusRow) return TYPE_CHECK;
@@ -375,6 +388,10 @@ public class CustomSettingsActivity extends BaseFragment {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsGoOfflineAutomatically),
                                 CustomSettings.goOfflineAutomatically(), true);
                     }
+                    if (pos == scheduleMessagesInGhostModeRow) {
+                        cell.setTextAndCheck(getString(R.string.CustomSettingsScheduleMessagesInGhostMode),
+                                CustomSettings.scheduleMessagesInGhostMode(), true);
+                    }
                     if (pos == hideTypingStatusRow) {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsHideTypingStatus),
                                 CustomSettings.hideTypingStatus(), true);
@@ -429,6 +446,9 @@ public class CustomSettingsActivity extends BaseFragment {
                     }
                     if (pos == goOfflineAutomaticallyInfoRow) {
                         cell.setText(getString(R.string.CustomSettingsGoOfflineAutomaticallyInfo));
+                    }
+                    if (pos == scheduleMessagesInGhostModeInfoRow) {
+                        cell.setText(getString(R.string.CustomSettingsScheduleMessagesInGhostModeInfo));
                     }
                     if (pos == hideTypingStatusInfoRow) {
                         cell.setText(getString(R.string.CustomSettingsHideTypingStatusInfo));

@@ -31,6 +31,7 @@ public class CustomSettings {
     private static final String KEY_HIDE_TYPING_STATUS = "hide_typing_status";
     private static final String KEY_HIDE_READ_STATUS = "hide_read_status";
     private static final String KEY_READ_ON_INTERACT = "read_on_interact";
+    private static final String KEY_SCHEDULE_MESSAGES_IN_GHOST_MODE = "schedule_messages_in_ghost_mode";
     private static final String KEY_GHOST_MODE_EXCEPTIONS = "ghost_mode_exceptions";
     private static final String KEY_KEEP_LAST_SEEN_UPDATED_IN_GHOST_MODE = "send_offline_status_in_ghost_mode";
 
@@ -87,8 +88,31 @@ public class CustomSettings {
     public static boolean hideReadStatus() { return getPrefs().getBoolean(KEY_HIDE_READ_STATUS, false); }
     public static void setHideReadStatus(boolean v) { getPrefs().edit().putBoolean(KEY_HIDE_READ_STATUS, v).apply(); }
 
-    public static boolean readOnInteract() { return getPrefs().getBoolean(KEY_READ_ON_INTERACT, false); }
-    public static void setReadOnInteract(boolean v) { getPrefs().edit().putBoolean(KEY_READ_ON_INTERACT, v).apply(); }
+    public static boolean readOnInteract() { return getPrefs().getBoolean(KEY_READ_ON_INTERACT, false) && !scheduleMessagesInGhostMode(); }
+    public static void setReadOnInteract(boolean v) {
+        SharedPreferences.Editor editor = getPrefs().edit().putBoolean(KEY_READ_ON_INTERACT, v);
+        if (v) {
+            editor.putBoolean(KEY_SCHEDULE_MESSAGES_IN_GHOST_MODE, false);
+        }
+        editor.apply();
+    }
+
+    public static boolean scheduleMessagesInGhostMode() { return getPrefs().getBoolean(KEY_SCHEDULE_MESSAGES_IN_GHOST_MODE, false); }
+    public static void setScheduleMessagesInGhostMode(boolean v) {
+        SharedPreferences.Editor editor = getPrefs().edit().putBoolean(KEY_SCHEDULE_MESSAGES_IN_GHOST_MODE, v);
+        if (v) {
+            editor.putBoolean(KEY_READ_ON_INTERACT, false);
+        }
+        editor.apply();
+    }
+
+    public static boolean isFullGhostMode() {
+        return hideOnlineStatus() && goOfflineAutomatically() && hideTypingStatus() && hideReadStatus();
+    }
+
+    public static boolean shouldScheduleMessagesInGhostMode(long dialogId) {
+        return scheduleMessagesInGhostMode() && isFullGhostMode() && !isGhostModeDisabledForDialog(dialogId);
+    }
 
     public static boolean shouldHideTypingStatus(long dialogId) {
         return hideTypingStatus() && !isGhostModeDisabledForDialog(dialogId);
