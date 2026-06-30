@@ -10965,9 +10965,10 @@
     <string name="CustomSettingsAntiRecall">Keep Deleted Messages</string>
     <string name="CustomSettingsAntiRecallInfo">Keeps incoming messages locally when the sender deletes them. Reply and Forward are hidden for saved deleted messages.</string>
     <string name="CustomSettingsSaveTemporaryMedia">Save View-Once Media</string>
-    <string name="CustomSettingsSaveTemporaryMediaInfo">Automatically saves incoming view-once photos and videos to Downloads/TelegramViewOnce.</string>
+    <string name="CustomSettingsSaveTemporaryMediaInfo">Automatically downloads incoming view-once photos and videos before they expire and saves them to Downloads/TelegramViewOnce.</string>
     <string name="CustomSettingsKeepTemporaryMediaInChat">Keep View-Once Media in Chat</string>
     <string name="CustomSettingsKeepTemporaryMediaInChatInfo">Leaves self-destructing photos and videos visible in the chat after you open them.</string>
+    <string name="ViewOnceDownloadFailed">Could not download this media. It may have expired on Telegram\'s servers.</string>
     <string name="CustomSettingsKeepKickedChatsCache">Keep Chats After Kick or Ban</string>
     <string name="CustomSettingsKeepKickedChatsCacheInfo">Keeps local chat history when you are removed from a group or channel.</string>
     <string name="CustomSettingsBypassContentProtection">Bypass Content Protection</string>

@@ -68,7 +68,7 @@ public class CustomSettings {
     public static boolean antiRecall() { return getPrefs().getBoolean(KEY_ANTI_RECALL, true); }
     public static void setAntiRecall(boolean v) { getPrefs().edit().putBoolean(KEY_ANTI_RECALL, v).apply(); }
 
-    public static boolean saveTemporaryMedia() { return getPrefs().getBoolean(KEY_SAVE_TEMPORARY_MEDIA, true); }
+    public static boolean saveTemporaryMedia() { return getPrefs().getBoolean(KEY_SAVE_TEMPORARY_MEDIA, false); }
     public static void setSaveTemporaryMedia(boolean v) { getPrefs().edit().putBoolean(KEY_SAVE_TEMPORARY_MEDIA, v).apply(); }
 
     public static boolean keepTemporaryMediaInChat() { return getPrefs().getBoolean(KEY_KEEP_TEMPORARY_MEDIA_IN_CHAT, false); }

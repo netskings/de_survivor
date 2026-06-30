@@ -10,7 +10,9 @@ package org.telegram.messenger;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.AlarmManager;
 import android.app.Application;
+import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -48,6 +50,11 @@ import java.io.File;
 import java.util.Locale;
 
 public class ApplicationLoader extends Application {
+
+    private static final int PUSH_SERVICE_ALARM_ID = 1010;
+    private static final long PUSH_SERVICE_WATCHDOG_DELAY = 5 * 60 * 1000L;
+    private static final long PUSH_SERVICE_WATCHDOG_INTERVAL = 15 * 60 * 1000L;
+    private static PendingIntent pushServicePendingIntent;
 
     public static ApplicationLoader applicationLoaderInstance;
 
@@ -367,13 +374,124 @@ public class ApplicationLoader extends Application {
     }
 
     public static void startPushService() {
-        try {
-            Intent intent = new Intent(applicationContext, NotificationsService.class);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                applicationContext.startForegroundService(intent);
-            } else {
-                applicationContext.startService(intent);
+        if (applicationContext == null) {
+            return;
+        }
+        boolean enabled = normalizePushServiceSettings();
+        if (applicationInited) {
+            updatePushConnectionState();
+        }
+        if (enabled) {
+            schedulePushServiceWatchdog();
+            try {
+                Intent intent = new Intent(applicationContext, NotificationsService.class);
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    applicationContext.startForegroundService(intent);
+                } else {
+                    applicationContext.startService(intent);
+                }
+            } catch (Throwable e) {
+                FileLog.e(e);
             }
+        } else {
+            cancelPushServiceWatchdog();
+            try {
+                applicationContext.stopService(new Intent(applicationContext, NotificationsService.class));
+            } catch (Throwable e) {
+                FileLog.e(e);
+            }
+        }
+    }
+
+    private static boolean normalizePushServiceSettings() {
+        SharedPreferences globalNotifications = getNotificationsPreferences(0);
+        if (globalNotifications.contains("pushService")) {
+            return globalNotifications.getBoolean("pushService", true);
+        }
+        boolean enabled = getMainPreferences(UserConfig.selectedAccount).getBoolean("keepAliveService", true);
+        SharedPreferences.Editor globalEditor = globalNotifications.edit();
+        globalEditor.putBoolean("pushService", enabled);
+        if (!globalNotifications.contains("pushConnection")) {
+            globalEditor.putBoolean("pushConnection", enabled);
+        }
+        globalEditor.commit();
+
+        SharedPreferences accountNotifications = getNotificationsPreferences(UserConfig.selectedAccount);
+        SharedPreferences.Editor accountEditor = accountNotifications.edit();
+        accountEditor.putBoolean("pushService", enabled);
+        if (!accountNotifications.contains("pushConnection")) {
+            accountEditor.putBoolean("pushConnection", enabled);
+        }
+        accountEditor.commit();
+        return enabled;
+    }
+
+    private static SharedPreferences getNotificationsPreferences(int account) {
+        return applicationContext.getSharedPreferences(account == 0 ? "Notifications" : "Notifications" + account, Activity.MODE_PRIVATE);
+    }
+
+    private static SharedPreferences getMainPreferences(int account) {
+        return applicationContext.getSharedPreferences(account == 0 ? "mainconfig" : "mainconfig" + account, Activity.MODE_PRIVATE);
+    }
+
+    private static void updatePushConnectionState() {
+        boolean enabled = getNotificationsPreferences(0).getBoolean("pushConnection", true);
+        for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
+            UserConfig userConfig = UserConfig.getInstance(a);
+            userConfig.loadConfig();
+            if (a != 0 && !userConfig.isClientActivated()) {
+                continue;
+            }
+            ConnectionsManager.getInstance(a).setPushConnectionEnabled(enabled);
+        }
+    }
+
+    private static int getPushServicePendingIntentFlags() {
+        int flags = PendingIntent.FLAG_UPDATE_CURRENT;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            flags |= PendingIntent.FLAG_IMMUTABLE;
+        }
+        return flags;
+    }
+
+    private static PendingIntent getPushServicePendingIntent() {
+        Intent intent = new Intent(applicationContext, NotificationsService.class);
+        int flags = getPushServicePendingIntentFlags();
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            return PendingIntent.getForegroundService(applicationContext, PUSH_SERVICE_ALARM_ID, intent, flags);
+        } else {
+            return PendingIntent.getService(applicationContext, PUSH_SERVICE_ALARM_ID, intent, flags);
+        }
+    }
+
+    private static void schedulePushServiceWatchdog() {
+        try {
+            AlarmManager alarmManager = (AlarmManager) applicationContext.getSystemService(Context.ALARM_SERVICE);
+            if (alarmManager == null) {
+                return;
+            }
+            pushServicePendingIntent = getPushServicePendingIntent();
+            alarmManager.cancel(pushServicePendingIntent);
+            alarmManager.setInexactRepeating(
+                    AlarmManager.ELAPSED_REALTIME_WAKEUP,
+                    SystemClock.elapsedRealtime() + PUSH_SERVICE_WATCHDOG_DELAY,
+                    PUSH_SERVICE_WATCHDOG_INTERVAL,
+                    pushServicePendingIntent
+            );
+        } catch (Throwable e) {
+            FileLog.e(e);
+        }
+    }
+
+    private static void cancelPushServiceWatchdog() {
+        try {
+            AlarmManager alarmManager = (AlarmManager) applicationContext.getSystemService(Context.ALARM_SERVICE);
+            if (alarmManager == null) {
+                return;
+            }
+            PendingIntent pendingIntent = pushServicePendingIntent != null ? pushServicePendingIntent : getPushServicePendingIntent();
+            alarmManager.cancel(pendingIntent);
+            pushServicePendingIntent = null;
         } catch (Throwable e) {
             FileLog.e(e);
         }

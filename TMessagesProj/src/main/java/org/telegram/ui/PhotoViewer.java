@@ -2028,6 +2028,8 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     private ImageLocation currentFileLocationVideo;
     private SecureDocument currentSecureDocument;
     private String[] currentFileNames = new String[3];
+    private MessageObject pendingTemporaryMediaSaveMessage;
+    private String pendingTemporaryMediaSaveFileName;
     private PlaceProviderObject currentPlaceObject;
     private String currentPathObject;
     private long currentPathVideoOffset;
@@ -4104,6 +4106,9 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
     public void didReceivedNotification(int id, int account, Object... args) {
         if (id == NotificationCenter.fileLoadFailed) {
             String location = (String) args[0];
+            if (TextUtils.equals(location, pendingTemporaryMediaSaveFileName)) {
+                finishPendingTemporaryMediaSave();
+            }
             for (int a = 0; a < 3; a++) {
                 if (currentFileNames[a] != null && currentFileNames[a].equals(location)) {
                     boolean animated = a == 0 || a == 1 && sideImage == rightImage || a == 2 && sideImage == leftImage;
@@ -4116,6 +4121,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             closePhoto(false, false);
         } else if (id == NotificationCenter.fileLoaded) {
             String location = (String) args[0];
+            savePendingTemporaryMediaIfNeeded(location);
             for (int a = 0; a < 3; a++) {
                 if (currentFileNames[a] != null && currentFileNames[a].equals(location)) {
                     boolean animated = a == 0 || a == 1 && sideImage == rightImage || a == 2 && sideImage == leftImage;
@@ -4630,6 +4636,198 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             }
         }
         return existingOnly ? null : primary;
+    }
+
+    private boolean isSaveableTemporaryMedia(MessageObject messageObject) {
+        if (messageObject == null || messageObject.messageOwner == null || messageObject.messageOwner instanceof TLRPC.TL_message_secret) {
+            return false;
+        }
+        return messageObject.messageOwner instanceof TLRPC.TL_message
+                && MessageObject.isSecretPhotoOrVideo(messageObject.messageOwner)
+                && (messageObject.isPhoto() || messageObject.isVideo());
+    }
+
+    private String getTemporaryMediaSaveFileName(MessageObject messageObject) {
+        TLRPC.MessageMedia media = messageObject != null ? MessageObject.getMedia(messageObject.messageOwner) : null;
+        if (media == null) {
+            return null;
+        }
+        if (messageObject.isPhoto() && media.photo != null && media.photo.sizes != null) {
+            TLRPC.PhotoSize size = getTemporaryMediaPhotoSize(messageObject);
+            return size != null ? FileLoader.getAttachFileName(size) : null;
+        } else if (messageObject.isVideo() && media.document != null) {
+            return FileLoader.getAttachFileName(media.document);
+        }
+        return null;
+    }
+
+    private TLRPC.PhotoSize getTemporaryMediaPhotoSize(MessageObject messageObject) {
+        TLRPC.MessageMedia media = messageObject != null ? MessageObject.getMedia(messageObject.messageOwner) : null;
+        if (media == null || media.photo == null || media.photo.sizes == null) {
+            return null;
+        }
+        return FileLoader.getClosestPhotoSizeWithSize(media.photo.sizes, AndroidUtilities.getPhotoSize(true), false, null, true);
+    }
+
+    private File resolveTemporaryMediaFile(MessageObject messageObject, boolean existingOnly) {
+        TLRPC.MessageMedia media = messageObject != null ? MessageObject.getMedia(messageObject.messageOwner) : null;
+        if (media == null) {
+            return null;
+        }
+        File file = null;
+        if (messageObject.isPhoto() && media.photo != null && media.photo.sizes != null) {
+            TLRPC.PhotoSize size = getTemporaryMediaPhotoSize(messageObject);
+            if (size != null) {
+                file = FileLoader.getInstance(currentAccount).getPathToAttach(size, null, true, true);
+            }
+        } else if (messageObject.isVideo() && media.document != null) {
+            file = FileLoader.getInstance(currentAccount).getPathToAttach(media.document, null, true, true);
+        }
+        if (file != null && file.exists()) {
+            return file;
+        }
+        return existingOnly ? null : file;
+    }
+
+    private boolean loadTemporaryMedia(MessageObject messageObject) {
+        if (!isSaveableTemporaryMedia(messageObject)) {
+            return false;
+        }
+        TLRPC.MessageMedia media = MessageObject.getMedia(messageObject.messageOwner);
+        if (media == null) {
+            return false;
+        }
+        if (messageObject.isPhoto() && media.photo != null && media.photo.sizes != null) {
+            TLRPC.PhotoSize size = getTemporaryMediaPhotoSize(messageObject);
+            if (size == null) {
+                return false;
+            }
+            FileLoader.getInstance(currentAccount).loadFile(ImageLocation.getForPhoto(size, media.photo), messageObject, "jpg", FileLoader.PRIORITY_NORMAL, messageObject.shouldEncryptPhotoOrVideo() ? 2 : 0);
+            return true;
+        } else if (messageObject.isVideo() && media.document != null) {
+            FileLoader.getInstance(currentAccount).loadFile(media.document, messageObject, FileLoader.PRIORITY_NORMAL, messageObject.shouldEncryptPhotoOrVideo() ? 2 : 0);
+            return true;
+        }
+        return false;
+    }
+
+    private boolean downloadTemporaryMediaForSaving(MessageObject messageObject) {
+        if (!isSaveableTemporaryMedia(messageObject)) {
+            return false;
+        }
+        String fileName = getTemporaryMediaSaveFileName(messageObject);
+        if (TextUtils.isEmpty(fileName)) {
+            return false;
+        }
+        pendingTemporaryMediaSaveMessage = messageObject;
+        pendingTemporaryMediaSaveFileName = fileName;
+        if (isTemporaryMediaLoading(messageObject)) {
+            return true;
+        }
+        if (loadTemporaryMedia(messageObject)) {
+            return true;
+        }
+        pendingTemporaryMediaSaveMessage = null;
+        pendingTemporaryMediaSaveFileName = null;
+        return false;
+    }
+
+    private boolean isTemporaryMediaLoading(MessageObject messageObject) {
+        if (!isSaveableTemporaryMedia(messageObject)) {
+            return false;
+        }
+        String fileName = getTemporaryMediaSaveFileName(messageObject);
+        if (FileLoader.getInstance(currentAccount).isLoadingFile(fileName)) {
+            return true;
+        }
+        return messageObject == currentMessageObject && FileLoader.getInstance(currentAccount).isLoadingFile(currentFileNames[0]);
+    }
+
+    private boolean cancelTemporaryMediaDownload(MessageObject messageObject) {
+        if (!isSaveableTemporaryMedia(messageObject)) {
+            return false;
+        }
+        TLRPC.MessageMedia media = MessageObject.getMedia(messageObject.messageOwner);
+        String fileName = getTemporaryMediaSaveFileName(messageObject);
+        if (TextUtils.equals(fileName, pendingTemporaryMediaSaveFileName)) {
+            pendingTemporaryMediaSaveMessage = null;
+            pendingTemporaryMediaSaveFileName = null;
+        }
+        boolean cancelled = false;
+        if (!TextUtils.isEmpty(fileName)) {
+            FileLoader.getInstance(currentAccount).cancelLoadFile(fileName);
+            cancelled = true;
+        }
+        if (messageObject.isPhoto()) {
+            TLRPC.PhotoSize size = getTemporaryMediaPhotoSize(messageObject);
+            if (size == null) {
+                return cancelled;
+            }
+            FileLoader.getInstance(currentAccount).cancelLoadFile(size);
+            if (messageObject == currentMessageObject) {
+                ImageLoader.getInstance().cancelForceLoadingForImageReceiver(centerImage);
+            }
+            cancelled = true;
+        } else if (media != null && media.document != null) {
+            FileLoader.getInstance(currentAccount).cancelLoadFile(media.document);
+            cancelled = true;
+        }
+        if (cancelled && messageObject == currentMessageObject) {
+            checkProgress(0, false, true);
+        }
+        return cancelled;
+    }
+
+    private void savePendingTemporaryMediaIfNeeded(String location) {
+        if (!TextUtils.equals(location, pendingTemporaryMediaSaveFileName)) {
+            return;
+        }
+        finishPendingTemporaryMediaSave();
+    }
+
+    private void finishPendingTemporaryMediaSave() {
+        MessageObject messageObject = pendingTemporaryMediaSaveMessage;
+        pendingTemporaryMediaSaveMessage = null;
+        pendingTemporaryMediaSaveFileName = null;
+        boolean saved = saveTemporaryMediaFromAvailableSource(messageObject);
+        if (messageObject == currentMessageObject) {
+            checkProgress(0, false, true);
+        }
+        if (!saved) {
+            showTemporaryMediaDownloadFailedAlert();
+        }
+    }
+
+    private boolean saveTemporaryMediaFromAvailableSource(MessageObject messageObject) {
+        if (!isSaveableTemporaryMedia(messageObject) || parentActivity == null) {
+            return false;
+        }
+        File file = resolveTemporaryMediaFile(messageObject, true);
+        if ((file == null || !file.exists()) && messageObject.isPhoto() && currentMessageObject == messageObject) {
+            file = saveCurrentBitmapToCacheFile();
+        }
+        if (file != null && file.exists()) {
+            boolean isVideo = messageObject.isVideo();
+            MediaController.saveFile(file.toString(), parentActivity, isVideo ? 1 : 0, null, null, uri -> {
+                if (containerView != null) {
+                    BulletinFactory.createSaveToGalleryBulletin(containerView, isVideo, 0xf9222222, 0xffffffff).show();
+                }
+            });
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+    private void showTemporaryMediaDownloadFailedAlert() {
+        if (parentActivity == null) {
+            return;
+        }
+        AlertDialog.Builder builder = new AlertDialog.Builder(parentActivity, resourcesProvider);
+        builder.setTitle(getString(R.string.AppName));
+        builder.setMessage(getString(R.string.ViewOnceDownloadFailed));
+        builder.setPositiveButton(getString(R.string.OK), null);
+        showAlertDialog(builder);
     }
 
     private File saveCurrentBitmapToCacheFile() {
@@ -5211,6 +5409,8 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                                 if (!f.exists()) {
                                     f = new File(FileLoader.getDirectory(FileLoader.MEDIA_DIR_CACHE), f.getName());
                                 }
+                            } else if (isSaveableTemporaryMedia(currentMessageObject)) {
+                                f = resolveTemporaryMediaFile(currentMessageObject, true);
                             } else {
                                 f = resolveMessageMediaFile(currentMessageObject, true);
                             }
@@ -5234,7 +5434,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                         if (f != null && !f.exists()) {
                             f = new File(FileLoader.getDirectory(FileLoader.MEDIA_DIR_CACHE), f.getName());
                         }
-                        if ((f == null || !f.exists()) && currentMessageObject != null && !isVideo) {
+                        if ((f == null || !f.exists()) && currentMessageObject != null && !isVideo && !isSaveableTemporaryMedia(currentMessageObject)) {
                             f = saveCurrentBitmapToCacheFile();
                         }
 
@@ -5260,7 +5460,9 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                         } else if (f != null && f.exists()) {
                             MediaController.saveFile(f.toString(), parentActivity, isVideo ? 1 : 0, null, null, uri -> BulletinFactory.createSaveToGalleryBulletin(containerView, isVideo, 0xf9222222, 0xffffffff).show());
                         } else {
-                            showDownloadAlert();
+                            if (currentMessageObject == null || !saveTemporaryMediaFromAvailableSource(currentMessageObject) && !downloadTemporaryMediaForSaving(currentMessageObject)) {
+                                showDownloadAlert();
+                            }
                         }
                     } else {
                         boolean hasVideo_ = false, hasPhoto_ = false, hasLivePhoto_ = false;
@@ -5291,11 +5493,13 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                                     if (MessageObject.getMedia(currentMessageObject.messageOwner) instanceof TLRPC.TL_messageMediaWebPage && MessageObject.getMedia(currentMessageObject.messageOwner).webpage != null && MessageObject.getMedia(currentMessageObject.messageOwner).webpage.document == null) {
                                         TLObject fileLocation = getFileLocation(currentIndex, null);
                                         f = FileLoader.getInstance(currentAccount).getPathToAttach(fileLocation, true);
+                                    } else if (isSaveableTemporaryMedia(currentMessageObject)) {
+                                        f = resolveTemporaryMediaFile(currentMessageObject, true);
                                     } else {
                                         f = resolveMessageMediaFile(currentMessageObject, true);
                                     }
                                     boolean isThisVideo = currentMessageObject.isVideo();
-                                    if ((f == null || !f.exists()) && !isThisVideo) {
+                                    if ((f == null || !f.exists()) && !isThisVideo && !isSaveableTemporaryMedia(currentMessageObject)) {
                                         f = saveCurrentBitmapToCacheFile();
                                     }
                                     final boolean isThisLivePhoto = currentMessageObject.isLivePhoto();
@@ -5321,7 +5525,9 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                                     } else if (f != null && f.exists()) {
                                         MediaController.saveFile(f.toString(), parentActivity, isThisVideo ? 1 : 0, null, null, uri -> BulletinFactory.createSaveToGalleryBulletin(containerView, isThisVideo, 0xf9222222, 0xffffffff).show());
                                     } else {
-                                        showDownloadAlert();
+                                        if (!saveTemporaryMediaFromAvailableSource(currentMessageObject) && !downloadTemporaryMediaForSaving(currentMessageObject)) {
+                                            showDownloadAlert();
+                                        }
                                     }
                                 })
                                 .setPositiveButton((!hasVideo && !hasLivePhoto) ? LocaleController.formatPluralString("AllNPhotos", msgs.size()) : LocaleController.formatPluralString("AllNMedia", msgs.size()), (di, a) -> {
@@ -5862,7 +6068,9 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                     if (currentMessageObject == null) {
                         return;
                     }
-                    FileLoader.getInstance(currentAccount).cancelLoadFile(currentMessageObject.getDocument());
+                    if (!cancelTemporaryMediaDownload(currentMessageObject)) {
+                        FileLoader.getInstance(currentAccount).cancelLoadFile(currentMessageObject.getDocument());
+                    }
                     releasePlayer(false);
                     bottomLayout.setTag(1);
                     bottomLayout.setVisibility(View.VISIBLE);
@@ -15024,10 +15232,11 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             if (DialogObject.isEncryptedDialog(currentDialogId) && !isEmbedVideo || noforwards) {
                 setItemVisible(sendItem, false, false);
             }
+            boolean saveableTemporaryMedia = isSaveableTemporaryMedia(newMessageObject);
             if (isEmbedVideo || newMessageObject.messageOwner.ttl != 0 && newMessageObject.messageOwner.ttl < 60 * 60 || noforwards) {
                 allowShare = false;
-                galleryButton.setVisibility(View.GONE);
-                galleryGap.setVisibility(View.GONE);
+                galleryButton.setVisibility(saveableTemporaryMedia && !isEmbedVideo && !noforwards ? View.VISIBLE : View.GONE);
+                galleryGap.setVisibility(saveableTemporaryMedia && !isEmbedVideo && !noforwards ? View.VISIBLE : View.GONE);
                 menuItem.hideSubItem(gallery_menu_share);
                 setItemVisible(editItem, false, animated);
             } else {
@@ -16723,8 +16932,9 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
             boolean canStreamFinal = canStream;
             boolean canAutoPlayFinal = !(a == 0 && dontAutoPlay) && canAutoPlay;
             boolean isVideoFinal = isVideo;
-            boolean loadedBitmapVisibleWithoutFile = a == 0 && messageObjectFinal != null && centerImage.hasImageLoaded()
-                    && (messageObjectFinal.isRecalled() || messageObjectFinal.isSecretMedia() && !isVideoFinal);
+            boolean temporaryPhotoVisibleWithoutFile = a == 0 && messageObjectFinal != null && isSaveableTemporaryMedia(messageObjectFinal) && !isVideoFinal && centerImage.hasBitmapImage();
+            boolean loadedBitmapVisibleWithoutFile = a == 0 && messageObjectFinal != null
+                    && (temporaryPhotoVisibleWithoutFile || centerImage.hasImageLoaded() && (messageObjectFinal.isRecalled() || messageObjectFinal.isSecretMedia() && !isVideoFinal));
 
             boolean finalFileExist = fileExist;
             Utilities.globalQueue.postRunnable(() -> {
@@ -16764,6 +16974,9 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                 boolean existsFinal = exists;
                 File finalF2Local = f2Local;
                 AndroidUtilities.runOnUIThread(() -> {
+                    boolean temporaryMediaLoading = messageObjectFinal != null && isSaveableTemporaryMedia(messageObjectFinal)
+                            ? isTemporaryMediaLoading(messageObjectFinal)
+                            : FileLoader.getInstance(currentAccount).isLoadingFile(currentFileNames[a]);
                     if (shownControlsByEnd && !actionBarWasShownBeforeByEnd && isPlaying) {
                         photoProgressViews[a].setBackgroundState(PROGRESS_PLAY, false, false);
                         return;
@@ -16778,7 +16991,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                         }
                         if (a == 0 && !menuItem.isSubMenuShowing()) {
                             if (!existsFinal) {
-                                if (!FileLoader.getInstance(currentAccount).isLoadingFile(currentFileNames[a])) {
+                                if (!temporaryMediaLoading) {
                                     menuItem.hideSubItem(gallery_menu_cancel_loading);
                                 } else {
                                     menuItem.showSubItem(gallery_menu_cancel_loading);
@@ -16789,7 +17002,7 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
                         }
                     } else {
                         if (isVideoFinal) {
-                            if (!FileLoader.getInstance(currentAccount).isLoadingFile(currentFileNames[a])) {
+                            if (!temporaryMediaLoading) {
                                 photoProgressViews[a].setBackgroundState(PROGRESS_LOAD, false, true);
                             } else {
                                 photoProgressViews[a].setBackgroundState(PROGRESS_CANCEL, false, true);
@@ -20826,7 +21039,15 @@ public class PhotoViewer implements NotificationCenter.NotificationCenterDelegat
         if (uri == null && videoUrises == null) {
             if (download) {
                 if (currentMessageObject !=  null) {
-                    if (!FileLoader.getInstance(currentAccount).isLoadingFile(currentFileNames[0])) {
+                    if (isSaveableTemporaryMedia(currentMessageObject)) {
+                        if (!isTemporaryMediaLoading(currentMessageObject)) {
+                            if (loadTemporaryMedia(currentMessageObject)) {
+                                checkProgress(0, false, true);
+                            }
+                        } else {
+                            cancelTemporaryMediaDownload(currentMessageObject);
+                        }
+                    } else if (!FileLoader.getInstance(currentAccount).isLoadingFile(currentFileNames[0])) {
                         FileLoader.getInstance(currentAccount).loadFile(currentMessageObject.getDocument(), currentMessageObject, FileLoader.PRIORITY_NORMAL, 0);
                     } else {
                         FileLoader.getInstance(currentAccount).cancelLoadFile(currentMessageObject.getDocument());

@@ -14,13 +14,21 @@ import android.content.Intent;
 
 public class AppStartReceiver extends BroadcastReceiver {
 
+    public static final String ACTION_START = "org.telegram.start";
+
     public void onReceive(Context context, Intent intent) {
-        if (intent != null && Intent.ACTION_BOOT_COMPLETED.equals(intent.getAction())) {
+        if (intent == null) {
+            return;
+        }
+        String action = intent.getAction();
+        if (Intent.ACTION_BOOT_COMPLETED.equals(action) || ACTION_START.equals(action)) {
             AndroidUtilities.runOnUIThread(() -> {
-                SharedConfig.loadConfig();
-                if (SharedConfig.passcodeHash.length() > 0) {
-                    SharedConfig.appLocked = true;
-                    SharedConfig.saveConfig();
+                if (Intent.ACTION_BOOT_COMPLETED.equals(action)) {
+                    SharedConfig.loadConfig();
+                    if (SharedConfig.passcodeHash.length() > 0) {
+                        SharedConfig.appLocked = true;
+                        SharedConfig.saveConfig();
+                    }
                 }
                 ApplicationLoader.startPushService();
             });

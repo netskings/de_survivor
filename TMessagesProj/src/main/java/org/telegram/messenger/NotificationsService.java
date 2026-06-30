@@ -13,6 +13,8 @@ import android.os.IBinder;
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 
+import org.telegram.tgnet.ConnectionsManager;
+
 public class NotificationsService extends Service {
 
     private static final String CHANNEL_ID = "push_service_channel";
@@ -42,10 +44,12 @@ public class NotificationsService extends Service {
                 .build();
 
         startForeground(NOTIFICATION_ID, notification);
+        ensurePushConnection();
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        ensurePushConnection();
         return START_STICKY;
     }
 
@@ -53,6 +57,52 @@ public class NotificationsService extends Service {
     @Override
     public IBinder onBind(Intent intent) {
         return null;
+    }
+
+    @Override
+    public void onDestroy() {
+        super.onDestroy();
+        requestRestartIfNeeded();
+    }
+
+    @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        super.onTaskRemoved(rootIntent);
+        requestRestartIfNeeded();
+    }
+
+    private void ensurePushConnection() {
+        try {
+            ApplicationLoader.postInitApplication();
+            boolean pushConnectionEnabled = MessagesController.getGlobalNotificationsSettings().getBoolean("pushConnection", true);
+            for (int a = 0; a < UserConfig.MAX_ACCOUNT_COUNT; a++) {
+                UserConfig userConfig = UserConfig.getInstance(a);
+                userConfig.loadConfig();
+                if (a != 0 && !userConfig.isClientActivated()) {
+                    continue;
+                }
+                ConnectionsManager connectionsManager = ConnectionsManager.getInstance(a);
+                connectionsManager.setPushConnectionEnabled(pushConnectionEnabled);
+                if (pushConnectionEnabled && userConfig.isClientActivated()) {
+                    connectionsManager.resumeNetworkMaybe();
+                }
+            }
+        } catch (Throwable e) {
+            FileLog.e(e);
+        }
+    }
+
+    private void requestRestartIfNeeded() {
+        try {
+            if (!MessagesController.getGlobalNotificationsSettings().getBoolean("pushService", true)) {
+                return;
+            }
+            Intent intent = new Intent(this, AppStartReceiver.class);
+            intent.setAction(AppStartReceiver.ACTION_START);
+            sendBroadcast(intent);
+        } catch (Throwable e) {
+            FileLog.e(e);
+        }
     }
 
     private void createNotificationChannel() {
