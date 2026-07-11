@@ -81,6 +81,8 @@ public class CustomSettingsActivity extends BaseFragment {
     private int restrictionsHeaderRow;
     private int antiRecallRow;
     private int antiRecallInfoRow;
+    private int keepMessageEditHistoryRow;
+    private int keepMessageEditHistoryInfoRow;
     private int saveTemporaryMediaRow;
     private int saveTemporaryMediaInfoRow;
     private int saveTemporaryMediaPathRow;
@@ -128,6 +130,8 @@ public class CustomSettingsActivity extends BaseFragment {
         restrictionsHeaderRow = rowCount++;
         antiRecallRow = rowCount++;
         antiRecallInfoRow = rowCount++;
+        keepMessageEditHistoryRow = rowCount++;
+        keepMessageEditHistoryInfoRow = rowCount++;
         saveTemporaryMediaRow = rowCount++;
         saveTemporaryMediaInfoRow = rowCount++;
         saveTemporaryMediaPathRow = rowCount++;
@@ -404,6 +408,11 @@ public class CustomSettingsActivity extends BaseFragment {
                 CustomSettings.setAntiRecall(val);
                 if (view instanceof TextCheckCell)
                     ((TextCheckCell) view).setChecked(val);
+            } else if (position == keepMessageEditHistoryRow) {
+                boolean val = !CustomSettings.keepMessageEditHistory();
+                CustomSettings.setKeepMessageEditHistory(val);
+                if (view instanceof TextCheckCell)
+                    ((TextCheckCell) view).setChecked(val);
             } else if (position == saveTemporaryMediaRow) {
                 boolean val = !CustomSettings.saveTemporaryMedia();
                 CustomSettings.setSaveTemporaryMedia(val);
@@ -482,6 +491,8 @@ public class CustomSettingsActivity extends BaseFragment {
             if (pos == restrictionsHeaderRow) return TYPE_HEADER;
             if (pos == antiRecallRow) return TYPE_CHECK;
             if (pos == antiRecallInfoRow) return TYPE_INFO;
+            if (pos == keepMessageEditHistoryRow) return TYPE_CHECK;
+            if (pos == keepMessageEditHistoryInfoRow) return TYPE_INFO;
             if (pos == saveTemporaryMediaRow) return TYPE_CHECK;
             if (pos == saveTemporaryMediaInfoRow) return TYPE_INFO;
             if (pos == saveTemporaryMediaPathRow) return TYPE_TEXT_CELL;
@@ -596,6 +607,10 @@ public class CustomSettingsActivity extends BaseFragment {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsAntiRecall),
                                 CustomSettings.antiRecall(), true);
                     }
+                    if (pos == keepMessageEditHistoryRow) {
+                        cell.setTextAndCheck(getString(R.string.CustomSettingsKeepMessageEditHistory),
+                                CustomSettings.keepMessageEditHistory(), true);
+                    }
                     if (pos == saveTemporaryMediaRow) {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsSaveTemporaryMedia),
                                 CustomSettings.saveTemporaryMedia(), true);
@@ -657,6 +672,9 @@ public class CustomSettingsActivity extends BaseFragment {
                     }
                     if (pos == antiRecallInfoRow) {
                         cell.setText(getString(R.string.CustomSettingsAntiRecallInfo));
+                    }
+                    if (pos == keepMessageEditHistoryInfoRow) {
+                        cell.setText(getString(R.string.CustomSettingsKeepMessageEditHistoryInfo));
                     }
                     if (pos == saveTemporaryMediaInfoRow) {
                         cell.setText(getString(R.string.CustomSettingsSaveTemporaryMediaInfo));

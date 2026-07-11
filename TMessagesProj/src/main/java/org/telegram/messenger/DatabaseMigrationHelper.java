@@ -1674,6 +1674,12 @@ public class DatabaseMigrationHelper {
             database.executeFast("PRAGMA user_version = 175").stepThis().dispose();
             version = 175;
         }
+        if (version == 175) {
+            database.executeFast("CREATE TABLE IF NOT EXISTS message_edits_v2(id INTEGER PRIMARY KEY AUTOINCREMENT, mid INTEGER, dialog_id INTEGER, edit_date INTEGER, old_data BLOB, new_data BLOB, UNIQUE(mid, dialog_id, edit_date))").stepThis().dispose();
+            database.executeFast("CREATE INDEX IF NOT EXISTS dialog_edit_date_idx_message_edits_v2 ON message_edits_v2(dialog_id, edit_date);").stepThis().dispose();
+            database.executeFast("PRAGMA user_version = 176").stepThis().dispose();
+            version = 176;
+        }
 
         return version;
     }

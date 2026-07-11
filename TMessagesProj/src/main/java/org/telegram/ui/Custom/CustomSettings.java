@@ -27,6 +27,7 @@ public class CustomSettings {
     private static final String KEY_FEED_RECOMMENDATION_FREQUENCY = "feed_rec_frequency";
     private static final String KEY_BYPASS_CONTENT_PROTECTION = "bypass_content_protection";
     private static final String KEY_ANTI_RECALL = "anti_recall";
+    private static final String KEY_KEEP_MESSAGE_EDIT_HISTORY = "keep_message_edit_history";
     private static final String KEY_SAVE_TEMPORARY_MEDIA = "save_temporary_media";
     private static final String KEY_SAVE_TEMPORARY_MEDIA_PATH = "save_temporary_media_path";
     private static final String KEY_SAVE_TEMPORARY_MEDIA_TREE_URI = "save_temporary_media_tree_uri";
@@ -76,6 +77,9 @@ public class CustomSettings {
 
     public static boolean antiRecall() { return getPrefs().getBoolean(KEY_ANTI_RECALL, true); }
     public static void setAntiRecall(boolean v) { getPrefs().edit().putBoolean(KEY_ANTI_RECALL, v).apply(); }
+
+    public static boolean keepMessageEditHistory() { return getPrefs().getBoolean(KEY_KEEP_MESSAGE_EDIT_HISTORY, true); }
+    public static void setKeepMessageEditHistory(boolean v) { getPrefs().edit().putBoolean(KEY_KEEP_MESSAGE_EDIT_HISTORY, v).apply(); }
 
     public static boolean saveTemporaryMedia() { return getPrefs().getBoolean(KEY_SAVE_TEMPORARY_MEDIA, false); }
     public static void setSaveTemporaryMedia(boolean v) { getPrefs().edit().putBoolean(KEY_SAVE_TEMPORARY_MEDIA, v).apply(); }

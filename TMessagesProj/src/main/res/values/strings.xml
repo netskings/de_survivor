@@ -10959,6 +10959,14 @@
     <string name="ViewDeletedUnknownSender">Unknown sender</string>
     <string name="ViewDeletedYou">You</string>
     <string name="ViewDeletedSavedAt">Saved %1$s</string>
+    <string name="ViewEditedMessages">View Edits</string>
+    <string name="ViewEditedMessagesEmpty">No edited messages here yet.</string>
+    <string name="ViewEditedMessagesSearchEmpty">No edited messages found.</string>
+    <string name="ViewEditedEditedAt">Edited %1$s</string>
+    <string name="ViewEditedBefore">Before:</string>
+    <string name="ViewEditedAfter">After:</string>
+    <string name="ViewEditedUnknownSender">Unknown sender</string>
+    <string name="ViewEditedUnsupportedMessage">Unsupported message</string>
     <string name="CustomSettingsStoryGhostAlertTitle">Open Story?</string>
     <string name="CustomSettingsStoryGhostAlertMessage">Opening this story may mark it as viewed. Enable story ghost mode first, or open anyway?</string>
     <string name="CustomSettingsEnableGhostMode">Enable Story Ghost</string>
@@ -10966,6 +10974,8 @@
     <string name="CustomSettingsRestrictionsHeader">Privacy and History</string>
     <string name="CustomSettingsAntiRecall">Keep Deleted Messages</string>
     <string name="CustomSettingsAntiRecallInfo">Keeps deleted messages locally. Reply and Forward are hidden for saved deleted messages.</string>
+    <string name="CustomSettingsKeepMessageEditHistory">Keep Edit History</string>
+    <string name="CustomSettingsKeepMessageEditHistoryInfo">Keeps local before and after snapshots when a message is edited, so you can review what changed later.</string>
     <string name="CustomSettingsSaveTemporaryMedia">Save View-Once Media</string>
     <string name="CustomSettingsSaveTemporaryMediaInfo">Automatically downloads incoming view-once photos and videos before they expire and saves them to the selected folder.</string>
     <string name="CustomSettingsSaveTemporaryMediaPath">Save Folder</string>

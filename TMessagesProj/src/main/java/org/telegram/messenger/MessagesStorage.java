@@ -113,7 +113,7 @@ public class MessagesStorage extends BaseController {
         }
     }
 
-    public final static int LAST_DB_VERSION = 175;
+    public final static int LAST_DB_VERSION = 176;
     private boolean databaseMigrationInProgress;
     public boolean showClearDatabaseAlert;
 
@@ -460,6 +460,7 @@ public class MessagesStorage extends BaseController {
             "quick_replies",
             "messages_v2",
             "deleted_messages_v2",
+            "message_edits_v2",
             "download_queue",
             "user_contacts_v7",
             "user_phones_v7",
@@ -557,6 +558,8 @@ public class MessagesStorage extends BaseController {
 
         database.executeFast("CREATE TABLE deleted_messages_v2(mid INTEGER, dialog_id INTEGER, data BLOB, date INTEGER, media_exists INTEGER DEFAULT 0, PRIMARY KEY(mid, dialog_id))").stepThis().dispose();
         database.executeFast("CREATE INDEX IF NOT EXISTS dialog_date_idx_deleted_messages_v2 ON deleted_messages_v2(dialog_id, date);").stepThis().dispose();
+        database.executeFast("CREATE TABLE message_edits_v2(id INTEGER PRIMARY KEY AUTOINCREMENT, mid INTEGER, dialog_id INTEGER, edit_date INTEGER, old_data BLOB, new_data BLOB, UNIQUE(mid, dialog_id, edit_date))").stepThis().dispose();
+        database.executeFast("CREATE INDEX IF NOT EXISTS dialog_edit_date_idx_message_edits_v2 ON message_edits_v2(dialog_id, edit_date);").stepThis().dispose();
 
         database.executeFast("CREATE TABLE saved_dialogs(did INTEGER, date INTEGER, last_mid INTEGER, pinned INTEGER, flags INTEGER, folder_id INTEGER, last_mid_group INTEGER, count INTEGER, forumChatId INTEGER, unread_count INTEGER, max_read_id INTEGER, read_outbox INTEGER, PRIMARY KEY (did, forumChatId))").stepThis().dispose();
         database.executeFast("CREATE INDEX IF NOT EXISTS date_idx_4_saved_dialogs ON saved_dialogs(date);").stepThis().dispose();
@@ -12264,6 +12267,8 @@ public class MessagesStorage extends BaseController {
                         createNewTopics.add(message);
                     }
 
+                    archiveEditedMessageIfNeeded(messageId, message);
+
                     if (updateDialog) {
                         TLRPC.Message lastMessage = messagesMap.get(message.dialog_id);
                         if (lastMessage == null || message.date > lastMessage.date || lastMessage.id > 0 && message.id > lastMessage.id || lastMessage.id < 0 && message.id < lastMessage.id) {
@@ -15368,6 +15373,108 @@ public class MessagesStorage extends BaseController {
         });
     }
 
+    private void archiveEditedMessageIfNeeded(int messageId, TLRPC.Message newMessage) {
+        if (!CustomSettings.keepMessageEditHistory() || newMessage == null || messageId <= 0 || newMessage instanceof TLRPC.TL_messageEmpty) {
+            return;
+        }
+        if ((newMessage.flags & TLRPC.MESSAGE_FLAG_EDITED) == 0 && newMessage.edit_date == 0) {
+            return;
+        }
+        long dialogId = MessageObject.getDialogId(newMessage);
+        if (dialogId == 0 || DialogObject.isEncryptedDialog(dialogId)) {
+            return;
+        }
+
+        SQLiteCursor cursor = null;
+        SQLitePreparedStatement state = null;
+        NativeByteBuffer oldData = null;
+        NativeByteBuffer oldStoredData = null;
+        NativeByteBuffer newStoredData = null;
+        try {
+            cursor = database.queryFinalized(String.format(Locale.US, "SELECT data FROM messages_v2 WHERE mid = %d AND uid = %d LIMIT 1", messageId, dialogId));
+            if (!cursor.next()) {
+                return;
+            }
+            oldData = cursor.byteBufferValue(0);
+            if (oldData == null) {
+                return;
+            }
+            TLRPC.Message oldMessage = TLRPC.Message.TLdeserialize(oldData, oldData.readInt32(false), false);
+            if (oldMessage == null || oldMessage instanceof TLRPC.TL_messageEmpty || !isMessageEditHistoryChanged(oldMessage, newMessage)) {
+                return;
+            }
+            if (oldMessage.dialog_id == 0) {
+                oldMessage.dialog_id = dialogId;
+            }
+            oldStoredData = new NativeByteBuffer(oldMessage.getObjectSize());
+            oldMessage.serializeToStream(oldStoredData);
+            newStoredData = new NativeByteBuffer(newMessage.getObjectSize());
+            newMessage.serializeToStream(newStoredData);
+
+            int editDate = newMessage.edit_date != 0 ? newMessage.edit_date : getConnectionsManager().getCurrentTime();
+            state = database.executeFast("INSERT OR IGNORE INTO message_edits_v2(mid, dialog_id, edit_date, old_data, new_data) VALUES(?, ?, ?, ?, ?)");
+            state.bindInteger(1, messageId);
+            state.bindLong(2, dialogId);
+            state.bindInteger(3, editDate);
+            state.bindByteBuffer(4, oldStoredData);
+            state.bindByteBuffer(5, newStoredData);
+            state.step();
+        } catch (Exception e) {
+            FileLog.e(e);
+        } finally {
+            if (cursor != null) {
+                cursor.dispose();
+            }
+            if (state != null) {
+                state.dispose();
+            }
+            if (oldData != null) {
+                oldData.reuse();
+            }
+            if (oldStoredData != null) {
+                oldStoredData.reuse();
+            }
+            if (newStoredData != null) {
+                newStoredData.reuse();
+            }
+        }
+    }
+
+    private boolean isMessageEditHistoryChanged(TLRPC.Message oldMessage, TLRPC.Message newMessage) {
+        if (!TextUtils.equals(oldMessage.message, newMessage.message)) {
+            return true;
+        }
+        String oldMedia = getMessageEditHistoryMediaKey(oldMessage);
+        String newMedia = getMessageEditHistoryMediaKey(newMessage);
+        if (!TextUtils.equals(oldMedia, newMedia)) {
+            return true;
+        }
+        if ((oldMessage.flags & TLRPC.MESSAGE_FLAG_HAS_ENTITIES) != (newMessage.flags & TLRPC.MESSAGE_FLAG_HAS_ENTITIES)) {
+            return true;
+        }
+        int oldEntitiesCount = oldMessage.entities == null ? 0 : oldMessage.entities.size();
+        int newEntitiesCount = newMessage.entities == null ? 0 : newMessage.entities.size();
+        return oldEntitiesCount != newEntitiesCount;
+    }
+
+    private String getMessageEditHistoryMediaKey(TLRPC.Message message) {
+        if (message == null || message.media == null) {
+            return "";
+        }
+        TLRPC.Photo photo = MessageObject.getPhoto(message);
+        if (photo != null) {
+            return "photo:" + photo.id;
+        }
+        TLRPC.Document document = MessageObject.getDocument(message);
+        if (document != null) {
+            return "document:" + document.id;
+        }
+        if (message.media.webpage != null) {
+            return "webpage:" + message.media.webpage.id;
+        }
+        return message.media.getClass().getName();
+    }
+
     // put messages in data base while load history
     public void putMessages(TLRPC.messages_Messages messages, long dialogId, int load_type, int max_id, boolean createDialog, int mode, long threadMessageId) {
         storageQueue.postRunnable(() -> {
@@ -15658,6 +15765,7 @@ public class MessagesStorage extends BaseController {
 
                         fixUnsupportedMedia(message);
                         MessageObject.normalizeFlags(message);
+                        archiveEditedMessageIfNeeded(message.id, message);
                         NativeByteBuffer data = new NativeByteBuffer(message.getObjectSize());
                         message.serializeToStream(data);
 
