@@ -86,6 +86,8 @@ public class CustomSettingsActivity extends BaseFragment {
     private int antiRecallInfoRow;
     private int messageLabelsRow;
     private int messageLabelsInfoRow;
+    private int chatTranslationProviderRow;
+    private int chatTranslationProviderInfoRow;
     private int keepMessageEditHistoryRow;
     private int keepMessageEditHistoryInfoRow;
     private int saveTemporaryMediaRow;
@@ -137,6 +139,8 @@ public class CustomSettingsActivity extends BaseFragment {
         antiRecallInfoRow = rowCount++;
         messageLabelsRow = rowCount++;
         messageLabelsInfoRow = rowCount++;
+        chatTranslationProviderRow = rowCount++;
+        chatTranslationProviderInfoRow = rowCount++;
         keepMessageEditHistoryRow = rowCount++;
         keepMessageEditHistoryInfoRow = rowCount++;
         saveTemporaryMediaRow = rowCount++;
@@ -462,6 +466,38 @@ public class CustomSettingsActivity extends BaseFragment {
         showDialog(builder.create());
     }
 
+    private void showChatTranslationProviderDialog() {
+        Activity activity = getParentActivity();
+        if (activity == null) {
+            return;
+        }
+        AlertDialog.Builder builder = new AlertDialog.Builder(activity);
+        builder.setTitle(getString(R.string.CustomSettingsChatTranslationProvider));
+        builder.setItems(new CharSequence[]{
+                getString(R.string.CustomSettingsChatTranslationProviderAuto),
+                getString(R.string.CustomSettingsChatTranslationProviderTelegram),
+                getString(R.string.CustomSettingsChatTranslationProviderGoogle)
+        }, (dialog, which) -> {
+            CustomSettings.setChatTranslationProvider(which);
+            if (listAdapter != null) {
+                listAdapter.notifyDataSetChanged();
+            }
+            dialog.dismiss();
+        });
+        builder.setNegativeButton(getString(R.string.Cancel), null);
+        showDialog(builder.create());
+    }
+
+    private String getChatTranslationProviderName() {
+        int provider = CustomSettings.chatTranslationProvider();
+        if (provider == CustomSettings.CHAT_TRANSLATION_PROVIDER_TELEGRAM) {
+            return getString(R.string.CustomSettingsChatTranslationProviderTelegram);
+        } else if (provider == CustomSettings.CHAT_TRANSLATION_PROVIDER_GOOGLE) {
+            return getString(R.string.CustomSettingsChatTranslationProviderGoogle);
+        }
+        return getString(R.string.CustomSettingsChatTranslationProviderAuto);
+    }
+
     @NonNull
     private RecyclerListView getRecyclerListView(Context context) {
         listAdapter = new ListAdapter(context);
@@ -543,6 +579,8 @@ public class CustomSettingsActivity extends BaseFragment {
                 builder.setTitle(getString(R.string.CustomSettingsMessageLabels));
                 builder.setItems(new CharSequence[]{getString(R.string.CustomSettingsEditedMessageLabel), getString(R.string.CustomSettingsDeletedMessageLabel)}, (dialog, which) -> showMessageLabelOptions(which == 0));
                 showDialog(builder.create());
+            } else if (position == chatTranslationProviderRow) {
+                showChatTranslationProviderDialog();
             } else if (position == keepMessageEditHistoryRow) {
                 boolean val = !CustomSettings.keepMessageEditHistory();
                 CustomSettings.setKeepMessageEditHistory(val);
@@ -628,6 +666,8 @@ public class CustomSettingsActivity extends BaseFragment {
             if (pos == antiRecallInfoRow) return TYPE_INFO;
             if (pos == messageLabelsRow) return TYPE_TEXT_CELL;
             if (pos == messageLabelsInfoRow) return TYPE_INFO;
+            if (pos == chatTranslationProviderRow) return TYPE_TEXT_CELL;
+            if (pos == chatTranslationProviderInfoRow) return TYPE_INFO;
             if (pos == keepMessageEditHistoryRow) return TYPE_CHECK;
             if (pos == keepMessageEditHistoryInfoRow) return TYPE_INFO;
             if (pos == saveTemporaryMediaRow) return TYPE_CHECK;
@@ -813,6 +853,9 @@ public class CustomSettingsActivity extends BaseFragment {
                     if (pos == messageLabelsInfoRow) {
                         cell.setText(getString(R.string.CustomSettingsMessageLabelsInfo));
                     }
+                    if (pos == chatTranslationProviderInfoRow) {
+                        cell.setText(getString(R.string.CustomSettingsChatTranslationProviderInfo));
+                    }
                     if (pos == keepMessageEditHistoryInfoRow) {
                         cell.setText(getString(R.string.CustomSettingsKeepMessageEditHistoryInfo));
                     }
@@ -845,6 +888,9 @@ public class CustomSettingsActivity extends BaseFragment {
                     }
                     if (pos == messageLabelsRow) {
                         cell.setTextAndValue(getString(R.string.CustomSettingsMessageLabels), getString(R.string.CustomSettingsMessageLabelsValue), true);
+                    }
+                    if (pos == chatTranslationProviderRow) {
+                        cell.setTextAndValue(getString(R.string.CustomSettingsChatTranslationProvider), getChatTranslationProviderName(), true);
                     }
                     if (pos == saveTemporaryMediaPathRow) {
                         cell.setTextAndValue(getString(R.string.CustomSettingsSaveTemporaryMediaPath),

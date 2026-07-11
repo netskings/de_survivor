@@ -10977,6 +10977,11 @@
     <string name="CustomSettingsMessageLabels">Message Labels</string>
     <string name="CustomSettingsMessageLabelsValue">Edited and deleted</string>
     <string name="CustomSettingsMessageLabelsInfo">Customize the text, color, and icon shown on edited and locally saved deleted messages.</string>
+    <string name="CustomSettingsChatTranslationProvider">Live chat translation</string>
+    <string name="CustomSettingsChatTranslationProviderAuto">Auto</string>
+    <string name="CustomSettingsChatTranslationProviderTelegram">Telegram</string>
+    <string name="CustomSettingsChatTranslationProviderGoogle">Google</string>
+    <string name="CustomSettingsChatTranslationProviderInfo">Translates entire chats in real time without requiring Premium. Auto tries the Telegram text API first and uses Google if Telegram rejects the request. Google mode sends message text directly to Google Translate.</string>
     <string name="CustomSettingsEditedMessageLabel">Edited label</string>
     <string name="CustomSettingsDeletedMessageLabel">Deleted label</string>
     <string name="CustomSettingsMessageLabelTextAndColor">Text and color</string>

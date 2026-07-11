@@ -28,6 +28,7 @@ public class CustomSettings {
     private static final String KEY_BYPASS_CONTENT_PROTECTION = "bypass_content_protection";
     private static final String KEY_ANTI_RECALL = "anti_recall";
     private static final String KEY_KEEP_MESSAGE_EDIT_HISTORY = "keep_message_edit_history";
+    private static final String KEY_CHAT_TRANSLATION_PROVIDER = "chat_translation_provider";
     private static final String KEY_EDITED_MESSAGE_LABEL = "edited_message_label";
     private static final String KEY_EDITED_MESSAGE_LABEL_COLOR = "edited_message_label_color";
     private static final String KEY_EDITED_MESSAGE_LABEL_ICON = "edited_message_label_icon";
@@ -86,6 +87,19 @@ public class CustomSettings {
 
     public static boolean keepMessageEditHistory() { return getPrefs().getBoolean(KEY_KEEP_MESSAGE_EDIT_HISTORY, true); }
     public static void setKeepMessageEditHistory(boolean v) { getPrefs().edit().putBoolean(KEY_KEEP_MESSAGE_EDIT_HISTORY, v).apply(); }
+
+    public static final int CHAT_TRANSLATION_PROVIDER_AUTO = 0;
+    public static final int CHAT_TRANSLATION_PROVIDER_TELEGRAM = 1;
+    public static final int CHAT_TRANSLATION_PROVIDER_GOOGLE = 2;
+
+    public static int chatTranslationProvider() {
+        int value = getPrefs().getInt(KEY_CHAT_TRANSLATION_PROVIDER, CHAT_TRANSLATION_PROVIDER_AUTO);
+        return value >= CHAT_TRANSLATION_PROVIDER_AUTO && value <= CHAT_TRANSLATION_PROVIDER_GOOGLE ? value : CHAT_TRANSLATION_PROVIDER_AUTO;
+    }
+
+    public static void setChatTranslationProvider(int value) {
+        getPrefs().edit().putInt(KEY_CHAT_TRANSLATION_PROVIDER, value).apply();
+    }
 
     public static int pinnedDialogsLimit(int serverLimit) { return Math.max(serverLimit, 10); }
     public static int dialogFiltersLimit(int serverLimit) { return Math.max(serverLimit, 30); }
