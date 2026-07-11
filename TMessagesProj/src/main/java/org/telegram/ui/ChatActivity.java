@@ -379,6 +379,7 @@ public class ChatActivity extends BaseFragment implements
     protected TLRPC.User currentUser;
     protected TLRPC.EncryptedChat currentEncryptedChat;
     private boolean userBlocked;
+    private boolean lastHideBlockedUsersMessages = CustomSettings.hideBlockedUsersMessages();
 
     private long chatInviterId;
 
@@ -3087,6 +3088,14 @@ public class ChatActivity extends BaseFragment implements
 
             if (currentUser != null && !UserObject.isReplyUser(currentUser)) {
                 userBlocked = getMessagesController().blockePeers.indexOfKey(currentUser.id) >= 0;
+            }
+
+            if (CustomSettings.hideBlockedUsersMessages() && isBlockedUsersMessageFilteringContext()) {
+                if (getMessagesController().totalBlockedCount < 0) {
+                    getMessagesController().getBlockedPeers(true);
+                } else if (!getMessagesController().blockedEndReached) {
+                    getMessagesController().getBlockedPeers(false);
+                }
             }
 
             if (currentEncryptedChat != null && AndroidUtilities.getMyLayerVersion(currentEncryptedChat.layer) != SecretChatHelper.CURRENT_SECRET_CHAT_LAYER) {
@@ -20662,7 +20671,7 @@ public class ChatActivity extends BaseFragment implements
                     }
                 }
 
-                if (shouldHideBannedChannelMessage(obj)) {
+                if (shouldHideFilteredMessage(obj)) {
                     messagesDict[loadIndex].put(messageId, obj);
                     continue;
                 }
@@ -22361,6 +22370,14 @@ public class ChatActivity extends BaseFragment implements
                 userBlocked = getMessagesController().blockePeers.indexOfKey(currentUser.id) >= 0;
                 if (oldValue != userBlocked) {
                     updateBottomOverlay();
+                }
+            }
+            if (CustomSettings.hideBlockedUsersMessages() && isBlockedUsersMessageFilteringContext()) {
+                if (!getMessagesController().blockedEndReached) {
+                    getMessagesController().getBlockedPeers(false);
+                } else {
+                    clearChatData(true);
+                    firstLoadMessages();
                 }
             }
         } else if (id == NotificationCenter.fileNewChunkAvailable) {
@@ -24824,18 +24841,32 @@ public class ChatActivity extends BaseFragment implements
 
     private ArrayList<MessageObject> notPushedSponsoredMessages;
 
-    private boolean shouldHideBannedChannelMessage(MessageObject messageObject) {
-        return currentChat != null && ChatObject.isChannel(currentChat) && !currentChat.megagroup &&
+    private boolean isBlockedUsersMessageFilteringContext() {
+        return currentChat != null && (isComments || currentChat.megagroup || !ChatObject.isChannel(currentChat));
+    }
+
+    private boolean shouldHideBlockedUserMessage(MessageObject messageObject) {
+        if (!CustomSettings.hideBlockedUsersMessages() || !isBlockedUsersMessageFilteringContext() ||
+                messageObject == null || messageObject.isOutOwner() || !(messageObject.messageOwner.from_id instanceof TLRPC.TL_peerUser)) {
+            return false;
+        }
+        long senderId = messageObject.messageOwner.from_id.user_id;
+        return senderId != getUserConfig().getClientUserId() && getMessagesController().blockePeers.indexOfKey(senderId) >= 0;
+    }
+
+    private boolean shouldHideFilteredMessage(MessageObject messageObject) {
+        boolean bannedChannelMessage = currentChat != null && ChatObject.isChannel(currentChat) && !currentChat.megagroup &&
                 messageObject != null && !messageObject.isOutOwner() && CustomSettings.isBannedMessage(messageObject);
+        return bannedChannelMessage || shouldHideBlockedUserMessage(messageObject);
     }
 
     private void processNewMessages(ArrayList<MessageObject> arr) {
         processNewMessages(arr, true);
     }
     private void processNewMessages(ArrayList<MessageObject> arr, final boolean animatedFromBottom) {
-        if (currentChat != null && ChatObject.isChannel(currentChat) && !currentChat.megagroup) {
+        if (currentChat != null) {
             for (int i = arr.size() - 1; i >= 0; i--) {
-                if (shouldHideBannedChannelMessage(arr.get(i))) {
+                if (shouldHideFilteredMessage(arr.get(i))) {
                     arr.remove(i);
                 }
             }
@@ -29241,6 +29272,18 @@ public class ChatActivity extends BaseFragment implements
     @Override
     public void onResume() {
         super.onResume();
+        boolean hideBlockedUsersMessages = CustomSettings.hideBlockedUsersMessages();
+        if (hideBlockedUsersMessages != lastHideBlockedUsersMessages) {
+            lastHideBlockedUsersMessages = hideBlockedUsersMessages;
+            if (isBlockedUsersMessageFilteringContext()) {
+                if (hideBlockedUsersMessages && getMessagesController().totalBlockedCount < 0) {
+                    getMessagesController().getBlockedPeers(true);
+                } else {
+                    clearChatData(true);
+                    firstLoadMessages();
+                }
+            }
+        }
         checkShowBlur(false);
         activityResumeTime = System.currentTimeMillis();
         if (openImport && getSendMessagesHelper().getImportingHistory(dialog_id) != null) {

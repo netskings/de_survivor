@@ -86,6 +86,7 @@ public class CustomSettingsActivity extends BaseFragment {
     private int hideTypingStatusInfoRow;
     private int hideReadStatusRow;
     private int hideReadStatusInfoRow;
+    private int hideBlockedUsersMessagesRow;
     private int hideStoryViewsRow;
     private int hideStoryViewsInfoRow;
     private int alertBeforeOpeningStoryRow;
@@ -140,7 +141,7 @@ public class CustomSettingsActivity extends BaseFragment {
         feedHeaderRow = feedSettingsRow = feedInfoRow = -1;
         ghostHeaderRow = hideOnlineStatusRow = hideOnlineStatusInfoRow = goOfflineAutomaticallyRow = goOfflineAutomaticallyInfoRow = -1;
         scheduleMessagesInGhostModeRow = scheduleMessagesInGhostModeInfoRow = hideTypingStatusRow = hideTypingStatusInfoRow = -1;
-        hideReadStatusRow = hideReadStatusInfoRow = hideStoryViewsRow = hideStoryViewsInfoRow = -1;
+        hideReadStatusRow = hideReadStatusInfoRow = hideBlockedUsersMessagesRow = hideStoryViewsRow = hideStoryViewsInfoRow = -1;
         alertBeforeOpeningStoryRow = alertBeforeOpeningStoryInfoRow = readOnInteractRow = readOnInteractInfoRow = -1;
         ghostModeExceptionsRow = ghostModeExceptionsInfoRow = keepLastSeenUpdatedInGhostModeRow = keepLastSeenUpdatedInGhostModeInfoRow = -1;
         restrictionsHeaderRow = antiRecallRow = antiRecallInfoRow = messageLabelsRow = messageLabelsInfoRow = -1;
@@ -167,6 +168,7 @@ public class CustomSettingsActivity extends BaseFragment {
                 keepLastSeenUpdatedInGhostModeRow = rowCount++;
                 hideTypingStatusRow = rowCount++;
                 hideReadStatusRow = rowCount++;
+                hideBlockedUsersMessagesRow = rowCount++;
                 hideStoryViewsRow = rowCount++;
                 alertBeforeOpeningStoryRow = rowCount++;
                 readOnInteractRow = rowCount++;
@@ -622,6 +624,11 @@ public class CustomSettingsActivity extends BaseFragment {
                 CustomSettings.setHideReadStatus(val);
                 if (view instanceof TextCheckCell)
                     ((TextCheckCell) view).setChecked(val);
+            } else if (position == hideBlockedUsersMessagesRow) {
+                boolean val = !CustomSettings.hideBlockedUsersMessages();
+                CustomSettings.setHideBlockedUsersMessages(val);
+                if (view instanceof TextCheckCell)
+                    ((TextCheckCell) view).setChecked(val);
             } else if (position == hideStoryViewsRow) {
                 boolean val = !CustomSettings.hideStoryViews();
                 CustomSettings.setHideStoryViews(val);
@@ -730,6 +737,7 @@ public class CustomSettingsActivity extends BaseFragment {
             if (pos == hideTypingStatusRow) return TYPE_CHECK;
             if (pos == hideTypingStatusInfoRow) return TYPE_INFO;
             if (pos == hideReadStatusRow) return TYPE_CHECK;
+            if (pos == hideBlockedUsersMessagesRow) return TYPE_CHECK;
             if (pos == hideReadStatusInfoRow) return TYPE_INFO;
             if (pos == hideStoryViewsRow) return TYPE_CHECK;
             if (pos == hideStoryViewsInfoRow) return TYPE_INFO;
@@ -842,6 +850,10 @@ public class CustomSettingsActivity extends BaseFragment {
                     if (pos == hideReadStatusRow) {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsHideReadStatus),
                                 CustomSettings.hideReadStatus(), divider);
+                    }
+                    if (pos == hideBlockedUsersMessagesRow) {
+                        cell.setTextAndCheck(getString(R.string.CustomSettingsHideBlockedUsersMessages),
+                                CustomSettings.hideBlockedUsersMessages(), divider);
                     }
                     if (pos == hideStoryViewsRow) {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsHideStoryViews),

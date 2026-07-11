@@ -10942,6 +10942,7 @@
     <string name="CustomSettingsHideTypingStatus">Hide Typing Status</string>
     <string name="CustomSettingsHideTypingStatusInfo">Hides typing and recording indicators in chats while you write messages or record audio/video.</string>
     <string name="CustomSettingsHideReadStatus">Hide Read Status</string>
+    <string name="CustomSettingsHideBlockedUsersMessages">Hide blocked users messages</string>
     <string name="CustomSettingsHideReadStatusInfo">Prevents messages and opened media from being marked as read. Voice and video messages stay unread after playback. This also covers story views.</string>
     <string name="CustomSettingsHideStoryViews">Hide Story Views</string>
     <string name="CustomSettingsHideStoryViewsInfo">Prevents stories from being marked as viewed without enabling the rest of Ghost Mode.</string>

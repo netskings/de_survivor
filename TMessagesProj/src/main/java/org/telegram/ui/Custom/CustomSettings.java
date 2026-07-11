@@ -48,6 +48,7 @@ public class CustomSettings {
     private static final String KEY_GO_OFFLINE_AUTOMATICALLY = "go_offline_automatically";
     private static final String KEY_HIDE_TYPING_STATUS = "hide_typing_status";
     private static final String KEY_HIDE_READ_STATUS = "hide_read_status";
+    private static final String KEY_HIDE_BLOCKED_USERS_MESSAGES = "hide_blocked_users_messages";
     private static final String KEY_HIDE_STORY_VIEWS = "hide_story_views";
     private static final String KEY_ALERT_BEFORE_OPENING_STORY = "alert_before_opening_story";
     private static final String KEY_READ_ON_INTERACT = "read_on_interact";
@@ -284,6 +285,9 @@ public class CustomSettings {
 
     public static boolean hideReadStatus() { return getPrefs().getBoolean(KEY_HIDE_READ_STATUS, false); }
     public static void setHideReadStatus(boolean v) { getPrefs().edit().putBoolean(KEY_HIDE_READ_STATUS, v).apply(); }
+
+    public static boolean hideBlockedUsersMessages() { return getPrefs().getBoolean(KEY_HIDE_BLOCKED_USERS_MESSAGES, true); }
+    public static void setHideBlockedUsersMessages(boolean v) { getPrefs().edit().putBoolean(KEY_HIDE_BLOCKED_USERS_MESSAGES, v).apply(); }
 
     public static boolean hideStoryViews() { return getPrefs().getBoolean(KEY_HIDE_STORY_VIEWS, false); }
     public static void setHideStoryViews(boolean v) { getPrefs().edit().putBoolean(KEY_HIDE_STORY_VIEWS, v).apply(); }
