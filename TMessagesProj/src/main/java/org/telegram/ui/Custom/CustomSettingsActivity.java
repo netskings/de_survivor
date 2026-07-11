@@ -6,14 +6,21 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.text.InputType;
+import android.util.TypedValue;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.inputmethod.EditorInfo;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
+import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
 import org.telegram.ui.ActionBar.ActionBar;
@@ -24,6 +31,7 @@ import org.telegram.ui.Cells.HeaderCell;
 import org.telegram.ui.Cells.TextCell;
 import org.telegram.ui.Cells.TextCheckCell;
 import org.telegram.ui.Cells.TextInfoPrivacyCell;
+import org.telegram.ui.Components.EditTextBoldCursor;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.Feed.FeedSettingsActivity;
@@ -54,6 +62,8 @@ public class CustomSettingsActivity extends BaseFragment {
     private int hideTypingStatusInfoRow;
     private int hideReadStatusRow;
     private int hideReadStatusInfoRow;
+    private int hideStoryViewsRow;
+    private int hideStoryViewsInfoRow;
     private int alertBeforeOpeningStoryRow;
     private int alertBeforeOpeningStoryInfoRow;
     private int readOnInteractRow;
@@ -68,6 +78,8 @@ public class CustomSettingsActivity extends BaseFragment {
     private int antiRecallInfoRow;
     private int saveTemporaryMediaRow;
     private int saveTemporaryMediaInfoRow;
+    private int saveTemporaryMediaPathRow;
+    private int saveTemporaryMediaPathInfoRow;
     private int keepTemporaryMediaInChatRow;
     private int keepTemporaryMediaInChatInfoRow;
     private int keepKickedChatsCacheRow;
@@ -100,6 +112,8 @@ public class CustomSettingsActivity extends BaseFragment {
         hideTypingStatusInfoRow = rowCount++;
         hideReadStatusRow = rowCount++;
         hideReadStatusInfoRow = rowCount++;
+        hideStoryViewsRow = rowCount++;
+        hideStoryViewsInfoRow = rowCount++;
         alertBeforeOpeningStoryRow = rowCount++;
         alertBeforeOpeningStoryInfoRow = rowCount++;
         readOnInteractRow = rowCount++;
@@ -111,6 +125,8 @@ public class CustomSettingsActivity extends BaseFragment {
         antiRecallInfoRow = rowCount++;
         saveTemporaryMediaRow = rowCount++;
         saveTemporaryMediaInfoRow = rowCount++;
+        saveTemporaryMediaPathRow = rowCount++;
+        saveTemporaryMediaPathInfoRow = rowCount++;
         keepTemporaryMediaInChatRow = rowCount++;
         keepTemporaryMediaInChatInfoRow = rowCount++;
         keepKickedChatsCacheRow = rowCount++;
@@ -174,6 +190,64 @@ public class CustomSettingsActivity extends BaseFragment {
         showDialog(builder.create());
     }
 
+    private void showSaveTemporaryMediaPathDialog() {
+        Activity activity = getParentActivity();
+        if (activity == null) {
+            return;
+        }
+
+        LinearLayout linearLayout = new LinearLayout(activity);
+        linearLayout.setOrientation(LinearLayout.VERTICAL);
+
+        TextView message = new TextView(activity);
+        message.setText(LocaleController.getString(R.string.CustomSettingsSaveTemporaryMediaPathMessage));
+        message.setTextColor(Theme.getColor(Theme.key_dialogTextBlack));
+        message.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+        message.setGravity(Gravity.LEFT);
+        linearLayout.addView(message, LayoutHelper.createLinear(
+                LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 24, 0, 24, 12));
+
+        EditTextBoldCursor editText = new EditTextBoldCursor(activity);
+        editText.setText(CustomSettings.saveTemporaryMediaDisplayPath());
+        editText.setSelectAllOnFocus(true);
+        editText.setSingleLine(true);
+        editText.setInputType(InputType.TYPE_CLASS_TEXT);
+        editText.setImeOptions(EditorInfo.IME_ACTION_DONE);
+        editText.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+        editText.setTextColor(Theme.getColor(Theme.key_dialogTextBlack));
+        editText.setHintColor(Theme.getColor(Theme.key_groupcreate_hintText));
+        editText.setHintText(LocaleController.getString(R.string.CustomSettingsSaveTemporaryMediaPathHint));
+        editText.setBackgroundDrawable(null);
+        editText.setLineColors(
+                Theme.getColor(Theme.key_windowBackgroundWhiteInputField),
+                Theme.getColor(Theme.key_windowBackgroundWhiteInputFieldActivated),
+                Theme.getColor(Theme.key_text_RedRegular));
+        editText.setPadding(0, 0, 0, 0);
+        linearLayout.addView(editText, LayoutHelper.createLinear(
+                LayoutHelper.MATCH_PARENT, 48, 24, 0, 24, 0));
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(activity);
+        builder.setTitle(LocaleController.getString(R.string.CustomSettingsSaveTemporaryMediaPathTitle));
+        builder.setView(linearLayout);
+        builder.setPositiveButton(LocaleController.getString(R.string.CustomSettingsSaveTemporaryMediaPathApply), (dialog, which) -> {
+            CustomSettings.setSaveTemporaryMediaRelativePath(editText.getText().toString());
+            if (listAdapter != null) {
+                listAdapter.notifyDataSetChanged();
+            }
+        });
+        builder.setNeutralButton(LocaleController.getString(R.string.CustomSettingsSaveTemporaryMediaPathReset), (dialog, which) -> {
+            CustomSettings.resetSaveTemporaryMediaRelativePath();
+            if (listAdapter != null) {
+                listAdapter.notifyDataSetChanged();
+            }
+        });
+        builder.setNegativeButton(LocaleController.getString(R.string.Cancel), null);
+        AlertDialog alertDialog = builder.create();
+        showDialog(alertDialog);
+        editText.requestFocus();
+        AndroidUtilities.runOnUIThread(() -> AndroidUtilities.showKeyboard(editText), 200);
+    }
+
     @NonNull
     private RecyclerListView getRecyclerListView(Context context) {
         listAdapter = new ListAdapter(context);
@@ -222,6 +296,11 @@ public class CustomSettingsActivity extends BaseFragment {
                 CustomSettings.setHideReadStatus(val);
                 if (view instanceof TextCheckCell)
                     ((TextCheckCell) view).setChecked(val);
+            } else if (position == hideStoryViewsRow) {
+                boolean val = !CustomSettings.hideStoryViews();
+                CustomSettings.setHideStoryViews(val);
+                if (view instanceof TextCheckCell)
+                    ((TextCheckCell) view).setChecked(val);
             } else if (position == alertBeforeOpeningStoryRow) {
                 boolean val = !CustomSettings.alertBeforeOpeningStory();
                 CustomSettings.setAlertBeforeOpeningStory(val);
@@ -250,6 +329,8 @@ public class CustomSettingsActivity extends BaseFragment {
                 CustomSettings.setSaveTemporaryMedia(val);
                 if (view instanceof TextCheckCell)
                     ((TextCheckCell) view).setChecked(val);
+            } else if (position == saveTemporaryMediaPathRow) {
+                showSaveTemporaryMediaPathDialog();
             } else if (position == keepTemporaryMediaInChatRow) {
                 boolean val = !CustomSettings.keepTemporaryMediaInChat();
                 CustomSettings.setKeepTemporaryMediaInChat(val);
@@ -310,6 +391,8 @@ public class CustomSettingsActivity extends BaseFragment {
             if (pos == hideTypingStatusInfoRow) return TYPE_INFO;
             if (pos == hideReadStatusRow) return TYPE_CHECK;
             if (pos == hideReadStatusInfoRow) return TYPE_INFO;
+            if (pos == hideStoryViewsRow) return TYPE_CHECK;
+            if (pos == hideStoryViewsInfoRow) return TYPE_INFO;
             if (pos == alertBeforeOpeningStoryRow) return TYPE_CHECK;
             if (pos == alertBeforeOpeningStoryInfoRow) return TYPE_INFO;
             if (pos == readOnInteractRow) return TYPE_CHECK;
@@ -321,6 +404,8 @@ public class CustomSettingsActivity extends BaseFragment {
             if (pos == antiRecallInfoRow) return TYPE_INFO;
             if (pos == saveTemporaryMediaRow) return TYPE_CHECK;
             if (pos == saveTemporaryMediaInfoRow) return TYPE_INFO;
+            if (pos == saveTemporaryMediaPathRow) return TYPE_TEXT_CELL;
+            if (pos == saveTemporaryMediaPathInfoRow) return TYPE_INFO;
             if (pos == keepTemporaryMediaInChatRow) return TYPE_CHECK;
             if (pos == keepTemporaryMediaInChatInfoRow) return TYPE_INFO;
             if (pos == keepKickedChatsCacheRow) return TYPE_CHECK;
@@ -411,6 +496,10 @@ public class CustomSettingsActivity extends BaseFragment {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsHideReadStatus),
                                 CustomSettings.hideReadStatus(), true);
                     }
+                    if (pos == hideStoryViewsRow) {
+                        cell.setTextAndCheck(getString(R.string.CustomSettingsHideStoryViews),
+                                CustomSettings.hideStoryViews(), true);
+                    }
                     if (pos == alertBeforeOpeningStoryRow) {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsAlertBeforeOpeningStory),
                                 CustomSettings.alertBeforeOpeningStory(), true);
@@ -471,6 +560,9 @@ public class CustomSettingsActivity extends BaseFragment {
                     if (pos == hideReadStatusInfoRow) {
                         cell.setText(getString(R.string.CustomSettingsHideReadStatusInfo));
                     }
+                    if (pos == hideStoryViewsInfoRow) {
+                        cell.setText(getString(R.string.CustomSettingsHideStoryViewsInfo));
+                    }
                     if (pos == alertBeforeOpeningStoryInfoRow) {
                         cell.setText(getString(R.string.CustomSettingsAlertBeforeOpeningStoryInfo));
                     }
@@ -488,6 +580,9 @@ public class CustomSettingsActivity extends BaseFragment {
                     }
                     if (pos == saveTemporaryMediaInfoRow) {
                         cell.setText(getString(R.string.CustomSettingsSaveTemporaryMediaInfo));
+                    }
+                    if (pos == saveTemporaryMediaPathInfoRow) {
+                        cell.setText(getString(R.string.CustomSettingsSaveTemporaryMediaPathInfo));
                     }
                     if (pos == keepTemporaryMediaInChatInfoRow) {
                         cell.setText(getString(R.string.CustomSettingsKeepTemporaryMediaInChatInfo));
@@ -509,6 +604,10 @@ public class CustomSettingsActivity extends BaseFragment {
                         int count = CustomSettings.ghostModeExceptionsCount();
                         cell.setTextAndValue(getString(R.string.CustomSettingsGhostModeExceptions),
                                 count == 0 ? "" : LocaleController.formatPluralString("Chats", count), true);
+                    }
+                    if (pos == saveTemporaryMediaPathRow) {
+                        cell.setTextAndValue(getString(R.string.CustomSettingsSaveTemporaryMediaPath),
+                                CustomSettings.saveTemporaryMediaDisplayPath(), true);
                     }
                     break;
                 }

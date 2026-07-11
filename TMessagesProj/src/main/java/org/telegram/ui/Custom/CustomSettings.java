@@ -1,6 +1,8 @@
 package org.telegram.ui.Custom;
 
 import android.content.SharedPreferences;
+import android.os.Environment;
+
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.FileLog;
 import org.telegram.ui.Feed.FeedAlbumMode;
@@ -24,17 +26,20 @@ public class CustomSettings {
     private static final String KEY_BYPASS_CONTENT_PROTECTION = "bypass_content_protection";
     private static final String KEY_ANTI_RECALL = "anti_recall";
     private static final String KEY_SAVE_TEMPORARY_MEDIA = "save_temporary_media";
+    private static final String KEY_SAVE_TEMPORARY_MEDIA_PATH = "save_temporary_media_path";
     private static final String KEY_KEEP_TEMPORARY_MEDIA_IN_CHAT = "keep_temporary_media_in_chat";
     private static final String KEY_KEEP_KICKED_CHATS_CACHE = "keep_kicked_chats_cache";
     private static final String KEY_HIDE_ONLINE_STATUS = "hide_online_status";
     private static final String KEY_GO_OFFLINE_AUTOMATICALLY = "go_offline_automatically";
     private static final String KEY_HIDE_TYPING_STATUS = "hide_typing_status";
     private static final String KEY_HIDE_READ_STATUS = "hide_read_status";
+    private static final String KEY_HIDE_STORY_VIEWS = "hide_story_views";
     private static final String KEY_ALERT_BEFORE_OPENING_STORY = "alert_before_opening_story";
     private static final String KEY_READ_ON_INTERACT = "read_on_interact";
     private static final String KEY_SCHEDULE_MESSAGES_IN_GHOST_MODE = "schedule_messages_in_ghost_mode";
     private static final String KEY_GHOST_MODE_EXCEPTIONS = "ghost_mode_exceptions";
     private static final String KEY_KEEP_LAST_SEEN_UPDATED_IN_GHOST_MODE = "send_offline_status_in_ghost_mode";
+    private static final String DEFAULT_SAVE_TEMPORARY_MEDIA_RELATIVE_PATH = "TG/SavedAttachments";
 
     public static FeedAlbumMode feedAlbumMode() {
         String val = getPrefs().getString(KEY_FEED_ALBUM_MODE, FeedAlbumMode.CAROUSEL.name());
@@ -71,6 +76,60 @@ public class CustomSettings {
     public static boolean saveTemporaryMedia() { return getPrefs().getBoolean(KEY_SAVE_TEMPORARY_MEDIA, false); }
     public static void setSaveTemporaryMedia(boolean v) { getPrefs().edit().putBoolean(KEY_SAVE_TEMPORARY_MEDIA, v).apply(); }
 
+    public static String saveTemporaryMediaRelativePath() {
+        return normalizeTemporaryMediaRelativePath(getPrefs().getString(KEY_SAVE_TEMPORARY_MEDIA_PATH, DEFAULT_SAVE_TEMPORARY_MEDIA_RELATIVE_PATH));
+    }
+
+    public static String saveTemporaryMediaDisplayPath() {
+        return "Downloads/" + saveTemporaryMediaRelativePath();
+    }
+
+    public static void setSaveTemporaryMediaRelativePath(String path) {
+        String normalized = normalizeTemporaryMediaRelativePath(path);
+        SharedPreferences.Editor editor = getPrefs().edit();
+        if (DEFAULT_SAVE_TEMPORARY_MEDIA_RELATIVE_PATH.equals(normalized)) {
+            editor.remove(KEY_SAVE_TEMPORARY_MEDIA_PATH);
+        } else {
+            editor.putString(KEY_SAVE_TEMPORARY_MEDIA_PATH, normalized);
+        }
+        editor.apply();
+    }
+
+    public static void resetSaveTemporaryMediaRelativePath() {
+        getPrefs().edit().remove(KEY_SAVE_TEMPORARY_MEDIA_PATH).apply();
+    }
+
+    private static String normalizeTemporaryMediaRelativePath(String path) {
+        String value = path == null ? "" : path.trim().replace('\\', '/');
+        while (value.startsWith("/")) {
+            value = value.substring(1);
+        }
+        String downloads = Environment.DIRECTORY_DOWNLOADS;
+        if (value.equalsIgnoreCase(downloads)) {
+            value = "";
+        } else if (value.regionMatches(true, 0, downloads + "/", 0, downloads.length() + 1)) {
+            value = value.substring(downloads.length() + 1);
+        } else if (value.equalsIgnoreCase("Downloads")) {
+            value = "";
+        } else if (value.regionMatches(true, 0, "Downloads/", 0, "Downloads/".length())) {
+            value = value.substring("Downloads/".length());
+        }
+        StringBuilder result = new StringBuilder();
+        String[] segments = value.split("/");
+        for (String segment : segments) {
+            String clean = segment == null ? "" : segment.trim()
+                    .replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", "_");
+            if (clean.length() == 0 || ".".equals(clean) || "..".equals(clean)) {
+                continue;
+            }
+            if (result.length() > 0) {
+                result.append('/');
+            }
+            result.append(clean);
+        }
+        return result.length() == 0 ? DEFAULT_SAVE_TEMPORARY_MEDIA_RELATIVE_PATH : result.toString();
+    }
+
     public static boolean keepTemporaryMediaInChat() { return getPrefs().getBoolean(KEY_KEEP_TEMPORARY_MEDIA_IN_CHAT, false); }
     public static void setKeepTemporaryMediaInChat(boolean v) { getPrefs().edit().putBoolean(KEY_KEEP_TEMPORARY_MEDIA_IN_CHAT, v).apply(); }
 
@@ -88,6 +147,9 @@ public class CustomSettings {
 
     public static boolean hideReadStatus() { return getPrefs().getBoolean(KEY_HIDE_READ_STATUS, false); }
     public static void setHideReadStatus(boolean v) { getPrefs().edit().putBoolean(KEY_HIDE_READ_STATUS, v).apply(); }
+
+    public static boolean hideStoryViews() { return getPrefs().getBoolean(KEY_HIDE_STORY_VIEWS, false); }
+    public static void setHideStoryViews(boolean v) { getPrefs().edit().putBoolean(KEY_HIDE_STORY_VIEWS, v).apply(); }
 
     public static boolean alertBeforeOpeningStory() { return getPrefs().getBoolean(KEY_ALERT_BEFORE_OPENING_STORY, false); }
     public static void setAlertBeforeOpeningStory(boolean v) { getPrefs().edit().putBoolean(KEY_ALERT_BEFORE_OPENING_STORY, v).apply(); }
@@ -137,6 +199,10 @@ public class CustomSettings {
 
     public static boolean shouldHideReadStatus(long dialogId, boolean fromInteraction) {
         return hideReadStatus() && !isGhostModeDisabledForDialog(dialogId) && !(fromInteraction && readOnInteract());
+    }
+
+    public static boolean shouldHideStoryViews(long dialogId) {
+        return (hideStoryViews() || hideReadStatus()) && !isGhostModeDisabledForDialog(dialogId);
     }
 
     public static HashSet<Long> getGhostModeExceptionDialogIds() {

@@ -351,11 +351,11 @@ public class StoryViewer implements NotificationCenter.NotificationCenterDelegat
         }
         long selfUserId = UserConfig.getInstance(currentAccount).getClientUserId();
         if (dialogIds.isEmpty()) {
-            return !CustomSettings.hideReadStatus();
+            return !CustomSettings.shouldHideStoryViews(0);
         }
         for (int i = 0, count = dialogIds.size(); i < count; i++) {
             long dialogId = dialogIds.get(i);
-            if (dialogId != selfUserId && !CustomSettings.shouldHideReadStatus(dialogId)) {
+            if (dialogId != selfUserId && !CustomSettings.shouldHideStoryViews(dialogId)) {
                 return true;
             }
         }
@@ -367,7 +367,7 @@ public class StoryViewer implements NotificationCenter.NotificationCenterDelegat
         builder.setTitle(LocaleController.getString(R.string.CustomSettingsStoryGhostAlertTitle));
         builder.setMessage(LocaleController.getString(R.string.CustomSettingsStoryGhostAlertMessage));
         builder.setPositiveButton(LocaleController.getString(R.string.CustomSettingsEnableGhostMode), (dialog, which) -> {
-            CustomSettings.setFullGhostMode(true);
+            CustomSettings.setHideStoryViews(true);
             long selfUserId = UserConfig.getInstance(currentAccount).getClientUserId();
             for (int i = 0, count = dialogIds.size(); i < count; i++) {
                 long dialogId = dialogIds.get(i);

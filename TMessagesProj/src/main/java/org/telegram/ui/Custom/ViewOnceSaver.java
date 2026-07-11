@@ -25,7 +25,6 @@ import java.util.concurrent.ConcurrentHashMap;
 
 public class ViewOnceSaver {
 
-    private static final String DIR_NAME = "TelegramViewOnce";
     private static final Set<String> savedMessages = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
     public static void saveViewOnceMediaSafely(File sourceFile, MessageObject msgObj) {
@@ -64,7 +63,7 @@ public class ViewOnceSaver {
         ContentValues values = new ContentValues();
         values.put(MediaStore.MediaColumns.DISPLAY_NAME, fileName);
         values.put(MediaStore.MediaColumns.MIME_TYPE, mimeType);
-        values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/" + DIR_NAME);
+        values.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/" + CustomSettings.saveTemporaryMediaRelativePath());
         values.put(MediaStore.MediaColumns.IS_PENDING, 1);
 
         Uri uri = resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values);
@@ -89,7 +88,7 @@ public class ViewOnceSaver {
     }
 
     private static void saveToDownloads(File sourceFile, String fileName) throws IOException {
-        File dir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), DIR_NAME);
+        File dir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), CustomSettings.saveTemporaryMediaRelativePath());
         if (!dir.exists() && !dir.mkdirs()) {
             throw new IOException("Unable to create " + dir.getAbsolutePath());
         }
