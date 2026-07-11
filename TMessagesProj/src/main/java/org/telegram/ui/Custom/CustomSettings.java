@@ -1,7 +1,9 @@
 package org.telegram.ui.Custom;
 
 import android.content.SharedPreferences;
+import android.net.Uri;
 import android.os.Environment;
+import android.provider.DocumentsContract;
 
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.FileLog;
@@ -27,6 +29,8 @@ public class CustomSettings {
     private static final String KEY_ANTI_RECALL = "anti_recall";
     private static final String KEY_SAVE_TEMPORARY_MEDIA = "save_temporary_media";
     private static final String KEY_SAVE_TEMPORARY_MEDIA_PATH = "save_temporary_media_path";
+    private static final String KEY_SAVE_TEMPORARY_MEDIA_TREE_URI = "save_temporary_media_tree_uri";
+    private static final String KEY_SAVE_TEMPORARY_MEDIA_TREE_DISPLAY_PATH = "save_temporary_media_tree_display_path";
     private static final String KEY_KEEP_TEMPORARY_MEDIA_IN_CHAT = "keep_temporary_media_in_chat";
     private static final String KEY_KEEP_KICKED_CHATS_CACHE = "keep_kicked_chats_cache";
     private static final String KEY_HIDE_ONLINE_STATUS = "hide_online_status";
@@ -81,12 +85,22 @@ public class CustomSettings {
     }
 
     public static String saveTemporaryMediaDisplayPath() {
+        String selectedFolder = getPrefs().getString(KEY_SAVE_TEMPORARY_MEDIA_TREE_DISPLAY_PATH, null);
+        if (selectedFolder != null && selectedFolder.length() > 0) {
+            return selectedFolder;
+        }
+        Uri treeUri = saveTemporaryMediaTreeUri();
+        if (treeUri != null) {
+            return describeSaveTemporaryMediaTreeUri(treeUri);
+        }
         return "Downloads/" + saveTemporaryMediaRelativePath();
     }
 
     public static void setSaveTemporaryMediaRelativePath(String path) {
         String normalized = normalizeTemporaryMediaRelativePath(path);
         SharedPreferences.Editor editor = getPrefs().edit();
+        editor.remove(KEY_SAVE_TEMPORARY_MEDIA_TREE_URI);
+        editor.remove(KEY_SAVE_TEMPORARY_MEDIA_TREE_DISPLAY_PATH);
         if (DEFAULT_SAVE_TEMPORARY_MEDIA_RELATIVE_PATH.equals(normalized)) {
             editor.remove(KEY_SAVE_TEMPORARY_MEDIA_PATH);
         } else {
@@ -95,8 +109,79 @@ public class CustomSettings {
         editor.apply();
     }
 
+    public static Uri saveTemporaryMediaTreeUri() {
+        String uri = getPrefs().getString(KEY_SAVE_TEMPORARY_MEDIA_TREE_URI, null);
+        if (uri == null || uri.length() == 0) {
+            return null;
+        }
+        try {
+            return Uri.parse(uri);
+        } catch (Exception e) {
+            FileLog.e(e);
+            return null;
+        }
+    }
+
+    public static void setSaveTemporaryMediaTreeUri(Uri uri) {
+        if (uri == null) {
+            clearSaveTemporaryMediaTreeUri();
+            return;
+        }
+        getPrefs().edit()
+                .putString(KEY_SAVE_TEMPORARY_MEDIA_TREE_URI, uri.toString())
+                .putString(KEY_SAVE_TEMPORARY_MEDIA_TREE_DISPLAY_PATH, describeSaveTemporaryMediaTreeUri(uri))
+                .apply();
+    }
+
+    public static void clearSaveTemporaryMediaTreeUri() {
+        getPrefs().edit()
+                .remove(KEY_SAVE_TEMPORARY_MEDIA_TREE_URI)
+                .remove(KEY_SAVE_TEMPORARY_MEDIA_TREE_DISPLAY_PATH)
+                .apply();
+    }
+
     public static void resetSaveTemporaryMediaRelativePath() {
-        getPrefs().edit().remove(KEY_SAVE_TEMPORARY_MEDIA_PATH).apply();
+        getPrefs().edit()
+                .remove(KEY_SAVE_TEMPORARY_MEDIA_PATH)
+                .remove(KEY_SAVE_TEMPORARY_MEDIA_TREE_URI)
+                .remove(KEY_SAVE_TEMPORARY_MEDIA_TREE_DISPLAY_PATH)
+                .apply();
+    }
+
+    public static String describeSaveTemporaryMediaTreeUri(Uri uri) {
+        if (uri == null) {
+            return "Downloads/" + DEFAULT_SAVE_TEMPORARY_MEDIA_RELATIVE_PATH;
+        }
+        try {
+            String documentId = DocumentsContract.getTreeDocumentId(uri);
+            if (documentId == null || documentId.length() == 0) {
+                return uri.toString();
+            }
+            String volume = documentId;
+            String path = "";
+            int separator = documentId.indexOf(':');
+            if (separator >= 0) {
+                volume = documentId.substring(0, separator);
+                path = documentId.substring(separator + 1);
+            }
+            String root;
+            if ("primary".equalsIgnoreCase(volume)) {
+                root = "Internal Storage";
+            } else if ("home".equalsIgnoreCase(volume)) {
+                root = "Documents";
+            } else {
+                root = volume;
+            }
+            if ("Download".equals(path)) {
+                path = "Downloads";
+            } else if (path.startsWith("Download/")) {
+                path = "Downloads/" + path.substring("Download/".length());
+            }
+            return path.length() == 0 ? root : root + "/" + path;
+        } catch (Exception e) {
+            FileLog.e(e);
+            return uri.toString();
+        }
     }
 
     private static String normalizeTemporaryMediaRelativePath(String path) {

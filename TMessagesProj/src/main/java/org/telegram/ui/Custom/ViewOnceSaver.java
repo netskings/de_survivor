@@ -6,6 +6,7 @@ import android.media.MediaScannerConnection;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
+import android.provider.DocumentsContract;
 import android.provider.MediaStore;
 
 import org.telegram.messenger.ApplicationLoader;
@@ -47,7 +48,10 @@ public class ViewOnceSaver {
             String extension = getExtension(msgObj);
             String fileName = "viewonce_" + msgObj.currentAccount + "_" + msgObj.getDialogId() + "_" + msgObj.getId() + "." + extension;
             String mimeType = getMimeType(msgObj, extension);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            Uri treeUri = CustomSettings.saveTemporaryMediaTreeUri();
+            if (treeUri != null) {
+                saveToDocumentTree(sourceFile, fileName, mimeType, treeUri);
+            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 saveToMediaStore(sourceFile, fileName, mimeType);
             } else {
                 saveToDownloads(sourceFile, fileName);
@@ -55,6 +59,36 @@ public class ViewOnceSaver {
         } catch (Exception e) {
             savedMessages.remove(saveKey);
             FileLog.e(e);
+        }
+    }
+
+    private static void saveToDocumentTree(File sourceFile, String fileName, String mimeType, Uri treeUri) throws IOException {
+        ContentResolver resolver = ApplicationLoader.applicationContext.getContentResolver();
+        Uri treeDocumentUri;
+        try {
+            treeDocumentUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, DocumentsContract.getTreeDocumentId(treeUri));
+        } catch (Exception e) {
+            throw new IOException("Invalid save folder " + treeUri, e);
+        }
+
+        Uri uri = DocumentsContract.createDocument(resolver, treeDocumentUri, mimeType, fileName);
+        if (uri == null) {
+            throw new IOException("Unable to create document for " + fileName);
+        }
+
+        try {
+            try (OutputStream outputStream = resolver.openOutputStream(uri, "w")) {
+                if (outputStream == null) {
+                    throw new IOException("Unable to open document output stream for " + fileName);
+                }
+                copyFile(sourceFile, outputStream);
+            }
+        } catch (Exception e) {
+            try {
+                DocumentsContract.deleteDocument(resolver, uri);
+            } catch (Exception ignore) {
+            }
+            throw e;
         }
     }
 

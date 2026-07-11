@@ -6,6 +6,7 @@ import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.text.InputType;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -15,12 +16,14 @@ import android.view.inputmethod.EditorInfo;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
 import org.telegram.messenger.AndroidUtilities;
+import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
 import org.telegram.ui.ActionBar.ActionBar;
@@ -37,6 +40,8 @@ import org.telegram.ui.Components.RecyclerListView;
 import org.telegram.ui.Feed.FeedSettingsActivity;
 
 public class CustomSettingsActivity extends BaseFragment {
+
+    private static final int REQUEST_SAVE_TEMPORARY_MEDIA_FOLDER = 4242;
 
     private int rowCount;
     private ListAdapter listAdapter;
@@ -145,6 +150,33 @@ public class CustomSettingsActivity extends BaseFragment {
     }
 
     @Override
+    public void onActivityResultFragment(int requestCode, int resultCode, Intent data) {
+        super.onActivityResultFragment(requestCode, resultCode, data);
+        if (requestCode != REQUEST_SAVE_TEMPORARY_MEDIA_FOLDER) {
+            return;
+        }
+        Activity activity = getParentActivity();
+        if (resultCode != Activity.RESULT_OK || data == null || data.getData() == null || activity == null) {
+            return;
+        }
+        Uri uri = data.getData();
+        int takeFlags = data.getFlags() & (Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        if (takeFlags == 0) {
+            takeFlags = Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION;
+        }
+        try {
+            activity.getContentResolver().takePersistableUriPermission(uri, takeFlags);
+        } catch (Exception e) {
+            FileLog.e(e);
+        }
+        CustomSettings.setSaveTemporaryMediaTreeUri(uri);
+        if (listAdapter != null) {
+            listAdapter.notifyDataSetChanged();
+        }
+        Toast.makeText(activity, LocaleController.getString(R.string.CustomSettingsSaveTemporaryMediaFolderSelected), Toast.LENGTH_SHORT).show();
+    }
+
+    @Override
     public View createView(Context context) {
 
         actionBar.setBackButtonImage(R.drawable.ic_ab_back);
@@ -196,11 +228,59 @@ public class CustomSettingsActivity extends BaseFragment {
             return;
         }
 
+        AlertDialog.Builder builder = new AlertDialog.Builder(activity);
+        builder.setTitle(LocaleController.getString(R.string.CustomSettingsSaveTemporaryMediaPathTitle));
+        builder.setMessage(LocaleController.formatString(R.string.CustomSettingsSaveTemporaryMediaPathMessage, CustomSettings.saveTemporaryMediaDisplayPath()));
+        builder.setItems(new CharSequence[]{
+                LocaleController.getString(R.string.CustomSettingsSaveTemporaryMediaChooseFolder),
+                LocaleController.getString(R.string.CustomSettingsSaveTemporaryMediaManualPath),
+                LocaleController.getString(R.string.CustomSettingsSaveTemporaryMediaPathReset)
+        }, (dialog, which) -> {
+            if (which == 0) {
+                openSaveTemporaryMediaFolderPicker();
+            } else if (which == 1) {
+                showSaveTemporaryMediaManualPathDialog();
+            } else if (which == 2) {
+                CustomSettings.resetSaveTemporaryMediaRelativePath();
+                if (listAdapter != null) {
+                    listAdapter.notifyDataSetChanged();
+                }
+            }
+        });
+        builder.setNegativeButton(LocaleController.getString(R.string.Cancel), null);
+        showDialog(builder.create());
+    }
+
+    private void openSaveTemporaryMediaFolderPicker() {
+        Activity activity = getParentActivity();
+        if (activity == null) {
+            return;
+        }
+        try {
+            Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            intent.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            intent.addFlags(Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
+            intent.addFlags(Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
+            intent.putExtra("android.content.extra.SHOW_ADVANCED", true);
+            startActivityForResult(intent, REQUEST_SAVE_TEMPORARY_MEDIA_FOLDER);
+        } catch (Exception e) {
+            FileLog.e(e);
+            Toast.makeText(activity, LocaleController.getString(R.string.CustomSettingsSaveTemporaryMediaFolderPickerError), Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void showSaveTemporaryMediaManualPathDialog() {
+        Activity activity = getParentActivity();
+        if (activity == null) {
+            return;
+        }
+
         LinearLayout linearLayout = new LinearLayout(activity);
         linearLayout.setOrientation(LinearLayout.VERTICAL);
 
         TextView message = new TextView(activity);
-        message.setText(LocaleController.getString(R.string.CustomSettingsSaveTemporaryMediaPathMessage));
+        message.setText(LocaleController.getString(R.string.CustomSettingsSaveTemporaryMediaManualPathMessage));
         message.setTextColor(Theme.getColor(Theme.key_dialogTextBlack));
         message.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
         message.setGravity(Gravity.LEFT);
@@ -208,7 +288,7 @@ public class CustomSettingsActivity extends BaseFragment {
                 LayoutHelper.MATCH_PARENT, LayoutHelper.WRAP_CONTENT, 24, 0, 24, 12));
 
         EditTextBoldCursor editText = new EditTextBoldCursor(activity);
-        editText.setText(CustomSettings.saveTemporaryMediaDisplayPath());
+        editText.setText("Downloads/" + CustomSettings.saveTemporaryMediaRelativePath());
         editText.setSelectAllOnFocus(true);
         editText.setSingleLine(true);
         editText.setInputType(InputType.TYPE_CLASS_TEXT);
