@@ -28,6 +28,12 @@ public class CustomSettings {
     private static final String KEY_BYPASS_CONTENT_PROTECTION = "bypass_content_protection";
     private static final String KEY_ANTI_RECALL = "anti_recall";
     private static final String KEY_KEEP_MESSAGE_EDIT_HISTORY = "keep_message_edit_history";
+    private static final String KEY_EDITED_MESSAGE_LABEL = "edited_message_label";
+    private static final String KEY_EDITED_MESSAGE_LABEL_COLOR = "edited_message_label_color";
+    private static final String KEY_EDITED_MESSAGE_LABEL_ICON = "edited_message_label_icon";
+    private static final String KEY_DELETED_MESSAGE_LABEL = "deleted_message_label";
+    private static final String KEY_DELETED_MESSAGE_LABEL_COLOR = "deleted_message_label_color";
+    private static final String KEY_DELETED_MESSAGE_LABEL_ICON = "deleted_message_label_icon";
     private static final String KEY_SAVE_TEMPORARY_MEDIA = "save_temporary_media";
     private static final String KEY_SAVE_TEMPORARY_MEDIA_PATH = "save_temporary_media_path";
     private static final String KEY_SAVE_TEMPORARY_MEDIA_TREE_URI = "save_temporary_media_tree_uri";
@@ -80,6 +86,28 @@ public class CustomSettings {
 
     public static boolean keepMessageEditHistory() { return getPrefs().getBoolean(KEY_KEEP_MESSAGE_EDIT_HISTORY, true); }
     public static void setKeepMessageEditHistory(boolean v) { getPrefs().edit().putBoolean(KEY_KEEP_MESSAGE_EDIT_HISTORY, v).apply(); }
+
+    public static String editedMessageLabel(String defaultValue) { return getPrefs().getString(KEY_EDITED_MESSAGE_LABEL, defaultValue); }
+    public static void setEditedMessageLabel(String value) { getPrefs().edit().putString(KEY_EDITED_MESSAGE_LABEL, value).apply(); }
+    public static int editedMessageLabelColor() { return getPrefs().getInt(KEY_EDITED_MESSAGE_LABEL_COLOR, 0); }
+    public static void setEditedMessageLabelColor(int value) { getPrefs().edit().putInt(KEY_EDITED_MESSAGE_LABEL_COLOR, value).apply(); }
+    public static int editedMessageLabelIcon() { return getPrefs().getInt(KEY_EDITED_MESSAGE_LABEL_ICON, 0); }
+    public static void setEditedMessageLabelIcon(int value) { getPrefs().edit().putInt(KEY_EDITED_MESSAGE_LABEL_ICON, value).apply(); }
+
+    public static String deletedMessageLabel() { return getPrefs().getString(KEY_DELETED_MESSAGE_LABEL, ""); }
+    public static void setDeletedMessageLabel(String value) { getPrefs().edit().putString(KEY_DELETED_MESSAGE_LABEL, value).apply(); }
+    public static int deletedMessageLabelColor() { return getPrefs().getInt(KEY_DELETED_MESSAGE_LABEL_COLOR, 0); }
+    public static void setDeletedMessageLabelColor(int value) { getPrefs().edit().putInt(KEY_DELETED_MESSAGE_LABEL_COLOR, value).apply(); }
+    public static int deletedMessageLabelIcon() { return getPrefs().getInt(KEY_DELETED_MESSAGE_LABEL_ICON, 0); }
+    public static void setDeletedMessageLabelIcon(int value) { getPrefs().edit().putInt(KEY_DELETED_MESSAGE_LABEL_ICON, value).apply(); }
+
+    public static void resetEditedMessageLabel() {
+        getPrefs().edit().remove(KEY_EDITED_MESSAGE_LABEL).remove(KEY_EDITED_MESSAGE_LABEL_COLOR).remove(KEY_EDITED_MESSAGE_LABEL_ICON).apply();
+    }
+
+    public static void resetDeletedMessageLabel() {
+        getPrefs().edit().remove(KEY_DELETED_MESSAGE_LABEL).remove(KEY_DELETED_MESSAGE_LABEL_COLOR).remove(KEY_DELETED_MESSAGE_LABEL_ICON).apply();
+    }
 
     public static boolean saveTemporaryMedia() { return getPrefs().getBoolean(KEY_SAVE_TEMPORARY_MEDIA, false); }
     public static void setSaveTemporaryMedia(boolean v) { getPrefs().edit().putBoolean(KEY_SAVE_TEMPORARY_MEDIA, v).apply(); }

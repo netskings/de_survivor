@@ -4,9 +4,12 @@ import static org.telegram.messenger.LocaleController.getString;
 
 import android.app.Activity;
 import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.net.Uri;
+import android.text.TextUtils;
 import android.text.InputType;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -81,6 +84,8 @@ public class CustomSettingsActivity extends BaseFragment {
     private int restrictionsHeaderRow;
     private int antiRecallRow;
     private int antiRecallInfoRow;
+    private int messageLabelsRow;
+    private int messageLabelsInfoRow;
     private int keepMessageEditHistoryRow;
     private int keepMessageEditHistoryInfoRow;
     private int saveTemporaryMediaRow;
@@ -130,6 +135,8 @@ public class CustomSettingsActivity extends BaseFragment {
         restrictionsHeaderRow = rowCount++;
         antiRecallRow = rowCount++;
         antiRecallInfoRow = rowCount++;
+        messageLabelsRow = rowCount++;
+        messageLabelsInfoRow = rowCount++;
         keepMessageEditHistoryRow = rowCount++;
         keepMessageEditHistoryInfoRow = rowCount++;
         saveTemporaryMediaRow = rowCount++;
@@ -332,6 +339,129 @@ public class CustomSettingsActivity extends BaseFragment {
         AndroidUtilities.runOnUIThread(() -> AndroidUtilities.showKeyboard(editText), 200);
     }
 
+    private void showMessageLabelOptions(boolean edited) {
+        Activity activity = getParentActivity();
+        if (activity == null) {
+            return;
+        }
+        AlertDialog.Builder builder = new AlertDialog.Builder(activity);
+        builder.setTitle(getString(edited ? R.string.CustomSettingsEditedMessageLabel : R.string.CustomSettingsDeletedMessageLabel));
+        builder.setItems(new CharSequence[]{
+                getString(R.string.CustomSettingsMessageLabelTextAndColor),
+                getString(R.string.CustomSettingsMessageLabelIcon),
+                getString(R.string.CustomSettingsMessageLabelReset)
+        }, (dialog, which) -> {
+            if (which == 0) {
+                showMessageLabelTextAndColorDialog(edited);
+            } else if (which == 1) {
+                showMessageLabelIconDialog(edited);
+            } else {
+                if (edited) {
+                    CustomSettings.resetEditedMessageLabel();
+                } else {
+                    CustomSettings.resetDeletedMessageLabel();
+                }
+                if (listAdapter != null) {
+                    listAdapter.notifyDataSetChanged();
+                }
+            }
+        });
+        builder.setNegativeButton(getString(R.string.Cancel), null);
+        showDialog(builder.create());
+    }
+
+    private void showMessageLabelTextAndColorDialog(boolean edited) {
+        Activity activity = getParentActivity();
+        if (activity == null) {
+            return;
+        }
+        LinearLayout layout = new LinearLayout(activity);
+        layout.setOrientation(LinearLayout.VERTICAL);
+
+        EditTextBoldCursor textField = createDialogInput(activity, getString(R.string.CustomSettingsMessageLabelTextHint));
+        textField.setText(edited ? CustomSettings.editedMessageLabel(getString(R.string.EditedMessage)) : CustomSettings.deletedMessageLabel());
+        layout.addView(textField, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48, 24, 12, 24, 0));
+
+        EditTextBoldCursor colorField = createDialogInput(activity, getString(R.string.CustomSettingsMessageLabelColorHint));
+        int color = edited ? CustomSettings.editedMessageLabelColor() : CustomSettings.deletedMessageLabelColor();
+        colorField.setText(color == 0 ? "" : String.format("#%08X", color));
+        layout.addView(colorField, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 48, 24, 0, 24, 12));
+
+        AlertDialog.Builder builder = new AlertDialog.Builder(activity);
+        builder.setTitle(getString(edited ? R.string.CustomSettingsEditedMessageLabel : R.string.CustomSettingsDeletedMessageLabel));
+        builder.setView(layout);
+        builder.setPositiveButton(getString(R.string.CustomSettingsMessageLabelApply), null);
+        builder.setNegativeButton(getString(R.string.Cancel), null);
+        AlertDialog dialog = builder.create();
+        dialog.setOnShowListener(ignore -> dialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener(v -> {
+            int parsedColor = 0;
+            String colorText = colorField.getText().toString().trim();
+            if (!TextUtils.isEmpty(colorText)) {
+                try {
+                    parsedColor = Color.parseColor(colorText);
+                } catch (IllegalArgumentException e) {
+                    colorField.setError(getString(R.string.CustomSettingsMessageLabelColorError));
+                    return;
+                }
+            }
+            if (edited) {
+                CustomSettings.setEditedMessageLabel(textField.getText().toString().trim());
+                CustomSettings.setEditedMessageLabelColor(parsedColor);
+            } else {
+                CustomSettings.setDeletedMessageLabel(textField.getText().toString().trim());
+                CustomSettings.setDeletedMessageLabelColor(parsedColor);
+            }
+            if (listAdapter != null) {
+                listAdapter.notifyDataSetChanged();
+            }
+            dialog.dismiss();
+        }));
+        showDialog(dialog);
+        textField.requestFocus();
+        AndroidUtilities.runOnUIThread(() -> AndroidUtilities.showKeyboard(textField), 200);
+    }
+
+    private EditTextBoldCursor createDialogInput(Activity activity, String hint) {
+        EditTextBoldCursor editText = new EditTextBoldCursor(activity);
+        editText.setSingleLine(true);
+        editText.setTextSize(TypedValue.COMPLEX_UNIT_DIP, 16);
+        editText.setTextColor(Theme.getColor(Theme.key_dialogTextBlack));
+        editText.setHintColor(Theme.getColor(Theme.key_groupcreate_hintText));
+        editText.setHintText(hint);
+        editText.setBackgroundDrawable(null);
+        editText.setLineColors(Theme.getColor(Theme.key_windowBackgroundWhiteInputField), Theme.getColor(Theme.key_windowBackgroundWhiteInputFieldActivated), Theme.getColor(Theme.key_text_RedRegular));
+        editText.setPadding(0, 0, 0, 0);
+        return editText;
+    }
+
+    private void showMessageLabelIconDialog(boolean edited) {
+        Activity activity = getParentActivity();
+        if (activity == null) {
+            return;
+        }
+        AlertDialog.Builder builder = new AlertDialog.Builder(activity);
+        builder.setTitle(getString(R.string.CustomSettingsMessageLabelIcon));
+        builder.setItems(new CharSequence[]{
+                getString(R.string.CustomSettingsMessageLabelIconDefault),
+                getString(R.string.CustomSettingsMessageLabelIconNone),
+                getString(R.string.CustomSettingsMessageLabelIconEdit),
+                getString(R.string.CustomSettingsMessageLabelIconDelete),
+                getString(R.string.CustomSettingsMessageLabelIconPin),
+                getString(R.string.CustomSettingsMessageLabelIconCheck)
+        }, (dialog, which) -> {
+            if (edited) {
+                CustomSettings.setEditedMessageLabelIcon(which);
+            } else {
+                CustomSettings.setDeletedMessageLabelIcon(which);
+            }
+            if (listAdapter != null) {
+                listAdapter.notifyDataSetChanged();
+            }
+        });
+        builder.setNegativeButton(getString(R.string.Cancel), null);
+        showDialog(builder.create());
+    }
+
     @NonNull
     private RecyclerListView getRecyclerListView(Context context) {
         listAdapter = new ListAdapter(context);
@@ -408,6 +538,11 @@ public class CustomSettingsActivity extends BaseFragment {
                 CustomSettings.setAntiRecall(val);
                 if (view instanceof TextCheckCell)
                     ((TextCheckCell) view).setChecked(val);
+            } else if (position == messageLabelsRow) {
+                AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+                builder.setTitle(getString(R.string.CustomSettingsMessageLabels));
+                builder.setItems(new CharSequence[]{getString(R.string.CustomSettingsEditedMessageLabel), getString(R.string.CustomSettingsDeletedMessageLabel)}, (dialog, which) -> showMessageLabelOptions(which == 0));
+                showDialog(builder.create());
             } else if (position == keepMessageEditHistoryRow) {
                 boolean val = !CustomSettings.keepMessageEditHistory();
                 CustomSettings.setKeepMessageEditHistory(val);
@@ -491,6 +626,8 @@ public class CustomSettingsActivity extends BaseFragment {
             if (pos == restrictionsHeaderRow) return TYPE_HEADER;
             if (pos == antiRecallRow) return TYPE_CHECK;
             if (pos == antiRecallInfoRow) return TYPE_INFO;
+            if (pos == messageLabelsRow) return TYPE_TEXT_CELL;
+            if (pos == messageLabelsInfoRow) return TYPE_INFO;
             if (pos == keepMessageEditHistoryRow) return TYPE_CHECK;
             if (pos == keepMessageEditHistoryInfoRow) return TYPE_INFO;
             if (pos == saveTemporaryMediaRow) return TYPE_CHECK;
@@ -673,6 +810,9 @@ public class CustomSettingsActivity extends BaseFragment {
                     if (pos == antiRecallInfoRow) {
                         cell.setText(getString(R.string.CustomSettingsAntiRecallInfo));
                     }
+                    if (pos == messageLabelsInfoRow) {
+                        cell.setText(getString(R.string.CustomSettingsMessageLabelsInfo));
+                    }
                     if (pos == keepMessageEditHistoryInfoRow) {
                         cell.setText(getString(R.string.CustomSettingsKeepMessageEditHistoryInfo));
                     }
@@ -702,6 +842,9 @@ public class CustomSettingsActivity extends BaseFragment {
                         int count = CustomSettings.ghostModeExceptionsCount();
                         cell.setTextAndValue(getString(R.string.CustomSettingsGhostModeExceptions),
                                 count == 0 ? "" : LocaleController.formatPluralString("Chats", count), true);
+                    }
+                    if (pos == messageLabelsRow) {
+                        cell.setTextAndValue(getString(R.string.CustomSettingsMessageLabels), getString(R.string.CustomSettingsMessageLabelsValue), true);
                     }
                     if (pos == saveTemporaryMediaPathRow) {
                         cell.setTextAndValue(getString(R.string.CustomSettingsSaveTemporaryMediaPath),

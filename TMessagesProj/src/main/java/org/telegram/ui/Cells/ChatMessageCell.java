@@ -70,6 +70,7 @@ import android.text.TextUtils;
 import android.text.style.CharacterStyle;
 import android.text.style.ClickableSpan;
 import android.text.style.DynamicDrawableSpan;
+import android.text.style.ForegroundColorSpan;
 import android.text.style.LeadingMarginSpan;
 import android.text.style.StrikethroughSpan;
 import android.text.style.URLSpan;
@@ -13191,23 +13192,50 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     private static final class RecalledStrikethroughSpan extends StrikethroughSpan {
     }
 
-    private void appendRecalledTimeIcon(SpannableStringBuilder builder) {
+    private int getMessageLabelIcon(int option, int defaultIcon) {
+        if (option == 1) {
+            return 0;
+        } else if (option == 2) {
+            return R.drawable.msg_edit;
+        } else if (option == 3) {
+            return R.drawable.msg_delete;
+        } else if (option == 4) {
+            return R.drawable.msg_pin;
+        } else if (option == 5) {
+            return R.drawable.msg_check_s;
+        }
+        return defaultIcon;
+    }
+
+    private void appendMessageLabel(SpannableStringBuilder builder, String label, int color, int iconOption, int defaultIcon) {
+        if (!TextUtils.isEmpty(label)) {
+            int start = builder.length();
+            builder.append(label).append(" ");
+            if (color != 0) {
+                builder.setSpan(new ForegroundColorSpan(color), start, builder.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+        }
+        int icon = getMessageLabelIcon(iconOption, defaultIcon);
+        if (icon == 0) {
+            return;
+        }
         int start = builder.length();
         builder.append("d");
-        ColoredImageSpan span = new ColoredImageSpan(R.drawable.msg_delete, ColoredImageSpan.ALIGN_CENTER);
+        ColoredImageSpan span = new ColoredImageSpan(icon, ColoredImageSpan.ALIGN_CENTER);
         span.setSize(dp(11));
-        span.setOverrideColor(Theme.getColor(Theme.key_text_RedRegular, resourcesProvider));
+        span.setOverrideColor(color != 0 ? color : Theme.getColor(Theme.key_text_RedRegular, resourcesProvider));
         builder.setSpan(span, start, builder.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
     }
 
     private CharSequence createRecalledTimeString(String time, boolean edited) {
         SpannableStringBuilder builder = new SpannableStringBuilder();
         if (edited) {
-            builder.append(getString(R.string.EditedMessage)).append(" ").append(time).append(" ");
-            appendRecalledTimeIcon(builder);
+            appendMessageLabel(builder, CustomSettings.editedMessageLabel(getString(R.string.EditedMessage)), CustomSettings.editedMessageLabelColor(), CustomSettings.editedMessageLabelIcon(), 0);
+            builder.append(time).append(" ");
+            appendMessageLabel(builder, CustomSettings.deletedMessageLabel(), CustomSettings.deletedMessageLabelColor(), CustomSettings.deletedMessageLabelIcon(), R.drawable.msg_delete);
         } else {
             builder.append(time).append(" ");
-            appendRecalledTimeIcon(builder);
+            appendMessageLabel(builder, CustomSettings.deletedMessageLabel(), CustomSettings.deletedMessageLabelColor(), CustomSettings.deletedMessageLabelIcon(), R.drawable.msg_delete);
         }
         return builder;
     }
@@ -18432,7 +18460,10 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         } else if (edited && currentMessageObject.isRecalled()) {
             timeString = createRecalledTimeString(LocaleController.getInstance().getFormatterDay().format((long) (messageObject.messageOwner.date) * 1000), true);
         } else if (edited) {
-            timeString = getString(R.string.EditedMessage) + " " + LocaleController.getInstance().getFormatterDay().format((long) (messageObject.messageOwner.date) * 1000);
+            SpannableStringBuilder builder = new SpannableStringBuilder();
+            appendMessageLabel(builder, CustomSettings.editedMessageLabel(getString(R.string.EditedMessage)), CustomSettings.editedMessageLabelColor(), CustomSettings.editedMessageLabelIcon(), 0);
+            builder.append(LocaleController.getInstance().getFormatterDay().format((long) (messageObject.messageOwner.date) * 1000));
+            timeString = builder;
         } else if (currentMessageObject.isRecalled()) {
             timeString = createRecalledTimeString(LocaleController.getInstance().getFormatterDay().format((long) (messageObject.messageOwner.date) * 1000), false);
         } else if (currentMessageObject.isSaved && currentMessageObject.messageOwner.fwd_from != null && (currentMessageObject.messageOwner.fwd_from.date != 0 || currentMessageObject.messageOwner.fwd_from.saved_date != 0)) {
