@@ -1295,18 +1295,9 @@ public class FeedController implements NotificationCenter.NotificationCenterDele
     }
 
     private boolean isBanned(FeedItem item) {
-        List<CustomSettings.BanGroup> groups = CustomSettings.getBanGroups();
-        for (CustomSettings.BanGroup group : groups) {
-            if (!group.enabled) continue;
-            for (MessageObject msg : item.messages) {
-                String text = msg.messageOwner.message;
-                if (text == null || text.isEmpty()) continue;
-                String lowerText = text.toLowerCase();
-                for (String phrase : group.phrases) {
-                    if (phrase != null && !phrase.isEmpty() && lowerText.contains(phrase.toLowerCase())) {
-                        return true;
-                    }
-                }
+        for (MessageObject message : item.messages) {
+            if (CustomSettings.isBannedMessage(message)) {
+                return true;
             }
         }
         return false;

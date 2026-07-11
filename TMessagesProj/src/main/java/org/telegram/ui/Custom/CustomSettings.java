@@ -7,13 +7,16 @@ import android.provider.DocumentsContract;
 
 import org.telegram.messenger.ApplicationLoader;
 import org.telegram.messenger.FileLog;
+import org.telegram.messenger.MessageObject;
 import org.telegram.ui.Feed.FeedAlbumMode;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 
@@ -399,6 +402,8 @@ public class CustomSettings {
     }
 
     private static final String KEY_BAN_GROUPS = "ban_groups_json";
+    private static String cachedBanGroupsJson;
+    private static List<String> cachedNormalizedBannedPhrases;
 
     public static List<BanGroup> getBanGroups() {
         List<BanGroup> result = new ArrayList<>();
@@ -432,8 +437,94 @@ public class CustomSettings {
                 obj.put("phrases", pArr);
                 arr.put(obj);
             }
-            getPrefs().edit().putString(KEY_BAN_GROUPS, arr.toString()).apply();
+            String json = arr.toString();
+            synchronized (CustomSettings.class) {
+                cachedBanGroupsJson = null;
+                cachedNormalizedBannedPhrases = null;
+            }
+            getPrefs().edit().putString(KEY_BAN_GROUPS, json).apply();
         } catch (Exception e) { FileLog.e(e); }
+    }
+
+    public static boolean isBannedMessage(MessageObject messageObject) {
+        if (messageObject == null || messageObject.messageOwner == null) {
+            return false;
+        }
+        String message = messageObject.messageOwner.message;
+        if (messageObject.caption != null && messageObject.caption.length() > 0 && !messageObject.caption.toString().equals(message)) {
+            message = (message == null ? "" : message + "\n") + messageObject.caption;
+        }
+        return containsBannedPhrase(message);
+    }
+
+    public static boolean containsBannedPhrase(CharSequence text) {
+        String normalizedText = normalizeBannedPhrase(text == null ? null : text.toString());
+        if (normalizedText.isEmpty()) {
+            return false;
+        }
+        for (String phrase : getNormalizedBannedPhrases()) {
+            if (containsNormalizedPhrase(normalizedText, phrase)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static List<String> getNormalizedBannedPhrases() {
+        String json = getPrefs().getString(KEY_BAN_GROUPS, "");
+        synchronized (CustomSettings.class) {
+            if (json.equals(cachedBanGroupsJson) && cachedNormalizedBannedPhrases != null) {
+                return cachedNormalizedBannedPhrases;
+            }
+            ArrayList<String> phrases = new ArrayList<>();
+            for (BanGroup group : getBanGroups()) {
+                if (group == null || !group.enabled || group.phrases == null) {
+                    continue;
+                }
+                for (String phrase : group.phrases) {
+                    String normalizedPhrase = normalizeBannedPhrase(phrase);
+                    if (!normalizedPhrase.isEmpty() && !phrases.contains(normalizedPhrase)) {
+                        phrases.add(normalizedPhrase);
+                    }
+                }
+            }
+            cachedBanGroupsJson = json;
+            cachedNormalizedBannedPhrases = phrases;
+            return phrases;
+        }
+    }
+
+    public static String normalizeBannedPhrase(String text) {
+        if (text == null) {
+            return "";
+        }
+        String normalized = Normalizer.normalize(text, Normalizer.Form.NFKC)
+                .replace('\u00a0', ' ')
+                .replace('\u2018', '\'')
+                .replace('\u2019', '\'')
+                .replace('\u2013', '-')
+                .replace('\u2014', '-')
+                .replaceAll("\\p{Cf}", "")
+                .replaceAll("\\s+", " ")
+                .trim();
+        return normalized.toLowerCase(Locale.ROOT);
+    }
+
+    private static boolean containsNormalizedPhrase(String text, String phrase) {
+        if (phrase.indexOf(' ') >= 0) {
+            return text.contains(phrase);
+        }
+        int index = text.indexOf(phrase);
+        while (index >= 0) {
+            int end = index + phrase.length();
+            boolean startBoundary = index == 0 || !Character.isLetterOrDigit(text.charAt(index - 1));
+            boolean endBoundary = end == text.length() || !Character.isLetterOrDigit(text.charAt(end));
+            if (startBoundary && endBoundary) {
+                return true;
+            }
+            index = text.indexOf(phrase, index + 1);
+        }
+        return false;
     }
 
     private static final String KEY_HIDDEN_LOG = "hidden_log_json";

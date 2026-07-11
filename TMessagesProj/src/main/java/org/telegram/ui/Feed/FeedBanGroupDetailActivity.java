@@ -119,7 +119,15 @@ public class FeedBanGroupDetailActivity extends BaseFragment {
         builder.setView(inputCell);
         builder.setPositiveButton(getString(R.string.Add), (dialog, which) -> {
             String phrase = inputCell.getText().toString().trim();
-            if (!phrase.isEmpty() && !group.phrases.contains(phrase)) {
+            boolean duplicate = false;
+            String normalizedPhrase = CustomSettings.normalizeBannedPhrase(phrase);
+            for (String existingPhrase : group.phrases) {
+                if (normalizedPhrase.equals(CustomSettings.normalizeBannedPhrase(existingPhrase))) {
+                    duplicate = true;
+                    break;
+                }
+            }
+            if (!normalizedPhrase.isEmpty() && !duplicate) {
                 group.phrases.add(phrase);
                 saveAndRefresh();
             }

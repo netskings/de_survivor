@@ -20662,6 +20662,11 @@ public class ChatActivity extends BaseFragment implements
                     }
                 }
 
+                if (shouldHideBannedChannelMessage(obj)) {
+                    messagesDict[loadIndex].put(messageId, obj);
+                    continue;
+                }
+
                 if (!chatWasReset && messageId != 0 && messageId == last_message_id) {
                     forwardEndReached[loadIndex] = true;
                 }
@@ -24818,10 +24823,26 @@ public class ChatActivity extends BaseFragment implements
     }
 
     private ArrayList<MessageObject> notPushedSponsoredMessages;
+
+    private boolean shouldHideBannedChannelMessage(MessageObject messageObject) {
+        return currentChat != null && ChatObject.isChannel(currentChat) && !currentChat.megagroup &&
+                messageObject != null && !messageObject.isOutOwner() && CustomSettings.isBannedMessage(messageObject);
+    }
+
     private void processNewMessages(ArrayList<MessageObject> arr) {
         processNewMessages(arr, true);
     }
     private void processNewMessages(ArrayList<MessageObject> arr, final boolean animatedFromBottom) {
+        if (currentChat != null && ChatObject.isChannel(currentChat) && !currentChat.megagroup) {
+            for (int i = arr.size() - 1; i >= 0; i--) {
+                if (shouldHideBannedChannelMessage(arr.get(i))) {
+                    arr.remove(i);
+                }
+            }
+            if (arr.isEmpty()) {
+                return;
+            }
+        }
         FileLog.d("processNewMessages " + arr.size() + " messages");
 
         if (arr.size() == 1 && UserObject.isBot(currentUser) && BotForumHelper.getInstance(currentAccount).isStreamingTopic(getDialogId(), getTopicId())) {
