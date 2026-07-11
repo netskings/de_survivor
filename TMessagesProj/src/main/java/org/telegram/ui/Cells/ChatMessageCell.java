@@ -547,6 +547,10 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     }
 
     public interface ChatMessageCellDelegate {
+        default boolean shouldRedactReply(MessageObject replyMessage) {
+            return false;
+        }
+
         default boolean isReplyOrSelf() {
             return false;
         }
@@ -19144,6 +19148,8 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                 }
 
                 CharSequence stringFinalText = null;
+                final boolean redactReply = delegate != null && messageObject.replyMessageObject != null &&
+                        delegate.shouldRedactReply(messageObject.replyMessageObject);
 
                 CharSequence name = null;
                 hasReplyQuote = messageObject.messageOwner.reply_to != null && (messageObject.messageOwner.reply_to.flags & 64) != 0 && messageObject.messageOwner.reply_to.quote_text != null;
@@ -19488,6 +19494,13 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
                         stringFinalText = TextUtils.ellipsize(stringBuilder, textPaint, maxWidth, TextUtils.TruncateAt.END);
                         forwardNameCenterX = (int) Math.ceil(Theme.chat_replyNamePaint.measureText(ellipsizedText, 0, ellipsizedText.length())) / 2;
                     }
+                }
+                if (redactReply) {
+                    replyImageReceiver.setImageBitmap((Drawable) null);
+                    needReplyImage = false;
+                    currentReplyPhoto = null;
+                    name = getString(R.string.LocalMessageFilterReply);
+                    stringFinalText = getString(R.string.LocalMessageFilterReplyHidden);
                 }
                 CharSequence stringFinalName = name;
                 try {

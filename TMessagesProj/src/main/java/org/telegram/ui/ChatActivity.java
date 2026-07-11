@@ -166,6 +166,7 @@ import org.telegram.messenger.ImageReceiver;
 import org.telegram.messenger.LanguageDetector;
 import org.telegram.messenger.LiteMode;
 import org.telegram.messenger.LocaleController;
+import org.telegram.messenger.LocalMessageFilterEngine;
 import org.telegram.messenger.MediaController;
 import org.telegram.messenger.MediaDataController;
 import org.telegram.messenger.MessageObject;
@@ -237,6 +238,7 @@ import org.telegram.ui.Cells.ChatActionCell;
 import org.telegram.ui.Cells.ChatLoadingCell;
 import org.telegram.ui.Cells.ChatMessageCell;
 import org.telegram.ui.Cells.ChatUnreadCell;
+import org.telegram.ui.Cells.LocalMessageFilterCell;
 import org.telegram.ui.Cells.CheckBoxCell;
 import org.telegram.ui.Cells.ContextLinkCell;
 import org.telegram.ui.Cells.DialogCell;
@@ -380,6 +382,9 @@ public class ChatActivity extends BaseFragment implements
     protected TLRPC.EncryptedChat currentEncryptedChat;
     private boolean userBlocked;
     private boolean lastHideBlockedUsersMessages = CustomSettings.hideBlockedUsersMessages();
+    private String lastLocalMessageFilterRevision = LocalMessageFilterEngine.getRevision();
+    private String lastBannedPhrasesRevision = CustomSettings.banGroupsRevision();
+    private final HashSet<String> locallyRevealedMessages = new HashSet<>();
 
     private long chatInviterId;
 
@@ -16583,6 +16588,16 @@ public class ChatActivity extends BaseFragment implements
         forceScrollToFirst = forcePinnedMessageId > 0;
         wasManualScroll = true;
         MessageObject object = chatAdapter.isFiltered ? (filteredMessagesDict != null ? filteredMessagesDict.get(id) : null) : messagesDict[loadIndex].get(id);
+        if (object != null) {
+            if (locallyRevealedMessages.contains(localFilterMessageKey(object)) && object.getGroupId() != 0) {
+                locallyRevealedMessages.add(localFilterGroupKey(object));
+            } else if (getLocalFilterDecision(object).action != LocalMessageFilterEngine.Action.SHOW) {
+                revealLocallyFilteredMessage(object);
+            }
+        } else if (!chatAdapter.isFiltered) {
+            long targetDialogId = loadIndex == 0 ? dialog_id : mergeDialogId;
+            locallyRevealedMessages.add(localFilterMessageKey(targetDialogId, id));
+        }
         boolean query = false;
         int scrollDirection = RecyclerAnimationScrollHelper.SCROLL_DIRECTION_UNSET;
         int scrollFromIndex = 0;
@@ -20671,9 +20686,11 @@ public class ChatActivity extends BaseFragment implements
                     }
                 }
 
-                if (shouldHideFilteredMessage(obj)) {
-                    messagesDict[loadIndex].put(messageId, obj);
-                    continue;
+                if (messageId == startLoadFromMessageId || messageId == highlightMessageId) {
+                    locallyRevealedMessages.add(localFilterMessageKey(obj));
+                    if (obj.getGroupId() != 0) {
+                        locallyRevealedMessages.add(localFilterGroupKey(obj));
+                    }
                 }
 
                 if (!chatWasReset && messageId != 0 && messageId == last_message_id) {
@@ -22375,10 +22392,11 @@ public class ChatActivity extends BaseFragment implements
             if (CustomSettings.hideBlockedUsersMessages() && isBlockedUsersMessageFilteringContext()) {
                 if (!getMessagesController().blockedEndReached) {
                     getMessagesController().getBlockedPeers(false);
-                } else {
-                    clearChatData(true);
-                    firstLoadMessages();
                 }
+                if (chatAdapter != null) {
+                    chatAdapter.notifyDataSetChanged(false);
+                }
+                updatePinnedMessageView(false);
             }
         } else if (id == NotificationCenter.fileNewChunkAvailable) {
             MessageObject messageObject = (MessageObject) args[0];
@@ -24847,33 +24865,107 @@ public class ChatActivity extends BaseFragment implements
 
     private boolean shouldHideBlockedUserMessage(MessageObject messageObject) {
         if (!CustomSettings.hideBlockedUsersMessages() || !isBlockedUsersMessageFilteringContext() ||
-                messageObject == null || messageObject.isOutOwner() || !(messageObject.messageOwner.from_id instanceof TLRPC.TL_peerUser)) {
+                messageObject == null || !(messageObject.messageOwner.from_id instanceof TLRPC.TL_peerUser)) {
             return false;
         }
         long senderId = messageObject.messageOwner.from_id.user_id;
         return senderId != getUserConfig().getClientUserId() && getMessagesController().blockePeers.indexOfKey(senderId) >= 0;
     }
 
-    private boolean shouldHideFilteredMessage(MessageObject messageObject) {
+    private String localFilterMessageKey(MessageObject messageObject) {
+        return localFilterMessageKey(messageObject.getDialogId(), messageObject.getId());
+    }
+
+    private String localFilterMessageKey(long targetDialogId, int messageId) {
+        return "m:" + targetDialogId + ":" + messageId;
+    }
+
+    private String localFilterGroupKey(MessageObject messageObject) {
+        return "g:" + messageObject.getDialogId() + ":" + messageObject.getGroupId();
+    }
+
+    private boolean isLocallyRevealed(MessageObject messageObject) {
+        return locallyRevealedMessages.contains(localFilterMessageKey(messageObject)) ||
+                messageObject.getGroupId() != 0 && locallyRevealedMessages.contains(localFilterGroupKey(messageObject));
+    }
+
+    private LocalMessageFilterEngine.Decision getBaseLocalFilterDecision(MessageObject messageObject) {
+        if (messageObject == null || messageObject.messageOwner == null || messageObject.isDateObject || messageObject.getId() == 0) {
+            return LocalMessageFilterEngine.Decision.SHOW;
+        }
         boolean bannedChannelMessage = currentChat != null && ChatObject.isChannel(currentChat) && !currentChat.megagroup &&
-                messageObject != null && !messageObject.isOutOwner() && CustomSettings.isBannedMessage(messageObject);
-        return bannedChannelMessage || shouldHideBlockedUserMessage(messageObject);
+                CustomSettings.isBannedMessage(messageObject);
+        if (bannedChannelMessage) {
+            return new LocalMessageFilterEngine.Decision(LocalMessageFilterEngine.Action.HIDE,
+                    LocaleController.getString(R.string.FeedBannedPhrases));
+        }
+        if (shouldHideBlockedUserMessage(messageObject)) {
+            return new LocalMessageFilterEngine.Decision(LocalMessageFilterEngine.Action.HIDE,
+                    LocaleController.getString(R.string.CustomSettingsHideBlockedUsersMessages));
+        }
+        return LocalMessageFilterEngine.evaluate(messageObject);
+    }
+
+    private LocalMessageFilterEngine.Decision getLocalFilterDecision(MessageObject messageObject) {
+        if (messageObject == null || isLocallyRevealed(messageObject)) {
+            return LocalMessageFilterEngine.Decision.SHOW;
+        }
+        LocalMessageFilterEngine.Decision decision = getBaseLocalFilterDecision(messageObject);
+        if (messageObject.getGroupId() == 0) {
+            return decision;
+        }
+        MessageObject.GroupedMessages group = groupedMessagesMap.get(messageObject.getGroupId());
+        if (group == null) {
+            return decision;
+        }
+        for (int i = 0; i < group.messages.size(); i++) {
+            MessageObject groupMessage = group.messages.get(i);
+            if (groupMessage.getDialogId() != messageObject.getDialogId()) {
+                continue;
+            }
+            LocalMessageFilterEngine.Decision groupDecision = getBaseLocalFilterDecision(groupMessage);
+            if (groupDecision.action == LocalMessageFilterEngine.Action.HIDE) {
+                return groupDecision;
+            }
+            if (groupDecision.action == LocalMessageFilterEngine.Action.COLLAPSE &&
+                    decision.action == LocalMessageFilterEngine.Action.SHOW) {
+                decision = groupDecision;
+            }
+        }
+        return decision;
+    }
+
+    private boolean isLocalFilterAlbumRepresentative(MessageObject messageObject) {
+        if (messageObject == null || messageObject.getGroupId() == 0) {
+            return true;
+        }
+        MessageObject.GroupedMessages group = groupedMessagesMap.get(messageObject.getGroupId());
+        if (group == null || group.messages.isEmpty()) {
+            return true;
+        }
+        MessageObject representative = group.messages.get(0);
+        return representative.getId() == messageObject.getId() && representative.getDialogId() == messageObject.getDialogId();
+    }
+
+    private void revealLocallyFilteredMessage(MessageObject messageObject) {
+        if (messageObject == null) {
+            return;
+        }
+        if (messageObject.getGroupId() != 0) {
+            locallyRevealedMessages.add(localFilterGroupKey(messageObject));
+        } else {
+            locallyRevealedMessages.add(localFilterMessageKey(messageObject));
+        }
+        if (chatAdapter != null) {
+            chatAdapter.notifyDataSetChanged(false);
+        }
+        updatePinnedMessageView(false);
     }
 
     private void processNewMessages(ArrayList<MessageObject> arr) {
         processNewMessages(arr, true);
     }
     private void processNewMessages(ArrayList<MessageObject> arr, final boolean animatedFromBottom) {
-        if (currentChat != null) {
-            for (int i = arr.size() - 1; i >= 0; i--) {
-                if (shouldHideFilteredMessage(arr.get(i))) {
-                    arr.remove(i);
-                }
-            }
-            if (arr.isEmpty()) {
-                return;
-            }
-        }
         FileLog.d("processNewMessages " + arr.size() + " messages");
 
         if (arr.size() == 1 && UserObject.isBot(currentUser) && BotForumHelper.getInstance(currentAccount).isStreamingTopic(getDialogId(), getTopicId())) {
@@ -27871,8 +27963,10 @@ public class ChatActivity extends BaseFragment implements
             pinnedMessageObject = null;
             pinned_msg_id = 0;
         }
-        TLRPC.KeyboardButton botButton = pinnedButton(pinnedMessageObject);
-        String callLink = callLink(pinnedMessageObject);
+        LocalMessageFilterEngine.Decision pinnedFilterDecision = getLocalFilterDecision(pinnedMessageObject);
+        boolean pinnedLocallyFiltered = pinnedFilterDecision.action != LocalMessageFilterEngine.Action.SHOW;
+        TLRPC.KeyboardButton botButton = pinnedLocallyFiltered ? null : pinnedButton(pinnedMessageObject);
+        String callLink = pinnedLocallyFiltered ? null : callLink(pinnedMessageObject);
         pinnedMessageButtonShown = botButton != null || !TextUtils.isEmpty(callLink);
         SharedPreferences preferences = MessagesController.getNotificationsSettings(currentAccount);
         if ((threadMessageObject == null || isTopic) && (chatInfo == null && userInfo == null || pinned_msg_id == 0 || !pinnedMessageIds.isEmpty() && pinnedMessageIds.get(0) == preferences.getInt("pin_" + dialog_id, 0)) || isReport() || actionBar != null && (actionBar.isActionModeShowed() || actionBar.isSearchFieldVisible())) {
@@ -27981,7 +28075,12 @@ public class ChatActivity extends BaseFragment implements
                 TLRPC.PhotoSize photoSize = FileLoader.getClosestPhotoSizeWithSize(pinnedMessageObject.photoThumbs2, AndroidUtilities.dp(320));
                 TLRPC.PhotoSize thumbPhotoSize = FileLoader.getClosestPhotoSizeWithSize(pinnedMessageObject.photoThumbs2, AndroidUtilities.dp(40));
                 TLObject photoSizeObject = pinnedMessageObject.photoThumbsObject2;
-                if (photoSize == null) {
+                if (pinnedLocallyFiltered) {
+                    photoSize = null;
+                    thumbPhotoSize = null;
+                    photoSizeObject = null;
+                }
+                if (photoSize == null && !pinnedLocallyFiltered) {
                     if (pinnedMessageObject.mediaExists) {
                         photoSize = FileLoader.getClosestPhotoSizeWithSize(pinnedMessageObject.photoThumbs, AndroidUtilities.getPhotoSize());
                         if (photoSize != null) {
@@ -28038,7 +28137,9 @@ public class ChatActivity extends BaseFragment implements
                 pinnedNameTextView[animateToNext != 0 ? 0 : 1].setTrackWidth(false);
                 nameTextView.setTrackWidth(true);
                 nameTextView.setVisibility(View.VISIBLE);
-                if (threadMessageId != 0 && !isTopic) {
+                if (pinnedLocallyFiltered) {
+                    nameTextView.setText(LocaleController.getString(R.string.PinnedMessage), true);
+                } else if (threadMessageId != 0 && !isTopic) {
                     MessagesController messagesController = getMessagesController();
                     TLRPC.MessageFwdHeader fwd_from = threadMessageObject.messageOwner.fwd_from;
                     TLRPC.User user = null;
@@ -28173,6 +28274,9 @@ public class ChatActivity extends BaseFragment implements
                     if (pinnedMessageObject != null && pinnedMessageObject.messageOwner != null) {
                         pinnedText = pinnedMessageObject.replaceAnimatedEmoji(pinnedText, messageTextView.getPaint().getFontMetricsInt());
                     }
+                }
+                if (pinnedLocallyFiltered) {
+                    pinnedText = LocaleController.getString(R.string.LocalMessageFilterCollapsed);
                 }
                 if (pinnedText != null) {
                     if (pinnedText instanceof Spannable) {
@@ -29273,16 +29377,22 @@ public class ChatActivity extends BaseFragment implements
     public void onResume() {
         super.onResume();
         boolean hideBlockedUsersMessages = CustomSettings.hideBlockedUsersMessages();
-        if (hideBlockedUsersMessages != lastHideBlockedUsersMessages) {
+        String localMessageFilterRevision = LocalMessageFilterEngine.getRevision();
+        String bannedPhrasesRevision = CustomSettings.banGroupsRevision();
+        if (hideBlockedUsersMessages != lastHideBlockedUsersMessages ||
+                !TextUtils.equals(localMessageFilterRevision, lastLocalMessageFilterRevision) ||
+                !TextUtils.equals(bannedPhrasesRevision, lastBannedPhrasesRevision)) {
             lastHideBlockedUsersMessages = hideBlockedUsersMessages;
-            if (isBlockedUsersMessageFilteringContext()) {
-                if (hideBlockedUsersMessages && getMessagesController().totalBlockedCount < 0) {
-                    getMessagesController().getBlockedPeers(true);
-                } else {
-                    clearChatData(true);
-                    firstLoadMessages();
-                }
+            lastLocalMessageFilterRevision = localMessageFilterRevision;
+            lastBannedPhrasesRevision = bannedPhrasesRevision;
+            locallyRevealedMessages.clear();
+            if (hideBlockedUsersMessages && isBlockedUsersMessageFilteringContext() && getMessagesController().totalBlockedCount < 0) {
+                getMessagesController().getBlockedPeers(true);
             }
+            if (chatAdapter != null) {
+                chatAdapter.notifyDataSetChanged(false);
+            }
+            updatePinnedMessageView(false);
         }
         checkShowBlur(false);
         activityResumeTime = System.currentTimeMillis();
@@ -36152,6 +36262,8 @@ public class ChatActivity extends BaseFragment implements
 
     public class ChatActivityAdapter extends RecyclerAnimationScrollHelper.AnimatableAdapter {
 
+        private static final int VIEW_TYPE_LOCAL_FILTER = 50;
+
         private Context mContext;
         private boolean isBot;
         private int rowCount;
@@ -36376,7 +36488,9 @@ public class ChatActivity extends BaseFragment implements
         @Override
         public RecyclerView.ViewHolder onCreateViewHolder(ViewGroup parent, int viewType) {
             View view = null;
-            if (viewType == 0) {
+            if (viewType == VIEW_TYPE_LOCAL_FILTER) {
+                view = new LocalMessageFilterCell(mContext, themeDelegate);
+            } else if (viewType == 0) {
                 //ArrayList<ChatMessageCell> chatMessagesCache = chatMessageCellsCache;
                 //if (chatMessagesCache != null && !chatMessagesCache.isEmpty()) {
                 //    view = chatMessagesCache.get(0);
@@ -36830,7 +36944,12 @@ public class ChatActivity extends BaseFragment implements
                 MessageObject message = messages.get(position - messagesStartRow);
                 View view = holder.itemView;
 
-                if (view instanceof ChatMessageCell) {
+                if (view instanceof LocalMessageFilterCell) {
+                    LocalMessageFilterEngine.Decision decision = getLocalFilterDecision(message);
+                    ((LocalMessageFilterCell) view).setMessage(message, decision,
+                            isLocalFilterAlbumRepresentative(message),
+                            () -> revealLocallyFilteredMessage(message));
+                } else if (view instanceof ChatMessageCell) {
                     final ChatMessageCell messageCell = (ChatMessageCell) view;
                     MessageObject.GroupedMessages groupedMessages = getValidGroupedMessage(message);
                     messageCell.isChat = currentChat != null || UserObject.isUserSelf(currentUser) || UserObject.isReplyUser(currentUser) || (chatMode == MODE_SEARCH);
@@ -37372,7 +37491,11 @@ public class ChatActivity extends BaseFragment implements
                 } else {
                     messages = ChatActivity.this.messages;
                 }
-                return messages.get(position - messagesStartRow).contentType;
+                MessageObject message = messages.get(position - messagesStartRow);
+                if (getLocalFilterDecision(message).action != LocalMessageFilterEngine.Action.SHOW) {
+                    return VIEW_TYPE_LOCAL_FILTER;
+                }
+                return message.contentType;
             } else if (position == botInfoRow) {
                 return 3;
             } else if (position == userInfoRow) {
@@ -38274,6 +38397,11 @@ public class ChatActivity extends BaseFragment implements
     }
 
     private class ChatMessageCellDelegate implements ChatMessageCell.ChatMessageCellDelegate {
+        @Override
+        public boolean shouldRedactReply(MessageObject replyMessage) {
+            return getLocalFilterDecision(replyMessage).action != LocalMessageFilterEngine.Action.SHOW;
+        }
+
         @Override
         public boolean isReplyOrSelf() {
             return UserObject.isReplyUser(currentUser) || UserObject.isUserSelf(currentUser);

@@ -10943,6 +10943,15 @@
     <string name="CustomSettingsHideTypingStatusInfo">Hides typing and recording indicators in chats while you write messages or record audio/video.</string>
     <string name="CustomSettingsHideReadStatus">Hide Read Status</string>
     <string name="CustomSettingsHideBlockedUsersMessages">Hide blocked users messages</string>
+    <string name="LocalMessageFiltersTitle">Local message filters</string>
+    <string name="LocalMessageFiltersValue">Hide and collapse rules</string>
+    <string name="LocalMessageFilterCollapsed">Message collapsed by a local filter</string>
+    <string name="LocalMessageFilterShow">Show</string>
+    <string name="LocalMessageFilterReply">Filtered reply</string>
+    <string name="LocalMessageFilterReplyHidden">Content hidden by a local filter</string>
+    <string name="LocalMessageFiltersInsertExample">Insert example rules</string>
+    <string name="LocalMessageFiltersInvalid">Invalid filter rules</string>
+    <string name="LocalMessageFiltersHelp">Rules are stored only on this device and affect display only. Supported condition fields: senderIds, chatIds, messageTypes (text, media, service), text.contains, text.regex, mediaTypes (photo, video, round_video, gif, voice, music, sticker, document, contact, location, poll, dice, game, invoice, story, webpage, other), forwarded, and serviceEvents. Fields are combined with AND; values in a list use OR. Actions: hide or collapse. Lower priority runs first.</string>
     <string name="CustomSettingsHideReadStatusInfo">Prevents messages and opened media from being marked as read. Voice and video messages stay unread after playback. This also covers story views.</string>
     <string name="CustomSettingsHideStoryViews">Hide Story Views</string>
     <string name="CustomSettingsHideStoryViewsInfo">Prevents stories from being marked as viewed without enabling the rest of Ghost Mode.</string>

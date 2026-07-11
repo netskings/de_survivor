@@ -87,6 +87,7 @@ public class CustomSettingsActivity extends BaseFragment {
     private int hideReadStatusRow;
     private int hideReadStatusInfoRow;
     private int hideBlockedUsersMessagesRow;
+    private int localMessageFiltersRow;
     private int hideStoryViewsRow;
     private int hideStoryViewsInfoRow;
     private int alertBeforeOpeningStoryRow;
@@ -141,7 +142,7 @@ public class CustomSettingsActivity extends BaseFragment {
         feedHeaderRow = feedSettingsRow = feedInfoRow = -1;
         ghostHeaderRow = hideOnlineStatusRow = hideOnlineStatusInfoRow = goOfflineAutomaticallyRow = goOfflineAutomaticallyInfoRow = -1;
         scheduleMessagesInGhostModeRow = scheduleMessagesInGhostModeInfoRow = hideTypingStatusRow = hideTypingStatusInfoRow = -1;
-        hideReadStatusRow = hideReadStatusInfoRow = hideBlockedUsersMessagesRow = hideStoryViewsRow = hideStoryViewsInfoRow = -1;
+        hideReadStatusRow = hideReadStatusInfoRow = hideBlockedUsersMessagesRow = localMessageFiltersRow = hideStoryViewsRow = hideStoryViewsInfoRow = -1;
         alertBeforeOpeningStoryRow = alertBeforeOpeningStoryInfoRow = readOnInteractRow = readOnInteractInfoRow = -1;
         ghostModeExceptionsRow = ghostModeExceptionsInfoRow = keepLastSeenUpdatedInGhostModeRow = keepLastSeenUpdatedInGhostModeInfoRow = -1;
         restrictionsHeaderRow = antiRecallRow = antiRecallInfoRow = messageLabelsRow = messageLabelsInfoRow = -1;
@@ -169,6 +170,7 @@ public class CustomSettingsActivity extends BaseFragment {
                 hideTypingStatusRow = rowCount++;
                 hideReadStatusRow = rowCount++;
                 hideBlockedUsersMessagesRow = rowCount++;
+                localMessageFiltersRow = rowCount++;
                 hideStoryViewsRow = rowCount++;
                 alertBeforeOpeningStoryRow = rowCount++;
                 readOnInteractRow = rowCount++;
@@ -629,6 +631,8 @@ public class CustomSettingsActivity extends BaseFragment {
                 CustomSettings.setHideBlockedUsersMessages(val);
                 if (view instanceof TextCheckCell)
                     ((TextCheckCell) view).setChecked(val);
+            } else if (position == localMessageFiltersRow) {
+                presentFragment(new LocalMessageFiltersActivity());
             } else if (position == hideStoryViewsRow) {
                 boolean val = !CustomSettings.hideStoryViews();
                 CustomSettings.setHideStoryViews(val);
@@ -738,6 +742,7 @@ public class CustomSettingsActivity extends BaseFragment {
             if (pos == hideTypingStatusInfoRow) return TYPE_INFO;
             if (pos == hideReadStatusRow) return TYPE_CHECK;
             if (pos == hideBlockedUsersMessagesRow) return TYPE_CHECK;
+            if (pos == localMessageFiltersRow) return TYPE_TEXT_CELL;
             if (pos == hideReadStatusInfoRow) return TYPE_INFO;
             if (pos == hideStoryViewsRow) return TYPE_CHECK;
             if (pos == hideStoryViewsInfoRow) return TYPE_INFO;
@@ -995,6 +1000,10 @@ public class CustomSettingsActivity extends BaseFragment {
                         int count = CustomSettings.ghostModeExceptionsCount();
                         cell.setTextAndValue(getString(R.string.CustomSettingsGhostModeExceptions),
                                 count == 0 ? "" : LocaleController.formatPluralString("Chats", count), divider);
+                    }
+                    if (pos == localMessageFiltersRow) {
+                        cell.setTextAndValue(getString(R.string.LocalMessageFiltersTitle),
+                                getString(R.string.LocalMessageFiltersValue), divider);
                     }
                     if (pos == messageLabelsRow) {
                         cell.setTextAndValue(getString(R.string.CustomSettingsMessageLabels), getString(R.string.CustomSettingsMessageLabelsValue), divider);

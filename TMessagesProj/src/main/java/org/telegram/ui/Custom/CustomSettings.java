@@ -409,6 +409,10 @@ public class CustomSettings {
     private static String cachedBanGroupsJson;
     private static List<String> cachedNormalizedBannedPhrases;
 
+    public static String banGroupsRevision() {
+        return getPrefs().getString(KEY_BAN_GROUPS, "");
+    }
+
     public static List<BanGroup> getBanGroups() {
         List<BanGroup> result = new ArrayList<>();
         String json = getPrefs().getString(KEY_BAN_GROUPS, "");
