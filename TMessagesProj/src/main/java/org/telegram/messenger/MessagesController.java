@@ -863,8 +863,9 @@ public class MessagesController extends BaseController implements NotificationCe
 
     public void lockFiltersInternal() {
         boolean changed = false;
-        if (!getUserConfig().isPremium() && dialogFilters.size() - 1 > dialogFiltersLimitDefault) {
-            int n = dialogFilters.size() - 1 - dialogFiltersLimitDefault;
+        int dialogFiltersLimit = CustomSettings.dialogFiltersLimit(getUserConfig().isPremium() ? dialogFiltersLimitPremium : dialogFiltersLimitDefault);
+        if (dialogFilters.size() - 1 > dialogFiltersLimit) {
+            int n = dialogFilters.size() - 1 - dialogFiltersLimit;
             ArrayList<DialogFilter> filtersSortedById = new ArrayList<>(dialogFilters);
             Collections.reverse(filtersSortedById);
             for (int i = 0; i < filtersSortedById.size(); i++) {
@@ -878,6 +879,13 @@ public class MessagesController extends BaseController implements NotificationCe
                         changed = true;
                     }
                     filtersSortedById.get(i).locked = false;
+                }
+            }
+        } else {
+            for (int i = 0; i < dialogFilters.size(); i++) {
+                if (dialogFilters.get(i).locked) {
+                    changed = true;
+                    dialogFilters.get(i).locked = false;
                 }
             }
         }

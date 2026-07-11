@@ -87,6 +87,9 @@ public class CustomSettings {
     public static boolean keepMessageEditHistory() { return getPrefs().getBoolean(KEY_KEEP_MESSAGE_EDIT_HISTORY, true); }
     public static void setKeepMessageEditHistory(boolean v) { getPrefs().edit().putBoolean(KEY_KEEP_MESSAGE_EDIT_HISTORY, v).apply(); }
 
+    public static int pinnedDialogsLimit(int serverLimit) { return Math.max(serverLimit, 10); }
+    public static int dialogFiltersLimit(int serverLimit) { return Math.max(serverLimit, 30); }
+
     public static String editedMessageLabel(String defaultValue) { return getPrefs().getString(KEY_EDITED_MESSAGE_LABEL, defaultValue); }
     public static void setEditedMessageLabel(String value) { getPrefs().edit().putString(KEY_EDITED_MESSAGE_LABEL, value).apply(); }
     public static int editedMessageLabelColor() { return getPrefs().getInt(KEY_EDITED_MESSAGE_LABEL_COLOR, 0); }
