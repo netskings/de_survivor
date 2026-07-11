@@ -13802,7 +13802,7 @@ public class MessagesStorage extends BaseController {
                         }
                         mids.add(mid);
                         int out = cursor.intValue(3);
-                        boolean canRecallMessage = (antiRecall || keepTemporaryMediaInChat) && !DialogObject.isEncryptedDialog(did) && did != currentUser && out == 0;
+                        boolean canRecallMessage = (antiRecall || keepTemporaryMediaInChat) && !DialogObject.isEncryptedDialog(did) && did != currentUser;
                         TLRPC.Message message = null;
                         if (canRecallMessage || DialogObject.isEncryptedDialog(did) || deleteFiles || did == currentUser) {
                             NativeByteBuffer data = cursor.byteBufferValue(1);
@@ -14078,8 +14078,8 @@ public class MessagesStorage extends BaseController {
                     HashSet<Integer> recalledMids = recalledMessagesByDialogs.get(did);
                     if (recalledMids != null && !recalledMids.isEmpty()) {
                         String recalledIds = TextUtils.join(",", recalledMids);
-                        database.executeFast(String.format(Locale.US, "UPDATE messages_v2 SET is_recalled = 1 WHERE mid IN(%s) AND uid = %d AND out = 0", recalledIds, did)).stepThis().dispose();
-                        database.executeFast(String.format(Locale.US, "UPDATE messages_topics SET is_recalled = 1 WHERE mid IN(%s) AND uid = %d AND out = 0", recalledIds, did)).stepThis().dispose();
+                        database.executeFast(String.format(Locale.US, "UPDATE messages_v2 SET is_recalled = 1 WHERE mid IN(%s) AND uid = %d", recalledIds, did)).stepThis().dispose();
+                        database.executeFast(String.format(Locale.US, "UPDATE messages_topics SET is_recalled = 1 WHERE mid IN(%s) AND uid = %d", recalledIds, did)).stepThis().dispose();
                     }
                     ArrayList<Integer> deleteMids = mids;
                     if (recalledMids != null && !recalledMids.isEmpty()) {
@@ -14596,13 +14596,37 @@ public class MessagesStorage extends BaseController {
             ArrayList<String> namesToDelete = new ArrayList<>();
             ArrayList<Pair<Long, Integer>> idsToDelete = new ArrayList<>();
             long currentUser = getUserConfig().getClientUserId();
+            final boolean antiRecall = CustomSettings.antiRecall();
+            final boolean keepTemporaryMediaInChat = CustomSettings.keepTemporaryMediaInChat();
+            HashSet<Integer> recalledMids = null;
 
-            cursor = database.queryFinalized(String.format(Locale.US, "SELECT uid, data, read_state, out, mention FROM messages_v2 WHERE uid = %d AND mid <= %d", -channelId, mid));
+            cursor = database.queryFinalized(String.format(Locale.US, "SELECT uid, data, read_state, out, mention, mid FROM messages_v2 WHERE uid = %d AND mid <= %d", -channelId, mid));
 
             try {
                 while (cursor.next()) {
                     long did = cursor.longValue(0);
-                    if (did != currentUser) {
+                    int messageId = cursor.intValue(5);
+                    boolean canRecallMessage = (antiRecall || keepTemporaryMediaInChat) && !DialogObject.isEncryptedDialog(did) && did != currentUser;
+                    TLRPC.Message message = null;
+                    if (canRecallMessage || DialogObject.isEncryptedDialog(did) || deleteFiles || did == currentUser) {
+                        NativeByteBuffer data = cursor.byteBufferValue(1);
+                        if (data != null) {
+                            message = TLRPC.Message.TLdeserialize(data, data.readInt32(false), false);
+                            if (message != null) {
+                                message.readAttachPath(data, getUserConfig().clientUserId);
+                            }
+                            data.reuse();
+                        }
+                    }
+                    boolean isTemporaryMedia = message != null && MessageObject.isSecretMedia(message);
+                    boolean recallMessage = canRecallMessage && (isTemporaryMedia ? keepTemporaryMediaInChat : antiRecall);
+                    if (recallMessage) {
+                        if (recalledMids == null) {
+                            recalledMids = new HashSet<>();
+                        }
+                        recalledMids.add(messageId);
+                    }
+                    if (did != currentUser && !recallMessage) {
                         int read_state = cursor.intValue(2);
                         if (cursor.intValue(3) == 0) {
                             Integer[] unread_count = dialogsToUpdate.get(did);
@@ -14618,14 +14642,10 @@ public class MessagesStorage extends BaseController {
                             }
                         }
                     }
-                    if (!DialogObject.isEncryptedDialog(did) && !deleteFiles) {
+                    if (recallMessage || (!DialogObject.isEncryptedDialog(did) && !deleteFiles)) {
                         continue;
                     }
-                    NativeByteBuffer data = cursor.byteBufferValue(1);
-                    if (data != null) {
-                        TLRPC.Message message = TLRPC.Message.TLdeserialize(data, data.readInt32(false), false);
-                        message.readAttachPath(data, getUserConfig().clientUserId);
-                        data.reuse();
+                    if (message != null) {
                         addFilesToDelete(message, filesToDelete, idsToDelete, namesToDelete, false);
                     }
                 }
@@ -14634,6 +14654,18 @@ public class MessagesStorage extends BaseController {
             }
             cursor.dispose();
             cursor = null;
+
+            String recalledIds = null;
+            String keepRecalledMessages = "";
+            String keepRecalledPinned = "";
+            if (recalledMids != null && !recalledMids.isEmpty()) {
+                recalledIds = TextUtils.join(",", recalledMids);
+                database.executeFast(String.format(Locale.US, "UPDATE messages_v2 SET is_recalled = 1 WHERE uid = %d AND mid IN(%s)", -channelId, recalledIds)).stepThis().dispose();
+                database.executeFast(String.format(Locale.US, "UPDATE messages_topics SET is_recalled = 1 WHERE uid = %d AND mid IN(%s)", -channelId, recalledIds)).stepThis().dispose();
+                archiveDeletedMessagesInternal(recalledIds, -channelId);
+                keepRecalledMessages = String.format(Locale.US, " AND mid NOT IN(%s)", recalledIds);
+                keepRecalledPinned = String.format(Locale.US, " AND pinned NOT IN(%s)", recalledIds);
+            }
 
             deleteFromDownloadQueue(idsToDelete, true);
             AndroidUtilities.runOnUIThread(() -> getFileLoader().cancelLoadFiles(namesToDelete));
@@ -14665,8 +14697,8 @@ public class MessagesStorage extends BaseController {
             }
 
 
-            database.executeFast(String.format(Locale.US, "UPDATE chat_settings_v2 SET pinned = 0 WHERE uid = %d AND pinned <= %d", channelId, mid)).stepThis().dispose();
-            database.executeFast(String.format(Locale.US, "DELETE FROM chat_pinned_v2 WHERE uid = %d AND mid <= %d", channelId, mid)).stepThis().dispose();
+            database.executeFast(String.format(Locale.US, "UPDATE chat_settings_v2 SET pinned = 0 WHERE uid = %d AND pinned <= %d%s", channelId, mid, keepRecalledPinned)).stepThis().dispose();
+            database.executeFast(String.format(Locale.US, "DELETE FROM chat_pinned_v2 WHERE uid = %d AND mid <= %d%s", channelId, mid, keepRecalledMessages)).stepThis().dispose();
             int updatedCount = 0;
             cursor = database.queryFinalized("SELECT changes()");
             if (cursor.next()) {
@@ -14690,9 +14722,9 @@ public class MessagesStorage extends BaseController {
                 cursor = null;
             }
 
-            database.executeFast(String.format(Locale.US, "DELETE FROM messages_v2 WHERE uid = %d AND mid <= %d", -channelId, mid)).stepThis().dispose();
-            database.executeFast(String.format(Locale.US, "DELETE FROM messages_topics WHERE uid = %d AND mid <= %d", -channelId, mid)).stepThis().dispose();
-            database.executeFast(String.format(Locale.US, "DELETE FROM media_v4 WHERE uid = %d AND mid <= %d", -channelId, mid)).stepThis().dispose();
+            database.executeFast(String.format(Locale.US, "DELETE FROM messages_v2 WHERE uid = %d AND mid <= %d%s", -channelId, mid, keepRecalledMessages)).stepThis().dispose();
+            database.executeFast(String.format(Locale.US, "DELETE FROM messages_topics WHERE uid = %d AND mid <= %d%s", -channelId, mid, keepRecalledMessages)).stepThis().dispose();
+            database.executeFast(String.format(Locale.US, "DELETE FROM media_v4 WHERE uid = %d AND mid <= %d%s", -channelId, mid, keepRecalledMessages)).stepThis().dispose();
             database.executeFast(String.format(Locale.US, "UPDATE media_counts_v2 SET old = 1 WHERE uid = %d", -channelId)).stepThis().dispose();
             database.executeFast(String.format(Locale.US, "UPDATE media_counts_topics SET old = 1 WHERE uid = %d", -channelId)).stepThis().dispose();
             updateWidgets(dialogsIds);

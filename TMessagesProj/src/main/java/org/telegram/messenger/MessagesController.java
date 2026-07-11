@@ -9268,7 +9268,7 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     private boolean markMessageObjectAsRecalled(MessageObject obj) {
-        if (obj == null || obj.isOut() || DialogObject.isEncryptedDialog(obj.getDialogId())) {
+        if (obj == null || DialogObject.isEncryptedDialog(obj.getDialogId())) {
             return false;
         }
         boolean isTemporaryMedia = obj.isSecretMedia();
@@ -17069,7 +17069,9 @@ public class MessagesController extends BaseController implements NotificationCe
                         Integer id = ids.get(b);
                         MessageObject obj = dialogMessagesByIds.get(id);
                         if (obj != null) {
-                            obj.deleted = true;
+                            if (!markMessageObjectAsRecalled(obj)) {
+                                obj.deleted = true;
+                            }
                         }
                     }
                 } else {
@@ -17079,7 +17081,9 @@ public class MessagesController extends BaseController implements NotificationCe
                             MessageObject obj = objs.get(i);
                             for (int b = 0, size2 = ids.size(); b < size2; b++) {
                                 if (obj.getId() == ids.get(b)) {
-                                    obj.deleted = true;
+                                    if (!markMessageObjectAsRecalled(obj)) {
+                                        obj.deleted = true;
+                                    }
                                     break;
                                 }
                             }
@@ -20407,7 +20411,9 @@ public class MessagesController extends BaseController implements NotificationCe
                                 if (BuildVars.LOGS_ENABLED) {
                                     FileLog.d("mark messages " + obj.getId() + " deleted");
                                 }
-                                obj.deleted = true;
+                                if (!markMessageObjectAsRecalled(obj)) {
+                                    obj.deleted = true;
+                                }
                             }
                         }
                     } else {
@@ -20418,7 +20424,9 @@ public class MessagesController extends BaseController implements NotificationCe
                                 if (obj != null) {
                                     for (int b = 0, size2 = arrayList.size(); b < size2; b++) {
                                         if (obj.getId() == arrayList.get(b)) {
-                                            obj.deleted = true;
+                                            if (!markMessageObjectAsRecalled(obj)) {
+                                                obj.deleted = true;
+                                            }
                                             break;
                                         }
                                     }
@@ -20461,7 +20469,9 @@ public class MessagesController extends BaseController implements NotificationCe
                         for (int i = 0; i < objs.size(); ++i) {
                             MessageObject obj = objs.get(i);
                             if (obj != null && obj.getId() <= id) {
-                                obj.deleted = true;
+                                if (!markMessageObjectAsRecalled(obj)) {
+                                    obj.deleted = true;
+                                }
                                 break;
                             }
                         }

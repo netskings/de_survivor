@@ -21773,6 +21773,10 @@ public class ChatActivity extends BaseFragment implements
                 if (mid <= 0 || mid > max_id) {
                     continue;
                 }
+                if (shouldKeepDeletedMessageInChat(obj)) {
+                    updated = true;
+                    continue;
+                }
                 messages.remove(b);
                 b--;
                 messagesDict[0].remove(mid);
@@ -25713,7 +25717,7 @@ public class ChatActivity extends BaseFragment implements
         processDeletedMessages(markAsDeletedMessages, channelId, sent, true);
     }
     private boolean shouldKeepDeletedMessageInChat(MessageObject obj) {
-        if (obj == null || obj.scheduled || obj.isOut() || DialogObject.isEncryptedDialog(obj.getDialogId())) {
+        if (obj == null || obj.scheduled || DialogObject.isEncryptedDialog(obj.getDialogId())) {
             return false;
         }
         boolean isTemporaryMedia = obj.isSecretMedia();
