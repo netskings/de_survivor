@@ -9,6 +9,7 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.net.Uri;
+import android.os.Bundle;
 import android.text.TextUtils;
 import android.text.InputType;
 import android.util.TypedValue;
@@ -45,6 +46,21 @@ import org.telegram.ui.Feed.FeedSettingsActivity;
 public class CustomSettingsActivity extends BaseFragment {
 
     private static final int REQUEST_SAVE_TEMPORARY_MEDIA_FOLDER = 4242;
+    private static final String ARG_SCREEN = "screen";
+    private static final int SCREEN_MAIN = 0;
+    private static final int SCREEN_GENERAL = 1;
+    private static final int SCREEN_PRIVACY = 2;
+    private static final int SCREEN_HISTORY = 3;
+    private static final int SCREEN_MEDIA = 4;
+    private static final int SCREEN_APPEARANCE = 5;
+    private static final int SCREEN_TRANSLATION = 6;
+
+    private int generalSettingsRow;
+    private int privacySettingsRow;
+    private int historySettingsRow;
+    private int mediaSettingsRow;
+    private int appearanceSettingsRow;
+    private int translationSettingsRow;
 
     private int rowCount;
     private ListAdapter listAdapter;
@@ -101,58 +117,87 @@ public class CustomSettingsActivity extends BaseFragment {
     private int bypassContentProtectionRow;
     private int bypassContentProtectionInfoRow;
 
+    public CustomSettingsActivity() {
+    }
+
+    private CustomSettingsActivity(int screen) {
+        super(createArguments(screen));
+    }
+
+    private static Bundle createArguments(int screen) {
+        Bundle args = new Bundle();
+        args.putInt(ARG_SCREEN, screen);
+        return args;
+    }
+
+    private int getScreen() {
+        return getArguments() == null ? SCREEN_MAIN : getArguments().getInt(ARG_SCREEN, SCREEN_MAIN);
+    }
+
+    private void resetRows() {
+        generalSettingsRow = privacySettingsRow = historySettingsRow = mediaSettingsRow = appearanceSettingsRow = translationSettingsRow = -1;
+        adsHeaderRow = hideAdsRow = hideAdsInfoRow = proxyHeaderRow = hideProxySponsorRow = hideProxySponsorInfoRow = -1;
+        feedHeaderRow = feedSettingsRow = feedInfoRow = -1;
+        ghostHeaderRow = hideOnlineStatusRow = hideOnlineStatusInfoRow = goOfflineAutomaticallyRow = goOfflineAutomaticallyInfoRow = -1;
+        scheduleMessagesInGhostModeRow = scheduleMessagesInGhostModeInfoRow = hideTypingStatusRow = hideTypingStatusInfoRow = -1;
+        hideReadStatusRow = hideReadStatusInfoRow = hideStoryViewsRow = hideStoryViewsInfoRow = -1;
+        alertBeforeOpeningStoryRow = alertBeforeOpeningStoryInfoRow = readOnInteractRow = readOnInteractInfoRow = -1;
+        ghostModeExceptionsRow = ghostModeExceptionsInfoRow = keepLastSeenUpdatedInGhostModeRow = keepLastSeenUpdatedInGhostModeInfoRow = -1;
+        restrictionsHeaderRow = antiRecallRow = antiRecallInfoRow = messageLabelsRow = messageLabelsInfoRow = -1;
+        chatTranslationProviderRow = chatTranslationProviderInfoRow = keepMessageEditHistoryRow = keepMessageEditHistoryInfoRow = -1;
+        saveTemporaryMediaRow = saveTemporaryMediaInfoRow = saveTemporaryMediaPathRow = saveTemporaryMediaPathInfoRow = -1;
+        keepTemporaryMediaInChatRow = keepTemporaryMediaInChatInfoRow = keepKickedChatsCacheRow = keepKickedChatsCacheInfoRow = -1;
+        bypassContentProtectionRow = bypassContentProtectionInfoRow = -1;
+    }
+
     @Override
     public boolean onFragmentCreate() {
         rowCount = 0;
-        adsHeaderRow = rowCount++;
-        hideAdsRow = rowCount++;
-        hideAdsInfoRow = rowCount++;
-        proxyHeaderRow = rowCount++;
-        hideProxySponsorRow = rowCount++;
-        hideProxySponsorInfoRow = rowCount++;
-        feedHeaderRow = rowCount++;
-        feedSettingsRow = rowCount++;
-        feedInfoRow = rowCount++;
-        ghostHeaderRow = rowCount++;
-        hideOnlineStatusRow = rowCount++;
-        hideOnlineStatusInfoRow = rowCount++;
-        goOfflineAutomaticallyRow = rowCount++;
-        goOfflineAutomaticallyInfoRow = rowCount++;
-        scheduleMessagesInGhostModeRow = rowCount++;
-        scheduleMessagesInGhostModeInfoRow = rowCount++;
-        keepLastSeenUpdatedInGhostModeRow = rowCount++;
-        keepLastSeenUpdatedInGhostModeInfoRow = rowCount++;
-        hideTypingStatusRow = rowCount++;
-        hideTypingStatusInfoRow = rowCount++;
-        hideReadStatusRow = rowCount++;
-        hideReadStatusInfoRow = rowCount++;
-        hideStoryViewsRow = rowCount++;
-        hideStoryViewsInfoRow = rowCount++;
-        alertBeforeOpeningStoryRow = rowCount++;
-        alertBeforeOpeningStoryInfoRow = rowCount++;
-        readOnInteractRow = rowCount++;
-        readOnInteractInfoRow = rowCount++;
-        ghostModeExceptionsRow = rowCount++;
-        ghostModeExceptionsInfoRow = rowCount++;
-        restrictionsHeaderRow = rowCount++;
-        antiRecallRow = rowCount++;
-        antiRecallInfoRow = rowCount++;
-        messageLabelsRow = rowCount++;
-        messageLabelsInfoRow = rowCount++;
-        chatTranslationProviderRow = rowCount++;
-        chatTranslationProviderInfoRow = rowCount++;
-        keepMessageEditHistoryRow = rowCount++;
-        keepMessageEditHistoryInfoRow = rowCount++;
-        saveTemporaryMediaRow = rowCount++;
-        saveTemporaryMediaInfoRow = rowCount++;
-        saveTemporaryMediaPathRow = rowCount++;
-        saveTemporaryMediaPathInfoRow = rowCount++;
-        keepTemporaryMediaInChatRow = rowCount++;
-        keepTemporaryMediaInChatInfoRow = rowCount++;
-        keepKickedChatsCacheRow = rowCount++;
-        keepKickedChatsCacheInfoRow = rowCount++;
-        bypassContentProtectionRow = rowCount++;
-        bypassContentProtectionInfoRow = rowCount++;
+        resetRows();
+        switch (getScreen()) {
+            case SCREEN_GENERAL:
+                hideAdsRow = rowCount++;
+                hideProxySponsorRow = rowCount++;
+                feedSettingsRow = rowCount++;
+                break;
+            case SCREEN_PRIVACY:
+                hideOnlineStatusRow = rowCount++;
+                goOfflineAutomaticallyRow = rowCount++;
+                scheduleMessagesInGhostModeRow = rowCount++;
+                keepLastSeenUpdatedInGhostModeRow = rowCount++;
+                hideTypingStatusRow = rowCount++;
+                hideReadStatusRow = rowCount++;
+                hideStoryViewsRow = rowCount++;
+                alertBeforeOpeningStoryRow = rowCount++;
+                readOnInteractRow = rowCount++;
+                ghostModeExceptionsRow = rowCount++;
+                bypassContentProtectionRow = rowCount++;
+                break;
+            case SCREEN_HISTORY:
+                antiRecallRow = rowCount++;
+                keepMessageEditHistoryRow = rowCount++;
+                keepKickedChatsCacheRow = rowCount++;
+                break;
+            case SCREEN_MEDIA:
+                saveTemporaryMediaRow = rowCount++;
+                saveTemporaryMediaPathRow = rowCount++;
+                keepTemporaryMediaInChatRow = rowCount++;
+                break;
+            case SCREEN_APPEARANCE:
+                messageLabelsRow = rowCount++;
+                break;
+            case SCREEN_TRANSLATION:
+                chatTranslationProviderRow = rowCount++;
+                break;
+            default:
+                generalSettingsRow = rowCount++;
+                privacySettingsRow = rowCount++;
+                historySettingsRow = rowCount++;
+                mediaSettingsRow = rowCount++;
+                appearanceSettingsRow = rowCount++;
+                translationSettingsRow = rowCount++;
+                break;
+        }
         return super.onFragmentCreate();
     }
 
@@ -195,7 +240,7 @@ public class CustomSettingsActivity extends BaseFragment {
     public View createView(Context context) {
 
         actionBar.setBackButtonImage(R.drawable.ic_ab_back);
-        actionBar.setTitle(getString(R.string.CustomSettingsTitle));
+        actionBar.setTitle(getScreenTitle());
         actionBar.setAllowOverlayTitle(true);
         actionBar.setActionBarMenuOnItemClick(new ActionBar.ActionBarMenuOnItemClick() {
             @Override
@@ -214,6 +259,25 @@ public class CustomSettingsActivity extends BaseFragment {
 
         fragmentView = root;
         return fragmentView;
+    }
+
+    private String getScreenTitle() {
+        switch (getScreen()) {
+            case SCREEN_GENERAL:
+                return getString(R.string.CustomSettingsGeneral);
+            case SCREEN_PRIVACY:
+                return getString(R.string.CustomSettingsPrivacy);
+            case SCREEN_HISTORY:
+                return getString(R.string.CustomSettingsMessagesHistory);
+            case SCREEN_MEDIA:
+                return getString(R.string.CustomSettingsMediaStorage);
+            case SCREEN_APPEARANCE:
+                return getString(R.string.CustomSettingsAppearance);
+            case SCREEN_TRANSLATION:
+                return getString(R.string.CustomSettingsTranslation);
+            default:
+                return getString(R.string.CustomSettingsTitle);
+        }
     }
 
     private void promptRestart() {
@@ -508,7 +572,19 @@ public class CustomSettingsActivity extends BaseFragment {
         listView.setVerticalScrollBarEnabled(false);
 
         listView.setOnItemClickListener((view, position) -> {
-            if (position == hideAdsRow) {
+            if (position == generalSettingsRow) {
+                presentFragment(new CustomSettingsActivity(SCREEN_GENERAL));
+            } else if (position == privacySettingsRow) {
+                presentFragment(new CustomSettingsActivity(SCREEN_PRIVACY));
+            } else if (position == historySettingsRow) {
+                presentFragment(new CustomSettingsActivity(SCREEN_HISTORY));
+            } else if (position == mediaSettingsRow) {
+                presentFragment(new CustomSettingsActivity(SCREEN_MEDIA));
+            } else if (position == appearanceSettingsRow) {
+                presentFragment(new CustomSettingsActivity(SCREEN_APPEARANCE));
+            } else if (position == translationSettingsRow) {
+                presentFragment(new CustomSettingsActivity(SCREEN_TRANSLATION));
+            } else if (position == hideAdsRow) {
                 boolean val = !CustomSettings.hideAds();
                 CustomSettings.setHideAds(val);
                 if (view instanceof TextCheckCell)
@@ -634,6 +710,8 @@ public class CustomSettingsActivity extends BaseFragment {
 
         @Override
         public int getItemViewType(int pos) {
+            if (pos == generalSettingsRow || pos == privacySettingsRow || pos == historySettingsRow ||
+                    pos == mediaSettingsRow || pos == appearanceSettingsRow || pos == translationSettingsRow) return TYPE_TEXT_CELL;
             if (pos == adsHeaderRow || pos == proxyHeaderRow)         return TYPE_HEADER;
             if (pos == hideAdsRow || pos == hideProxySponsorRow)      return TYPE_CHECK;
             if (pos == hideAdsInfoRow || pos == hideProxySponsorInfoRow) return TYPE_INFO;
@@ -736,73 +814,74 @@ public class CustomSettingsActivity extends BaseFragment {
                 }
                 case TYPE_CHECK: {
                     TextCheckCell cell = (TextCheckCell) holder.itemView;
+                    boolean divider = pos + 1 < rowCount;
                     if (pos == hideAdsRow) {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsHideSponsoredMessages),
-                                CustomSettings.hideAds(), true);
+                                CustomSettings.hideAds(), divider);
                     }
                     if (pos == hideProxySponsorRow) {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsHideProxySponsor),
-                                CustomSettings.hideProxySponsor(), false);
+                                CustomSettings.hideProxySponsor(), divider);
                     }
                     if (pos == hideOnlineStatusRow) {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsHideOnlineStatus),
-                                CustomSettings.hideOnlineStatus(), true);
+                                CustomSettings.hideOnlineStatus(), divider);
                     }
                     if (pos == goOfflineAutomaticallyRow) {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsGoOfflineAutomatically),
-                                CustomSettings.goOfflineAutomatically(), true);
+                                CustomSettings.goOfflineAutomatically(), divider);
                     }
                     if (pos == scheduleMessagesInGhostModeRow) {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsScheduleMessagesInGhostMode),
-                                CustomSettings.scheduleMessagesInGhostMode(), true);
+                                CustomSettings.scheduleMessagesInGhostMode(), divider);
                     }
                     if (pos == hideTypingStatusRow) {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsHideTypingStatus),
-                                CustomSettings.hideTypingStatus(), true);
+                                CustomSettings.hideTypingStatus(), divider);
                     }
                     if (pos == hideReadStatusRow) {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsHideReadStatus),
-                                CustomSettings.hideReadStatus(), true);
+                                CustomSettings.hideReadStatus(), divider);
                     }
                     if (pos == hideStoryViewsRow) {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsHideStoryViews),
-                                CustomSettings.hideStoryViews(), true);
+                                CustomSettings.hideStoryViews(), divider);
                     }
                     if (pos == alertBeforeOpeningStoryRow) {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsAlertBeforeOpeningStory),
-                                CustomSettings.alertBeforeOpeningStory(), true);
+                                CustomSettings.alertBeforeOpeningStory(), divider);
                     }
                     if (pos == readOnInteractRow) {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsReadOnInteract),
-                                CustomSettings.readOnInteract(), true);
+                                CustomSettings.readOnInteract(), divider);
                     }
                     if (pos == keepLastSeenUpdatedInGhostModeRow) {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsKeepLastSeenUpdatedInGhostMode),
-                                CustomSettings.keepLastSeenUpdatedInGhostMode(), true);
+                                CustomSettings.keepLastSeenUpdatedInGhostMode(), divider);
                     }
                     if (pos == antiRecallRow) {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsAntiRecall),
-                                CustomSettings.antiRecall(), true);
+                                CustomSettings.antiRecall(), divider);
                     }
                     if (pos == keepMessageEditHistoryRow) {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsKeepMessageEditHistory),
-                                CustomSettings.keepMessageEditHistory(), true);
+                                CustomSettings.keepMessageEditHistory(), divider);
                     }
                     if (pos == saveTemporaryMediaRow) {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsSaveTemporaryMedia),
-                                CustomSettings.saveTemporaryMedia(), true);
+                                CustomSettings.saveTemporaryMedia(), divider);
                     }
                     if (pos == keepTemporaryMediaInChatRow) {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsKeepTemporaryMediaInChat),
-                                CustomSettings.keepTemporaryMediaInChat(), true);
+                                CustomSettings.keepTemporaryMediaInChat(), divider);
                     }
                     if (pos == keepKickedChatsCacheRow) {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsKeepKickedChatsCache),
-                                CustomSettings.keepKickedChatsCache(), true);
+                                CustomSettings.keepKickedChatsCache(), divider);
                     }
                     if (pos == bypassContentProtectionRow) {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsBypassContentProtection),
-                                CustomSettings.bypassContentProtection(), false);
+                                CustomSettings.bypassContentProtection(), divider);
                     }
                     break;
                 }
@@ -878,23 +957,42 @@ public class CustomSettingsActivity extends BaseFragment {
                 }
                 case TYPE_TEXT_CELL: {
                     TextCell cell = (TextCell) holder.itemView;
+                    boolean divider = pos + 1 < rowCount;
+                    if (pos == generalSettingsRow) {
+                        cell.setTextAndIcon(getString(R.string.CustomSettingsGeneral), R.drawable.msg_settings, true);
+                    }
+                    if (pos == privacySettingsRow) {
+                        cell.setTextAndIcon(getString(R.string.CustomSettingsPrivacy), R.drawable.msg_secret, true);
+                    }
+                    if (pos == historySettingsRow) {
+                        cell.setTextAndIcon(getString(R.string.CustomSettingsMessagesHistory), R.drawable.msg_customize, true);
+                    }
+                    if (pos == mediaSettingsRow) {
+                        cell.setTextAndIcon(getString(R.string.CustomSettingsMediaStorage), R.drawable.msg_media, true);
+                    }
+                    if (pos == appearanceSettingsRow) {
+                        cell.setTextAndIcon(getString(R.string.CustomSettingsAppearance), R.drawable.msg_customize, true);
+                    }
+                    if (pos == translationSettingsRow) {
+                        cell.setTextAndIcon(getString(R.string.CustomSettingsTranslation), R.drawable.msg_translate, false);
+                    }
                     if (pos == feedSettingsRow) {
-                        cell.setTextAndIcon(getString(R.string.CustomSettingsFeedSettings), R.drawable.msg_channel, true);
+                        cell.setTextAndIcon(getString(R.string.CustomSettingsFeedSettings), R.drawable.msg_channel, divider);
                     }
                     if (pos == ghostModeExceptionsRow) {
                         int count = CustomSettings.ghostModeExceptionsCount();
                         cell.setTextAndValue(getString(R.string.CustomSettingsGhostModeExceptions),
-                                count == 0 ? "" : LocaleController.formatPluralString("Chats", count), true);
+                                count == 0 ? "" : LocaleController.formatPluralString("Chats", count), divider);
                     }
                     if (pos == messageLabelsRow) {
-                        cell.setTextAndValue(getString(R.string.CustomSettingsMessageLabels), getString(R.string.CustomSettingsMessageLabelsValue), true);
+                        cell.setTextAndValue(getString(R.string.CustomSettingsMessageLabels), getString(R.string.CustomSettingsMessageLabelsValue), divider);
                     }
                     if (pos == chatTranslationProviderRow) {
-                        cell.setTextAndValue(getString(R.string.CustomSettingsChatTranslationProvider), getChatTranslationProviderName(), true);
+                        cell.setTextAndValue(getString(R.string.CustomSettingsChatTranslationProvider), getChatTranslationProviderName(), divider);
                     }
                     if (pos == saveTemporaryMediaPathRow) {
                         cell.setTextAndValue(getString(R.string.CustomSettingsSaveTemporaryMediaPath),
-                                CustomSettings.saveTemporaryMediaDisplayPath(), true);
+                                CustomSettings.saveTemporaryMediaDisplayPath(), divider);
                     }
                     break;
                 }

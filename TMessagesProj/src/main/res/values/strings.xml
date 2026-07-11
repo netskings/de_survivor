@@ -10916,6 +10916,12 @@
     <string name="ClearBotsConfirm">Are you sure you want to clear %1$d bots from the list?</string>
     <string name="ClearDeletedConfirm">Are you sure you want to clear %1$d deleted accounts from the list?</string>
     <string name="CustomSettingsTitle">Extra Settings</string>
+    <string name="CustomSettingsGeneral">General</string>
+    <string name="CustomSettingsPrivacy">Privacy and Ghost Mode</string>
+    <string name="CustomSettingsMessagesHistory">Messages and History</string>
+    <string name="CustomSettingsMediaStorage">Media and Storage</string>
+    <string name="CustomSettingsAppearance">Appearance</string>
+    <string name="CustomSettingsTranslation">Translation</string>
     <string name="CustomSettingsAdvertisingHeader">Sponsored Content</string>
     <string name="CustomSettingsFeedHeader">Feed</string>
     <string name="CustomSettingsHideSponsoredMessages">Hide Sponsored Messages</string>
