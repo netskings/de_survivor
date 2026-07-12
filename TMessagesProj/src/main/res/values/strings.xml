@@ -11084,4 +11084,25 @@
     <string name="AIEditorStyleSharedToManyChats_other">Sent AI Style link to **%1$d chats**.</string>
 
     <string name="GuestBotFor"> for </string>
+
+    <string name="PythonPlugins">Python plugins</string>
+    <string name="PythonPluginsSettingsInfo">Local exteraGram/AyuGram-compatible plugins</string>
+    <string name="PythonPluginsSafety">Safety</string>
+    <string name="PythonPluginsSafeMode">Safe mode</string>
+    <string name="PythonPluginsSafeModeActive">Third-party plugins were skipped for this start.</string>
+    <string name="PythonPluginsSafeModeInfo">Safe mode starts Telegram without loading any third-party plugin.</string>
+    <string name="PythonPluginsInstall">Install plugin file</string>
+    <string name="PythonPluginsInstallInfo">Only UTF-8 .py and .plugin files are accepted. Metadata is checked before code runs.</string>
+    <string name="PythonPluginsInstalled">Installed plugins</string>
+    <string name="PythonPluginsUnavailableUntilRestart">The plugin runtime is unavailable in this safe-mode session. Change the option and restart Telegram.</string>
+    <string name="PythonPluginsEmpty">No local plugins are installed.</string>
+    <string name="PythonPluginsError">Error</string>
+    <string name="PythonPluginsEnabled">Enabled</string>
+    <string name="PythonPluginsDisabled">Disabled</string>
+    <string name="PythonPluginsRestartRequired">Restart Telegram to apply the safe-mode change.</string>
+    <string name="PythonPluginsOperationFailed">The plugin operation failed. See the plugin error journal.</string>
+    <string name="PythonPluginsInstalledSuccess">Plugin installed successfully.</string>
+    <string name="PythonPluginsNoSettings">This plugin has no settings.</string>
+    <string name="PythonPluginsCustomSetting">Custom plugin setting</string>
+    <string name="PythonPluginsSave">Save</string>
 </resources>

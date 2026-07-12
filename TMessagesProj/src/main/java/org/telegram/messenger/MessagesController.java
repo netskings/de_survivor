@@ -56,6 +56,7 @@ import org.telegram.SQLite.SQLiteDatabase;
 import org.telegram.SQLite.SQLiteException;
 import org.telegram.SQLite.SQLitePreparedStatement;
 import org.telegram.messenger.browser.Browser;
+import org.telegram.messenger.plugins.PluginManager;
 import org.telegram.messenger.support.LongSparseIntArray;
 import org.telegram.messenger.support.LongSparseLongArray;
 import org.telegram.messenger.voip.GroupCallMessagesController;
@@ -278,6 +279,7 @@ public class MessagesController extends BaseController implements NotificationCe
     public ArrayList<TLRPC.TL_dialogFilterSuggested> suggestedFilters = new ArrayList<>();
 
     private final LongSparseArray<ArrayList<TLRPC.Updates>> updatesQueueChannels = new LongSparseArray<>();
+    private final ThreadLocal<Boolean> suppressPluginUpdatesPayload = new ThreadLocal<>();
     private LongSparseLongArray updatesStartWaitTimeChannels = new LongSparseLongArray();
     private LongSparseIntArray channelsPts = new LongSparseIntArray();
     private LongSparseArray<Boolean> gettingDifferenceChannels = new LongSparseArray<>();
@@ -7150,13 +7152,7 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     private boolean shouldKeepKickedChatCache(TLRPC.Chat chat) {
-        if (!CustomSettings.keepKickedChatsCache() || chat == null) {
-            return false;
-        }
-        return chat instanceof TLRPC.TL_chatForbidden
-                || chat instanceof TLRPC.TL_channelForbidden
-                || chat.kicked
-                || chat.banned_rights != null && chat.banned_rights.view_messages;
+        return KickedChatCachePolicy.shouldKeep(chat);
     }
 
     private void addOrRemoveActiveVoiceChat(TLRPC.Chat chat) {
@@ -12708,6 +12704,27 @@ public class MessagesController extends BaseController implements NotificationCe
                 dialogs_read_outbox_max.put(d.id, Math.max(value, d.read_outbox_max_id));
             }
 
+            // A removed chat no longer appears in messages.getDialogs. Keep the
+            // already loaded local dialog in the replacement dictionaries so a
+            // full difference reset doesn't make it disappear until restart.
+            if (CustomSettings.keepKickedChatsCache()) {
+                for (int a = 0; a < dialogs_dict.size(); a++) {
+                    long dialogId = dialogs_dict.keyAt(a);
+                    if (!DialogObject.isChatDialog(dialogId) || new_dialogs_dict.get(dialogId) != null) {
+                        continue;
+                    }
+                    TLRPC.Chat chat = getChat(-dialogId);
+                    if (!KickedChatCachePolicy.shouldKeep(chat)) {
+                        continue;
+                    }
+                    new_dialogs_dict.put(dialogId, dialogs_dict.valueAt(a));
+                    ArrayList<MessageObject> messages = dialogMessage.get(dialogId);
+                    if (messages != null) {
+                        new_dialogMessage.put(dialogId, messages);
+                    }
+                }
+            }
+
             ImageLoader.saveMessagesThumbs(resetDialogsAll.messages);
             for (int a = 0; a < resetDialogsAll.messages.size(); a++) {
                 TLRPC.Message message = resetDialogsAll.messages.get(a);
@@ -17331,6 +17348,37 @@ public class MessagesController extends BaseController implements NotificationCe
 
     // must be run from Utilities.stageQueue
     public void processUpdates(final TLRPC.Updates updates, boolean fromQueue) {
+        TLRPC.Updates effectiveUpdates = updates;
+        boolean suppressPayload = updates.pluginUpdatesSuppressed;
+        if (!updates.pluginUpdatesHookApplied) {
+            PluginManager.HookOutcome<TLRPC.Updates> hookOutcome = PluginManager.getInstance()
+                    .dispatchUpdates(currentAccount, updates);
+            if (hookOutcome.isCancelled()) {
+                suppressPayload = true;
+            } else {
+                effectiveUpdates = hookOutcome.value;
+            }
+            effectiveUpdates.pluginUpdatesHookApplied = true;
+            effectiveUpdates.pluginUpdatesSuppressed = suppressPayload;
+        }
+        Boolean previousSuppression = suppressPluginUpdatesPayload.get();
+        suppressPluginUpdatesPayload.set(suppressPayload);
+        try {
+            // A cancelled container is consumed with an empty payload so seq,
+            // pts and queue state still advance and Telegram doesn't request the
+            // same update forever.
+            processUpdatesInternal(effectiveUpdates, fromQueue);
+        } finally {
+            if (previousSuppression == null) {
+                suppressPluginUpdatesPayload.remove();
+            } else {
+                suppressPluginUpdatesPayload.set(previousSuppression);
+            }
+        }
+    }
+
+    // must be run from Utilities.stageQueue
+    private void processUpdatesInternal(final TLRPC.Updates updates, boolean fromQueue) {
         ArrayList<Long> needGetChannelsDiff = null;
         boolean needGetDiff = false;
         boolean needReceivedQueue = false;
@@ -17869,6 +17917,24 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public boolean processUpdateArray(ArrayList<TLRPC.Update> updates, ArrayList<TLRPC.User> usersArr, ArrayList<TLRPC.Chat> chatsArr, boolean fromGetDifference, int date) {
+        if (Boolean.TRUE.equals(suppressPluginUpdatesPayload.get())) {
+            return processUpdateArrayInternal(
+                    new ArrayList<>(), usersArr, chatsArr, fromGetDifference, date
+            );
+        }
+        ArrayList<TLRPC.Update> effectiveUpdates = new ArrayList<>(updates.size());
+        for (int index = 0; index < updates.size(); index++) {
+            TLRPC.Update update = updates.get(index);
+            PluginManager.HookOutcome<TLRPC.Update> hookOutcome = PluginManager.getInstance()
+                    .dispatchUpdate(currentAccount, update);
+            if (!hookOutcome.isCancelled()) {
+                effectiveUpdates.add(hookOutcome.value);
+            }
+        }
+        return processUpdateArrayInternal(effectiveUpdates, usersArr, chatsArr, fromGetDifference, date);
+    }
+
+    private boolean processUpdateArrayInternal(ArrayList<TLRPC.Update> updates, ArrayList<TLRPC.User> usersArr, ArrayList<TLRPC.Chat> chatsArr, boolean fromGetDifference, int date) {
         if (updates.isEmpty()) {
             if (usersArr != null || chatsArr != null) {
                 AndroidUtilities.runOnUIThread(() -> {

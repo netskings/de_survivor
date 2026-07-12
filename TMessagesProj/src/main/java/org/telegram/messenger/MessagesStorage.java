@@ -4561,7 +4561,10 @@ public class MessagesStorage extends BaseController {
                     long did = cursor.longValue(0);
                     int pinnedNum = cursor.intValue(1);
                     if (!DialogObject.isEncryptedDialog(did)) {
-                        dids.add(did);
+                        TLRPC.Chat chat = DialogObject.isChatDialog(did) ? getChat(-did) : null;
+                        if (!KickedChatCachePolicy.shouldKeep(chat)) {
+                            dids.add(did);
+                        }
                         if (pinnedNum > 0) {
                             maxPinnedNum = Math.max(pinnedNum, maxPinnedNum);
                             oldPinnedDialogNums.put(did, pinnedNum);
@@ -4587,16 +4590,18 @@ public class MessagesStorage extends BaseController {
                 String ids = "(" + TextUtils.join(",", dids) + ")";
 
                 database.beginTransaction();
-                database.executeFast("DELETE FROM chat_pinned_count WHERE uid IN " + ids).stepThis().dispose();
-                database.executeFast("DELETE FROM chat_pinned_v2 WHERE uid IN " + ids).stepThis().dispose();
-                database.executeFast("DELETE FROM dialogs WHERE did IN " + ids).stepThis().dispose();
-                database.executeFast("DELETE FROM messages_v2 WHERE uid IN " + ids).stepThis().dispose();
-                database.executeFast("DELETE FROM polls_v2 WHERE 1").stepThis().dispose();
-                database.executeFast("DELETE FROM bot_keyboard WHERE uid IN " + ids).stepThis().dispose();
-                database.executeFast("DELETE FROM bot_keyboard_topics WHERE uid IN " + ids).stepThis().dispose();
-                database.executeFast("DELETE FROM media_v4 WHERE uid IN " + ids).stepThis().dispose();
-                database.executeFast("DELETE FROM messages_holes WHERE uid IN " + ids).stepThis().dispose();
-                database.executeFast("DELETE FROM media_holes_v2 WHERE uid IN " + ids).stepThis().dispose();
+                if (!dids.isEmpty()) {
+                    database.executeFast("DELETE FROM chat_pinned_count WHERE uid IN " + ids).stepThis().dispose();
+                    database.executeFast("DELETE FROM chat_pinned_v2 WHERE uid IN " + ids).stepThis().dispose();
+                    database.executeFast("DELETE FROM dialogs WHERE did IN " + ids).stepThis().dispose();
+                    database.executeFast("DELETE FROM messages_v2 WHERE uid IN " + ids).stepThis().dispose();
+                    database.executeFast("DELETE FROM polls_v2 WHERE uid IN " + ids).stepThis().dispose();
+                    database.executeFast("DELETE FROM bot_keyboard WHERE uid IN " + ids).stepThis().dispose();
+                    database.executeFast("DELETE FROM bot_keyboard_topics WHERE uid IN " + ids).stepThis().dispose();
+                    database.executeFast("DELETE FROM media_v4 WHERE uid IN " + ids).stepThis().dispose();
+                    database.executeFast("DELETE FROM messages_holes WHERE uid IN " + ids).stepThis().dispose();
+                    database.executeFast("DELETE FROM media_holes_v2 WHERE uid IN " + ids).stepThis().dispose();
+                }
                 database.commitTransaction();
 
                 for (int a = 0; a < totalPinnedCount; a++) {
@@ -17107,7 +17112,7 @@ public class MessagesStorage extends BaseController {
                     break;
                 } else {
                     TLRPC.Chat chat = getChat(-did);
-                    if (!ChatObject.isNotInChat(chat) && chat.migrated_to == null) {
+                    if ((!ChatObject.isNotInChat(chat) || KickedChatCachePolicy.shouldKeep(chat)) && chat.migrated_to == null) {
                         isEmpty = false;
                         break;
                     }
@@ -17738,7 +17743,7 @@ public class MessagesStorage extends BaseController {
                                     }
                                 }
 
-                                if (!(chat == null || chat.deactivated || ChatObject.isChannel(chat) && ChatObject.isNotInChat(chat))) {
+                                if (!(chat == null || chat.deactivated || ChatObject.isChannel(chat) && ChatObject.isNotInChat(chat) && !KickedChatCachePolicy.shouldKeep(chat))) {
                                     long dialog_id = -chat.id;
                                     DialogsSearchAdapter.DialogSearchResult dialogSearchResult = dialogsResult.get(dialog_id);
                                     dialogSearchResult.name = AndroidUtilities.generateSearchName(chat.monoforum ? ForumUtilities.getMonoForumTitle(currentAccount, chat):chat.title, null, q);

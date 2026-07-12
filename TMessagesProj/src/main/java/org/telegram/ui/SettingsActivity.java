@@ -698,6 +698,14 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 "Custom Settings",
                 "Ads, proxy sponsor"
         ));
+        items.add(SettingCell.Factory.of(
+                101,
+                IconBackgroundColors.PURPLE.top,
+                IconBackgroundColors.PURPLE.bottom,
+                R.drawable.msg_bot,
+                getString(R.string.PythonPlugins),
+                getString(R.string.PythonPluginsSettingsInfo)
+        ));
 
         items.add(UItem.asShadow(null));
 
@@ -823,6 +831,9 @@ public class SettingsActivity extends BaseFragment implements NotificationCenter
                 break;
             case 100:
                 presentFragment(new CustomSettingsActivity());
+                break;
+            case 101:
+                presentFragment(new PluginsActivity());
                 break;
 
             case 11:

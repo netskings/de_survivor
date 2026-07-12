@@ -181,6 +181,7 @@ public class CustomSettingsActivity extends BaseFragment {
                 antiRecallRow = rowCount++;
                 keepMessageEditHistoryRow = rowCount++;
                 keepKickedChatsCacheRow = rowCount++;
+                keepKickedChatsCacheInfoRow = rowCount++;
                 break;
             case SCREEN_MEDIA:
                 saveTemporaryMediaRow = rowCount++;

@@ -1108,9 +1108,11 @@ public class UniversalAdapter extends AdapterWithDiffUtils {
         final boolean clickable;
         if (viewType >= UItem.factoryViewTypeStartsWith) {
             UItem.UItemFactory<?> factory = UItem.findFactory(viewType);
-            clickable = factory != null && factory.isClickable();
+            clickable = factory != null && factory.isClickable()
+                    || item != null && item.selectable;
         } else {
             clickable = (
+                viewType == VIEW_TYPE_CUSTOM && item != null && item.selectable ||
                 viewType == VIEW_TYPE_TEXT ||
                 viewType == VIEW_TYPE_TEXT_CHECK ||
                 viewType == VIEW_TYPE_ICON_TEXT_CHECK ||

@@ -1,0 +1,2 @@
+"""Legacy UI compatibility package."""
+

@@ -37,6 +37,7 @@ import android.view.ViewGroup;
 import androidx.annotation.NonNull;
 
 import org.json.JSONObject;
+import org.telegram.messenger.plugins.PluginManager;
 import org.telegram.messenger.voip.VideoCapturerDevice;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.TLRPC;
@@ -299,6 +300,7 @@ public class ApplicationLoader extends Application {
             DownloadController.getInstance(a);
         }
         BillingController.getInstance().startConnection();
+        PluginManager.getInstance().loadEnabledPlugins();
     }
 
     public ApplicationLoader() {
@@ -351,7 +353,7 @@ public class ApplicationLoader extends Application {
         } catch (UnsatisfiedLinkError error) {
             throw new RuntimeException("can't load native libraries " +  Build.CPU_ABI + " lookup folder " + NativeLoader.getAbiFolder());
         }
-        new ForegroundDetector(this) {
+        ForegroundDetector foregroundDetector = new ForegroundDetector(this) {
             @Override
             public void onActivityStarted(Activity activity) {
                 boolean wasInBackground = isBackground();
@@ -361,16 +363,34 @@ public class ApplicationLoader extends Application {
                 }
             }
         };
+        foregroundDetector.addListener(new ForegroundDetector.Listener() {
+            @Override
+            public void onBecameForeground() {
+                PluginManager.getInstance().dispatchAppEvent("RESUME");
+            }
+
+            @Override
+            public void onBecameBackground() {
+                PluginManager.getInstance().dispatchAppEvent("PAUSE");
+            }
+        });
         if (BuildVars.LOGS_ENABLED) {
             FileLog.d("load libs time = " + (SystemClock.elapsedRealtime() - startTime));
         }
 
         applicationHandler = new Handler(applicationContext.getMainLooper());
+        PluginManager.getInstance().bootstrap(applicationContext);
 
         AndroidUtilities.runOnUIThread(ApplicationLoader::startPushService);
 
         LauncherIconController.tryFixLauncherIconIfNeeded();
         ProxyRotationController.init();
+    }
+
+    @Override
+    public void onTerminate() {
+        PluginManager.getInstance().shutdown();
+        super.onTerminate();
     }
 
     public static void startPushService() {

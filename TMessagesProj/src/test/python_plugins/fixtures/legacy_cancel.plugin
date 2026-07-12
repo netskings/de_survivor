@@ -1,0 +1,13 @@
+from base_plugin import BasePlugin, HookResult, HookStrategy
+
+__id__ = "legacy_cancel"
+__name__ = "Legacy Forward Cancel"
+__min_version__ = "12.0"
+
+
+class ArbitraryLegacyClassName(BasePlugin):
+    def on_plugin_load(self):
+        self.add_hook("TL_messages_forwardMessages", priority=999)
+
+    def pre_request_hook(self, request_name, account, request):
+        return HookResult(strategy=HookStrategy.CANCEL)

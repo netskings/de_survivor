@@ -1,6 +1,7 @@
 import org.gradle.nativeplatform.platform.internal.DefaultNativePlatform
 
 apply plugin: 'com.android.library'
+apply plugin: 'com.chaquo.python'
 
 repositories {
     mavenCentral()
@@ -108,8 +109,24 @@ android {
 
 
     defaultConfig {
-        minSdkVersion 21
+        minSdkVersion 24
         targetSdkVersion 35
+
+        ndk {
+            abiFilters 'armeabi-v7a', 'arm64-v8a', 'x86', 'x86_64'
+        }
+
+        python {
+            version '3.11'
+            pip {
+                // packaging is used by the restricted on-device wheel resolver.
+                // requests is part of the historical SDK baseline: many legacy
+                // plugins import it without declaring __requirements__.
+                install 'packaging==26.0'
+                install 'requests==2.32.4'
+                install 'typing_extensions==4.14.1'
+            }
+        }
 
         vectorDrawables.generatedDensities = ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi']
 

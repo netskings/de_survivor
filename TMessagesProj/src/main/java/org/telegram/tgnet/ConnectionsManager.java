@@ -38,6 +38,7 @@ import org.telegram.messenger.KeepAliveJob;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.NotificationCenter;
+import org.telegram.messenger.plugins.PluginManager;
 import org.telegram.messenger.PushListenerController;
 import org.telegram.messenger.SharedConfig;
 import org.telegram.messenger.StatsController;
@@ -368,13 +369,30 @@ public class ConnectionsManager extends BaseController {
     }
 
     private void sendRequestInternal(TLObject object, RequestDelegate onComplete, RequestDelegateTimestamp onCompleteTimestamp, QuickAckDelegate onQuickAck, WriteToSocketDelegate onWriteToSocket, int flags, int datacenterId, int connectionType, boolean immediate, int requestToken) {
+        final String requestName = object.getClass().getSimpleName();
+        PluginManager.HookOutcome<TLObject> preRequest = object.pluginRequestHookApplied
+                ? PluginManager.HookOutcome.defaultValue(object)
+                : PluginManager.getInstance().dispatchPreRequest(currentAccount, requestName, object);
+        if (preRequest.isCancelled()) {
+            freeResourcesSafely(object);
+            deliverPluginRequestCancellation(onComplete, onCompleteTimestamp);
+            return;
+        }
+        final TLObject requestObject = preRequest.value;
+        requestObject.pluginRequestHookApplied = true;
+        if (requestObject != object) {
+            freeResourcesSafely(object);
+        }
         if (BuildVars.LOGS_ENABLED) {
-            FileLog.d("send request " + object + " with token = " + requestToken);
+            FileLog.d("send request " + requestObject + " with token = " + requestToken);
         }
         try {
-            NativeByteBuffer buffer = new NativeByteBuffer(object.getObjectSize());
-            object.serializeToStream(buffer);
-            object.freeResources();
+            NativeByteBuffer buffer = new NativeByteBuffer(requestObject.getObjectSize());
+            try {
+                requestObject.serializeToStream(buffer);
+            } finally {
+                freeResourcesSafely(requestObject);
+            }
 
             long startRequestTime = 0;
             if (BuildVars.DEBUG_PRIVATE_VERSION && BuildVars.LOGS_ENABLED || (connectionType & ConnectionTypeDownload) != 0) {
@@ -393,7 +411,7 @@ public class ConnectionsManager extends BaseController {
                         responseSize = buff.limit();
                         int magic = buff.readInt32(true);
                         try {
-                            resp = object.deserializeResponse(buff, magic, true);
+                            resp = requestObject.deserializeResponse(buff, magic, true);
                         } catch (Exception e2) {
                             if (BuildVars.DEBUG_PRIVATE_VERSION) {
                                 throw e2;
@@ -406,7 +424,7 @@ public class ConnectionsManager extends BaseController {
                         error.code = errorCode;
                         error.text = errorText;
                         if (BuildVars.LOGS_ENABLED && error.code != -2000) {
-                            FileLog.e(object + " got error " + error.code + " " + error.text);
+                            FileLog.e(requestObject + " got error " + error.code + " " + error.text);
                         }
                     }
                     if ((connectionType & ConnectionTypeDownload) != 0 && VideoPlayer.activePlayers.isEmpty()) {
@@ -420,7 +438,7 @@ public class ConnectionsManager extends BaseController {
                             FileLog.d("Cleanup keys for " + currentAccount + " because of CONNECTION_NOT_INITED");
                         }
                         cleanup(true);
-                        sendRequest(object, onComplete, onCompleteTimestamp, onQuickAck, onWriteToSocket, flags, datacenterId, connectionType, immediate);
+                        sendRequest(requestObject, onComplete, onCompleteTimestamp, onQuickAck, onWriteToSocket, flags, datacenterId, connectionType, immediate);
                         return;
                     }
                     if (resp != null) {
@@ -428,21 +446,46 @@ public class ConnectionsManager extends BaseController {
                     }
                     if (BuildVars.LOGS_ENABLED) {
                         FileLog.d("java received " + resp + (error != null ? " error = " + error : "") + " messageId = 0x" + Long.toHexString(requestMsgId));
-                        FileLog.dumpResponseAndRequest(currentAccount, object, resp, error, requestMsgId, finalStartRequestTime, requestToken);
+                        FileLog.dumpResponseAndRequest(currentAccount, requestObject, resp, error, requestMsgId, finalStartRequestTime, requestToken);
                     }
                     final TLObject finalResponse = resp;
                     final TLRPC.TL_error finalError = error;
                     Utilities.stageQueue.postRunnable(() -> {
-                        if (onComplete != null) {
-                            onComplete.run(finalResponse, finalError);
-                        } else if (onCompleteTimestamp != null) {
-                            onCompleteTimestamp.run(finalResponse, finalError, timestamp);
-                        } else if (finalResponse instanceof TLRPC.Updates) {
-                            KeepAliveJob.finishJob();
-                            AccountInstance.getInstance(currentAccount).getMessagesController().processUpdates((TLRPC.Updates) finalResponse, false);
-                        }
-                        if (finalResponse != null) {
-                            finalResponse.freeResources();
+                        TLObject deliveredResponse = finalResponse;
+                        TLObject hookResponse = null;
+                        try {
+                            PluginManager.PostRequestOutcome postRequest = PluginManager.getInstance()
+                                    .dispatchPostRequest(currentAccount, requestName, finalResponse, finalError);
+                            hookResponse = postRequest.response;
+                            deliveredResponse = hookResponse;
+                            TLRPC.TL_error deliveredError = postRequest.error;
+                            if (finalResponse != null && deliveredResponse != null
+                                    && !finalResponse.getClass().isInstance(deliveredResponse)) {
+                                FileLog.e("Python plugin returned incompatible response "
+                                        + deliveredResponse.getClass().getName() + " for " + requestName
+                                        + "; expected " + finalResponse.getClass().getName());
+                                deliveredResponse = finalResponse;
+                                deliveredError = finalError;
+                            }
+                            if (!postRequest.isCancelled()) {
+                                if (onComplete != null) {
+                                    onComplete.run(deliveredResponse, deliveredError);
+                                } else if (onCompleteTimestamp != null) {
+                                    onCompleteTimestamp.run(deliveredResponse, deliveredError, timestamp);
+                                } else if (deliveredResponse instanceof TLRPC.Updates) {
+                                    KeepAliveJob.finishJob();
+                                    AccountInstance.getInstance(currentAccount).getMessagesController().processUpdates((TLRPC.Updates) deliveredResponse, false);
+                                }
+                            } else if (onComplete == null && onCompleteTimestamp == null && finalResponse instanceof TLRPC.Updates) {
+                                KeepAliveJob.finishJob();
+                            }
+                        } catch (Throwable deliveryError) {
+                            FileLog.e(deliveryError);
+                        } finally {
+                            freeResourcesSafely(finalResponse);
+                            if (hookResponse != null && hookResponse != finalResponse) {
+                                freeResourcesSafely(hookResponse);
+                            }
                         }
                     });
                 } catch (Exception e) {
@@ -452,6 +495,40 @@ public class ConnectionsManager extends BaseController {
             native_sendRequest(currentAccount, buffer.address, flags, datacenterId, connectionType, immediate, requestToken);
         } catch (Exception e) {
             FileLog.e(e);
+        }
+    }
+
+    private static void freeResourcesSafely(TLObject object) {
+        if (object == null) {
+            return;
+        }
+        try {
+            object.freeResources();
+        } catch (Throwable freeError) {
+            FileLog.e(freeError);
+        }
+    }
+
+    private static void deliverPluginRequestCancellation(
+            RequestDelegate onComplete,
+            RequestDelegateTimestamp onCompleteTimestamp
+    ) {
+        if (onComplete == null && onCompleteTimestamp == null) {
+            return;
+        }
+        TLRPC.TL_error error = new TLRPC.TL_error();
+        // -1000 is Telegram's local cancellation code and is already ignored
+        // by UI paths which should not present a server error dialog.
+        error.code = -1000;
+        error.text = "PLUGIN_REQUEST_CANCELLED";
+        try {
+            if (onComplete != null) {
+                onComplete.run(null, error);
+            } else {
+                onCompleteTimestamp.run(null, error, 0L);
+            }
+        } catch (Throwable callbackError) {
+            FileLog.e(callbackError);
         }
     }
 

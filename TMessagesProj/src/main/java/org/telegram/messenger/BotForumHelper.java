@@ -238,6 +238,18 @@ public class BotForumHelper extends BaseController {
         }
 
         performSendBotTopicCreate(inputPeer, topicName, randomId, topicId -> {
+            if (topicId <= 0) {
+                ArrayList<MessageObject> preparedMessages = new ArrayList<>();
+                for (MessageObject message : messages) {
+                    if (message != null && getSendMessagesHelper().isSendingMessage(message.getId())) {
+                        preparedMessages.add(message);
+                    }
+                }
+                if (!preparedMessages.isEmpty()) {
+                    getSendMessagesHelper().cancelSendingMessage(preparedMessages);
+                }
+                return;
+            }
             if (req instanceof TLRPC.TL_messages_forwardMessages) {
                 TLRPC.TL_messages_forwardMessages request = (TLRPC.TL_messages_forwardMessages) req;
                 request.top_msg_id = topicId;

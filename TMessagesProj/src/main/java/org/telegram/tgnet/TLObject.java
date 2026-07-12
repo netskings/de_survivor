@@ -57,6 +57,15 @@ public class TLObject {
 
     public int networkType;
 
+    /**
+     * Local-only plugin bridge markers. They are never serialized into MTProto
+     * payloads and only prevent the same Java object from crossing a hook twice
+     * when Telegram re-queues it internally.
+     */
+    public transient boolean pluginRequestHookApplied;
+    public transient boolean pluginUpdatesHookApplied;
+    public transient boolean pluginUpdatesSuppressed;
+
     public boolean disableFree = false;
     private static final ThreadLocal<NativeByteBuffer> sizeCalculator = new ThreadLocal<NativeByteBuffer>() {
         @Override

@@ -800,23 +800,51 @@ public class UItem extends AdapterWithDiffUtils.Item {
 
     public static int factoryViewTypeStartsWith = 10_000;
     private static int factoryViewType = 10_000;
+    private static final Object factoryLock = new Object();
     public static abstract class UItemFactory<V extends View> {
         public static void setup(UItemFactory factory) {
-            if (factoryInstances == null) factoryInstances = new HashMap<>();
-            if (factories == null) factories = new LongSparseArray<>();
-            final Class factoryClass = factory.getClass();
-            if (!factoryInstances.containsKey(factoryClass)) {
-                factoryInstances.put(factoryClass, factory);
-                factories.put(factory.viewType, factory);
+            synchronized (factoryLock) {
+                if (factoryInstances == null) factoryInstances = new HashMap<>();
+                if (factories == null) factories = new LongSparseArray<>();
+                final Class factoryClass = factory.getClass();
+                if (!factoryInstances.containsKey(factoryClass)) {
+                    factoryInstances.put(factoryClass, factory);
+                    factories.put(factory.viewType, factory);
+                }
             }
         };
+
+        /** Registers a concrete factory instance with its own view type. */
+        public static void setupInstance(UItemFactory factory) {
+            if (factory == null) throw new IllegalArgumentException("factory == null");
+            synchronized (factoryLock) {
+                if (factoryInstances == null) factoryInstances = new HashMap<>();
+                if (factories == null) factories = new LongSparseArray<>();
+                factories.put(factory.viewType, factory);
+            }
+        }
+
+        /** Releases a dynamically-created factory when its owning plugin unloads. */
+        public static void unregisterInstance(UItemFactory factory) {
+            if (factory == null) return;
+            synchronized (factoryLock) {
+                if (factories != null && factories.get(factory.viewType) == factory) {
+                    factories.remove(factory.viewType);
+                }
+                if (factoryInstances != null && factoryInstances.get(factory.getClass()) == factory) {
+                    factoryInstances.remove(factory.getClass());
+                }
+            }
+        }
 
         public final int viewType;
 
         private ArrayList<V> cache;
 
         public UItemFactory() {
-            viewType = factoryViewType++;
+            synchronized (factoryLock) {
+                viewType = factoryViewType++;
+            }
         }
 
         public void precache(BaseFragment fragment, int count) {
@@ -870,8 +898,10 @@ public class UItem extends AdapterWithDiffUtils.Item {
     private static LongSparseArray<UItemFactory<?>> factories;
     private static HashMap<Class<? extends UItemFactory<?>>, UItemFactory<?>> factoryInstances;
     public static UItemFactory<?> findFactory(int viewType) {
-        if (factories == null) return null;
-        return factories.get(viewType);
+        synchronized (factoryLock) {
+            if (factories == null) return null;
+            return factories.get(viewType);
+        }
     }
 
     public static <F extends UItemFactory<?>> UItem ofFactory(Class<F> factoryClass) {
@@ -879,11 +909,18 @@ public class UItem extends AdapterWithDiffUtils.Item {
         return item;
     }
 
+    public static UItem ofFactory(UItemFactory<?> factory) {
+        UItemFactory.setupInstance(factory);
+        return new UItem(factory.viewType, false);
+    }
+
     public static <F extends UItemFactory<?>> UItemFactory<?> getFactory(Class<F> factoryClass) {
-        if (factoryInstances == null) factoryInstances = new HashMap<>();
-        if (factories == null) factories = new LongSparseArray<>();
-        UItemFactory<?> factory = factoryInstances.get(factoryClass);
-        if (factory == null) throw new RuntimeException("UItemFactory was not setuped: " + factoryClass);
-        return factory;
+        synchronized (factoryLock) {
+            if (factoryInstances == null) factoryInstances = new HashMap<>();
+            if (factories == null) factories = new LongSparseArray<>();
+            UItemFactory<?> factory = factoryInstances.get(factoryClass);
+            if (factory == null) throw new RuntimeException("UItemFactory was not setuped: " + factoryClass);
+            return factory;
+        }
     }
 }
