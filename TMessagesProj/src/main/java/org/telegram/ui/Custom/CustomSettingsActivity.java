@@ -30,6 +30,7 @@ import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
 import org.telegram.messenger.R;
+import org.telegram.messenger.archive.ArchiveSettings;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BaseFragment;
@@ -100,6 +101,8 @@ public class CustomSettingsActivity extends BaseFragment {
     private int keepLastSeenUpdatedInGhostModeInfoRow;
 
     private int restrictionsHeaderRow;
+    private int localArchiveRow;
+    private int localArchiveInfoRow;
     private int antiRecallRow;
     private int antiRecallInfoRow;
     private int messageLabelsRow;
@@ -145,7 +148,7 @@ public class CustomSettingsActivity extends BaseFragment {
         hideReadStatusRow = hideReadStatusInfoRow = hideBlockedUsersMessagesRow = localMessageFiltersRow = hideStoryViewsRow = hideStoryViewsInfoRow = -1;
         alertBeforeOpeningStoryRow = alertBeforeOpeningStoryInfoRow = readOnInteractRow = readOnInteractInfoRow = -1;
         ghostModeExceptionsRow = ghostModeExceptionsInfoRow = keepLastSeenUpdatedInGhostModeRow = keepLastSeenUpdatedInGhostModeInfoRow = -1;
-        restrictionsHeaderRow = antiRecallRow = antiRecallInfoRow = messageLabelsRow = messageLabelsInfoRow = -1;
+        restrictionsHeaderRow = localArchiveRow = localArchiveInfoRow = antiRecallRow = antiRecallInfoRow = messageLabelsRow = messageLabelsInfoRow = -1;
         chatTranslationProviderRow = chatTranslationProviderInfoRow = keepMessageEditHistoryRow = keepMessageEditHistoryInfoRow = -1;
         saveTemporaryMediaRow = saveTemporaryMediaInfoRow = saveTemporaryMediaPathRow = saveTemporaryMediaPathInfoRow = -1;
         keepTemporaryMediaInChatRow = keepTemporaryMediaInChatInfoRow = keepKickedChatsCacheRow = keepKickedChatsCacheInfoRow = -1;
@@ -178,6 +181,8 @@ public class CustomSettingsActivity extends BaseFragment {
                 bypassContentProtectionRow = rowCount++;
                 break;
             case SCREEN_HISTORY:
+                localArchiveRow = rowCount++;
+                localArchiveInfoRow = rowCount++;
                 antiRecallRow = rowCount++;
                 keepMessageEditHistoryRow = rowCount++;
                 keepKickedChatsCacheRow = rowCount++;
@@ -662,6 +667,11 @@ public class CustomSettingsActivity extends BaseFragment {
                 CustomSettings.setAntiRecall(val);
                 if (view instanceof TextCheckCell)
                     ((TextCheckCell) view).setChecked(val);
+            } else if (position == localArchiveRow) {
+                boolean val = !ArchiveSettings.isEnabled();
+                ArchiveSettings.setEnabled(val);
+                if (view instanceof TextCheckCell)
+                    ((TextCheckCell) view).setChecked(val);
             } else if (position == messageLabelsRow) {
                 AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
                 builder.setTitle(getString(R.string.CustomSettingsMessageLabels));
@@ -754,6 +764,8 @@ public class CustomSettingsActivity extends BaseFragment {
             if (pos == ghostModeExceptionsRow) return TYPE_TEXT_CELL;
             if (pos == ghostModeExceptionsInfoRow) return TYPE_INFO;
             if (pos == restrictionsHeaderRow) return TYPE_HEADER;
+            if (pos == localArchiveRow) return TYPE_CHECK;
+            if (pos == localArchiveInfoRow) return TYPE_INFO;
             if (pos == antiRecallRow) return TYPE_CHECK;
             if (pos == antiRecallInfoRow) return TYPE_INFO;
             if (pos == messageLabelsRow) return TYPE_TEXT_CELL;
@@ -881,6 +893,10 @@ public class CustomSettingsActivity extends BaseFragment {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsAntiRecall),
                                 CustomSettings.antiRecall(), divider);
                     }
+                    if (pos == localArchiveRow) {
+                        cell.setTextAndCheck(getString(R.string.LocalMessageArchive),
+                                ArchiveSettings.isEnabled(), divider);
+                    }
                     if (pos == keepMessageEditHistoryRow) {
                         cell.setTextAndCheck(getString(R.string.CustomSettingsKeepMessageEditHistory),
                                 CustomSettings.keepMessageEditHistory(), divider);
@@ -946,6 +962,9 @@ public class CustomSettingsActivity extends BaseFragment {
                     }
                     if (pos == antiRecallInfoRow) {
                         cell.setText(getString(R.string.CustomSettingsAntiRecallInfo));
+                    }
+                    if (pos == localArchiveInfoRow) {
+                        cell.setText(getString(R.string.LocalMessageArchiveInfo));
                     }
                     if (pos == messageLabelsInfoRow) {
                         cell.setText(getString(R.string.CustomSettingsMessageLabelsInfo));

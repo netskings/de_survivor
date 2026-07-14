@@ -150,6 +150,9 @@ android {
         }
 
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+        if (project.hasProperty("archiveInstrumentationClass")) {
+            testInstrumentationRunnerArgument "class", project.property("archiveInstrumentationClass").toString()
+        }
     }
 
 

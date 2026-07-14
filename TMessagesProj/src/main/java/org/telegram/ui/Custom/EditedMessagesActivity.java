@@ -16,24 +16,21 @@ import androidx.recyclerview.widget.DefaultItemAnimator;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
-import org.telegram.SQLite.SQLiteCursor;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ContactsController;
-import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
-import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
-import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
-import org.telegram.tgnet.NativeByteBuffer;
+import org.telegram.messenger.archive.ArchiveMessageRecord;
+import org.telegram.messenger.archive.ArchiveService;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
-import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BackDrawable;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.ChatActivity;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.RecyclerListView;
 
@@ -45,8 +42,10 @@ public class EditedMessagesActivity extends BaseFragment {
     private static final int SEARCH_BUTTON = 1;
 
     private final long dialogId;
-    private final ArrayList<EditedMessageItem> allItems = new ArrayList<>();
-    private final ArrayList<EditedMessageItem> visibleItems = new ArrayList<>();
+    private final long topicId;
+    private final ArrayList<ArchiveMessageRecord> allItems = new ArrayList<>();
+    private final ArrayList<ArchiveMessageRecord> visibleItems = new ArrayList<>();
+    private ChatActivity chatActivity;
 
     private RecyclerListView listView;
     private ListAdapter adapter;
@@ -55,7 +54,17 @@ public class EditedMessagesActivity extends BaseFragment {
     private boolean loading = true;
 
     public EditedMessagesActivity(long dialogId) {
+        this(dialogId, -1);
+    }
+
+    public EditedMessagesActivity(long dialogId, long topicId) {
         this.dialogId = dialogId;
+        this.topicId = topicId;
+    }
+
+    public EditedMessagesActivity setChatActivity(ChatActivity chatActivity) {
+        this.chatActivity = chatActivity;
+        return this;
     }
 
     @Override
@@ -109,8 +118,16 @@ public class EditedMessagesActivity extends BaseFragment {
         listView.setAdapter(adapter = new ListAdapter(context));
         listView.setOnItemClickListener((view, position) -> {
             if (position >= 0 && position < visibleItems.size()) {
-                showEditedMessage(visibleItems.get(position));
+                openMessage(visibleItems.get(position));
             }
+        });
+        listView.setOnItemLongClickListener((view, position) -> {
+            if (position >= 0 && position < visibleItems.size()) {
+                ArchiveMessageRecord item = visibleItems.get(position);
+                presentFragment(new MessageEditHistoryActivity(item.dialogId, item.topicId, item.messageId));
+                return true;
+            }
+            return false;
         });
         frameLayout.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
@@ -128,75 +145,19 @@ public class EditedMessagesActivity extends BaseFragment {
     private void loadEditedMessages() {
         loading = true;
         updateEmptyView();
-        MessagesStorage storage = MessagesStorage.getInstance(currentAccount);
-        storage.getStorageQueue().postRunnable(() -> {
-            ArrayList<EditedMessageItem> result = new ArrayList<>();
-            SQLiteCursor cursor = null;
-            try {
-                cursor = storage.getDatabase().queryFinalized(String.format(Locale.US,
-                        "SELECT id, mid, edit_date, old_data, new_data FROM message_edits_v2 WHERE dialog_id = %d ORDER BY edit_date DESC, id DESC",
-                        dialogId));
-                while (cursor.next()) {
-                    int mid = cursor.intValue(1);
-                    int editDate = cursor.intValue(2);
-                    NativeByteBuffer oldData = cursor.byteBufferValue(3);
-                    NativeByteBuffer newData = cursor.byteBufferValue(4);
-                    try {
-                        MessageObject oldObject = parseMessage(oldData, mid);
-                        MessageObject newObject = parseMessage(newData, mid);
-                        if (oldObject != null && newObject != null) {
-                            result.add(new EditedMessageItem(oldObject, newObject, editDate));
-                        }
-                    } finally {
-                        if (oldData != null) {
-                            oldData.reuse();
-                        }
-                        if (newData != null) {
-                            newData.reuse();
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                FileLog.e(e);
-            } finally {
-                if (cursor != null) {
-                    cursor.dispose();
-                }
-            }
-
-            AndroidUtilities.runOnUIThread(() -> {
-                allItems.clear();
-                allItems.addAll(result);
-                loading = false;
-                applySearch();
-            });
+        ArchiveService.getInstance().loadEditedMessages(currentAccount, dialogId, topicId, result -> {
+            allItems.clear();
+            allItems.addAll(result);
+            loading = false;
+            applySearch();
         });
-    }
-
-    private MessageObject parseMessage(NativeByteBuffer data, int mid) {
-        if (data == null) {
-            return null;
-        }
-        TLRPC.Message message = TLRPC.Message.TLdeserialize(data, data.readInt32(false), false);
-        if (message == null) {
-            return null;
-        }
-        message.readAttachPath(data, UserConfig.getInstance(currentAccount).clientUserId);
-        message.id = mid;
-        if (message.dialog_id == 0) {
-            message.dialog_id = dialogId;
-        }
-        if (message.peer_id == null) {
-            message.peer_id = MessagesController.getInstance(currentAccount).getPeer(dialogId);
-        }
-        return new MessageObject(currentAccount, message, false, false);
     }
 
     private void applySearch() {
         visibleItems.clear();
         String query = searchQuery == null ? "" : searchQuery.trim().toLowerCase(Locale.US);
         for (int i = 0; i < allItems.size(); i++) {
-            EditedMessageItem item = allItems.get(i);
+            ArchiveMessageRecord item = allItems.get(i);
             if (TextUtils.isEmpty(query) || getSearchText(item).contains(query)) {
                 visibleItems.add(item);
             }
@@ -207,10 +168,10 @@ public class EditedMessagesActivity extends BaseFragment {
         updateEmptyView();
     }
 
-    private String getSearchText(EditedMessageItem item) {
-        String author = getAuthorName(item.newObject);
-        String oldText = getMessageText(item.oldObject);
-        String newText = getMessageText(item.newObject);
+    private String getSearchText(ArchiveMessageRecord item) {
+        String author = getAuthorName(item);
+        String oldText = item.previousText;
+        String newText = getMessageText(item);
         return (author + "\n" + oldText + "\n" + newText).toLowerCase(Locale.US);
     }
 
@@ -229,34 +190,21 @@ public class EditedMessagesActivity extends BaseFragment {
         }
     }
 
-    private void showEditedMessage(EditedMessageItem item) {
-        if (getParentActivity() == null) {
+    private void openMessage(ArchiveMessageRecord item) {
+        ChatActivity target = chatActivity;
+        if (target == null) {
+            presentFragment(ChatActivity.of(item.dialogId, item.messageId), true);
             return;
         }
-        String oldText = getMessageText(item.oldObject);
-        String newText = getMessageText(item.newObject);
-        String message = LocaleController.formatString(R.string.ViewEditedEditedAt, LocaleController.formatDateTime(item.editDate, true))
-                + "\n\n" + LocaleController.getString(R.string.ViewEditedBefore) + "\n" + oldText
-                + "\n\n" + LocaleController.getString(R.string.ViewEditedAfter) + "\n" + newText;
-        AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
-        builder.setTitle(getAuthorName(item.newObject));
-        builder.setMessage(message);
-        builder.setPositiveButton(LocaleController.getString(R.string.OK), null);
-        builder.setNegativeButton(LocaleController.getString(R.string.Copy), (dialog, which) -> AndroidUtilities.addToClipboard(message));
-        showDialog(builder.create());
+        finishFragment();
+        AndroidUtilities.runOnUIThread(() -> target.scrollToMessageId(item.messageId, 0, true, 0, true, 0), 180);
     }
 
-    private String getAuthorName(MessageObject messageObject) {
-        if (messageObject == null) {
-            return LocaleController.getString(R.string.ViewEditedUnknownSender);
-        }
-        if (messageObject.isOutOwner() || messageObject.getFromChatId() == UserConfig.getInstance(currentAccount).getClientUserId()) {
+    private String getAuthorName(ArchiveMessageRecord item) {
+        if (item.senderId == UserConfig.getInstance(currentAccount).getClientUserId()) {
             return LocaleController.getString(R.string.ViewDeletedYou);
         }
-        if (messageObject.messageOwner != null && !TextUtils.isEmpty(messageObject.messageOwner.post_author)) {
-            return messageObject.messageOwner.post_author;
-        }
-        long fromId = messageObject.getFromChatId();
+        long fromId = item.senderId;
         if (fromId != 0) {
             Object sender = MessagesController.getInstance(currentAccount).getUserOrChat(fromId);
             if (sender instanceof TLRPC.User) {
@@ -271,23 +219,15 @@ public class EditedMessagesActivity extends BaseFragment {
         return LocaleController.getString(R.string.ViewEditedUnknownSender);
     }
 
-    private String getMessageText(MessageObject messageObject) {
-        if (messageObject == null) {
-            return "";
-        }
-        if (!TextUtils.isEmpty(messageObject.caption)) {
-            return messageObject.caption.toString();
-        }
-        if (!TextUtils.isEmpty(messageObject.messageText)) {
-            return messageObject.messageText.toString();
-        }
-        if (messageObject.isPhoto()) {
+    private String getMessageText(ArchiveMessageRecord item) {
+        if (!TextUtils.isEmpty(item.text)) return item.text;
+        if (item.messageType.contains("Photo")) {
             return LocaleController.getString(R.string.AttachPhoto);
         }
-        if (messageObject.isVideo()) {
+        if (item.messageType.contains("Video")) {
             return LocaleController.getString(R.string.AttachVideo);
         }
-        if (messageObject.getDocument() != null) {
+        if (item.messageType.contains("Document")) {
             return LocaleController.getString(R.string.AttachDocument);
         }
         return LocaleController.getString(R.string.ViewEditedUnsupportedMessage);
@@ -364,25 +304,14 @@ public class EditedMessagesActivity extends BaseFragment {
             addView(divider, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 1));
         }
 
-        void setItem(EditedMessageItem item, boolean drawDivider) {
-            titleView.setText(getAuthorName(item.newObject));
-            String text = LocaleController.getString(R.string.ViewEditedBefore) + " " + getMessageText(item.oldObject)
-                    + "\n" + LocaleController.getString(R.string.ViewEditedAfter) + " " + getMessageText(item.newObject);
+        void setItem(ArchiveMessageRecord item, boolean drawDivider) {
+            titleView.setText(getAuthorName(item));
+            String text = LocaleController.getString(R.string.ViewEditedBefore) + " " + item.previousText
+                    + "\n" + LocaleController.getString(R.string.ViewEditedAfter) + " " + getMessageText(item);
             messageView.setText(text);
-            metaView.setText(LocaleController.formatString(R.string.ViewEditedEditedAt, LocaleController.formatDateTime(item.editDate, true)));
+            metaView.setText(LocaleController.formatString(R.string.ViewEditedRevisions,
+                    item.revisionCount, LocaleController.formatDateTime(item.editDate, true)));
             divider.setVisibility(drawDivider ? View.VISIBLE : View.GONE);
-        }
-    }
-
-    private static class EditedMessageItem {
-        private final MessageObject oldObject;
-        private final MessageObject newObject;
-        private final int editDate;
-
-        private EditedMessageItem(MessageObject oldObject, MessageObject newObject, int editDate) {
-            this.oldObject = oldObject;
-            this.newObject = newObject;
-            this.editDate = editDate;
         }
     }
 }

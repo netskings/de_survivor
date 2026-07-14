@@ -11105,4 +11105,13 @@
     <string name="PythonPluginsNoSettings">This plugin has no settings.</string>
     <string name="PythonPluginsCustomSetting">Custom plugin setting</string>
     <string name="PythonPluginsSave">Save</string>
+    <string name="LocalMessageArchive">Local Message Archive</string>
+    <string name="LocalMessageArchiveInfo">Stores message snapshots, edits, and deletions in a separate local database. Secret and self-destructing messages are excluded.</string>
+    <string name="LocalMessageArchiveDisabledInfo">Enable the local archive to start saving deleted messages and edit history. Messages received before it is enabled are not added retroactively.</string>
+    <string name="ViewDeletedDeletedAt">Deleted %1$s</string>
+    <string name="ViewEditedRevisions">%1$d edits · last edited %2$s</string>
+    <string name="MessageEditHistory">Edit History</string>
+    <string name="MessageEditHistoryEmpty">No saved changes are available for this message.</string>
+    <string name="HideRecalledMessageFromChat">Hide from chat</string>
+    <string name="MessageEditVersion">Change %1$d · %2$s</string>
 </resources>

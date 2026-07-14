@@ -35,6 +35,7 @@ import org.telegram.SQLite.SQLiteDatabase;
 import org.telegram.SQLite.SQLiteException;
 import org.telegram.SQLite.SQLitePreparedStatement;
 import org.telegram.messenger.support.LongSparseIntArray;
+import org.telegram.messenger.archive.ArchiveEventObserver;
 import org.telegram.messenger.archive.ArchiveMessageMapper;
 import org.telegram.messenger.archive.ArchiveMessageSnapshot;
 import org.telegram.messenger.archive.ArchiveService;
@@ -15449,100 +15450,144 @@ public class MessagesStorage extends BaseController {
         }
     }
 
-    /** Resolves the pre-edit value on storageQueue before Telegram can overwrite messages_v2. */
-    public void captureMessageEditForLocalArchive(ArchiveMessageSnapshot current) {
-        if (!ArchiveSettings.isEnabled() || current == null) return;
-        storageQueue.postRunnable(() -> captureMessageEditForLocalArchiveInternal(current));
+    /**
+     * Posts one immutable accepted update batch ahead of Telegram's own cache writes. Processing
+     * the batch in one storageQueue runnable preserves the server order even for new/edit/delete
+     * combinations that arrive together.
+     */
+    public void captureLocalArchiveBatch(ArrayList<ArchiveEventObserver.CaptureEvent> events) {
+        if (!ArchiveSettings.isEnabled() || events == null || events.isEmpty()) return;
+        ArrayList<ArchiveEventObserver.CaptureEvent> stableEvents = new ArrayList<>(events);
+        storageQueue.postRunnable(() -> captureLocalArchiveBatchInternal(stableEvents));
     }
 
-    private void captureMessageEditForLocalArchiveInternal(ArchiveMessageSnapshot current) {
+    private void captureLocalArchiveBatchInternal(ArrayList<ArchiveEventObserver.CaptureEvent> events) {
         if (!ArchiveSettings.isEnabled()) return;
-        SQLiteCursor archiveCursor = null;
-        try {
-            archiveCursor = database.queryFinalized("SELECT data FROM messages_v2 WHERE mid = ? AND uid = ? LIMIT 1",
-                    current.messageId, current.dialogId);
-            if (!archiveCursor.next()) return;
-            NativeByteBuffer data = archiveCursor.byteBufferValue(0);
-            if (data == null) return;
-            ArchiveMessageSnapshot previous;
+        LinkedHashMap<String, ArchiveOverlayEntry> overlay = new LinkedHashMap<>();
+        for (ArchiveEventObserver.CaptureEvent event : events) {
             try {
-                TLRPC.Message oldMessage = TLRPC.Message.TLdeserialize(data, data.readInt32(false), false);
-                if (oldMessage != null) oldMessage.readAttachPath(data, current.accountId);
-                if (oldMessage == null || oldMessage instanceof TLRPC.TL_messageEmpty) return;
-                if (oldMessage.dialog_id == 0) oldMessage.dialog_id = current.dialogId;
-                int forumTypeFlags = getForumTypeFlags(current.dialogId);
-                previous = ArchiveMessageMapper.map(currentAccount, oldMessage, forumTypeFlags,
-                        current.accountEnvironment, current.accountId);
-            } finally {
-                data.reuse();
+                if (event.type == ArchiveEventObserver.CaptureEvent.NEW) {
+                    ArchiveService.getInstance().saveMessage(event.snapshot);
+                    overlay.put(archiveOverlayKey(event.snapshot),
+                            new ArchiveOverlayEntry(event.snapshot, event.channelMessage));
+                } else if (event.type == ArchiveEventObserver.CaptureEvent.EDIT) {
+                    ArchiveOverlayEntry prior = overlay.get(archiveOverlayKey(event.snapshot));
+                    ArchiveMessageSnapshot previous = event.previousSnapshot != null
+                            ? event.previousSnapshot
+                            : prior == null ? readLocalArchiveSnapshot(event.snapshot) : prior.snapshot;
+                    ArchiveService.getInstance().saveEdit(previous, event.snapshot);
+                    overlay.put(archiveOverlayKey(event.snapshot),
+                            new ArchiveOverlayEntry(event.snapshot, event.channelMessage));
+                } else if (event.type == ArchiveEventObserver.CaptureEvent.DELETE) {
+                    captureLocalArchiveDeletion(event, overlay);
+                }
+            } catch (Throwable e) {
+                FileLog.e("Local archive batch capture failed: " + e.getClass().getSimpleName());
             }
-            ArchiveService.getInstance().saveEdit(previous, current);
-        } catch (Throwable e) {
-            FileLog.e("Local archive edit capture failed: " + e.getClass().getSimpleName());
-        } finally {
-            if (archiveCursor != null) archiveCursor.dispose();
         }
     }
 
-    /**
-     * Resolves immutable snapshots on Telegram's storage queue before deletion. The archive queue
-     * never receives a cursor, NativeByteBuffer or mutable TLRPC object.
-     */
-    public void captureMessagesForLocalArchiveDeletion(int accountEnvironment, long accountId, long dialogId,
-                                                        ArrayList<Integer> messageIds,
-                                                        String sourceEventId, long deletedAt) {
-        if (!ArchiveSettings.isEnabled() || accountId == 0 || messageIds == null || messageIds.isEmpty()) return;
-        ArrayList<Integer> ids = new ArrayList<>(messageIds);
-        storageQueue.postRunnable(() -> captureMessagesForLocalArchiveDeletionInternal(accountEnvironment,
-                accountId, dialogId, ids, sourceEventId, deletedAt));
+    private ArchiveMessageSnapshot readLocalArchiveSnapshot(ArchiveMessageSnapshot current) throws Exception {
+        SQLiteCursor cursor = database.queryFinalized(
+                "SELECT data FROM messages_v2 WHERE mid = ? AND uid = ? LIMIT 1",
+                current.messageId, current.dialogId);
+        try {
+            if (!cursor.next()) return null;
+            NativeByteBuffer data = cursor.byteBufferValue(0);
+            if (data == null) return null;
+            try {
+                TLRPC.Message oldMessage = TLRPC.Message.TLdeserialize(data, data.readInt32(false), false);
+                if (oldMessage == null || oldMessage instanceof TLRPC.TL_messageEmpty) return null;
+                oldMessage.readAttachPath(data, current.accountId);
+                if (oldMessage.dialog_id == 0) oldMessage.dialog_id = current.dialogId;
+                return ArchiveMessageMapper.map(currentAccount, oldMessage,
+                        getForumTypeFlags(current.dialogId), current.accountEnvironment, current.accountId);
+            } finally {
+                data.reuse();
+            }
+        } finally {
+            cursor.dispose();
+        }
     }
 
-    private void captureMessagesForLocalArchiveDeletionInternal(int accountEnvironment, long accountId,
-                                                                 long dialogId, ArrayList<Integer> messageIds,
-                                                                 String sourceEventId, long deletedAt) {
-        if (!ArchiveSettings.isEnabled() || messageIds.isEmpty()) return;
-        SQLiteCursor archiveCursor = null;
+    private void captureLocalArchiveDeletion(ArchiveEventObserver.CaptureEvent event,
+                                             LinkedHashMap<String, ArchiveOverlayEntry> overlay) throws Exception {
         HashSet<Integer> found = new HashSet<>();
+        for (ArchiveOverlayEntry entry : overlay.values()) {
+            ArchiveMessageSnapshot snapshot = entry.snapshot;
+            boolean matchesScope = event.dialogId == 0
+                    ? !entry.channelMessage
+                    : snapshot.dialogId == event.dialogId;
+            if (matchesScope && event.messageIds.contains(snapshot.messageId) && found.add(snapshot.messageId)) {
+                ArchiveService.getInstance().saveDeletion(snapshot, snapshot,
+                        event.sourceEventId, event.deletedAt);
+            }
+        }
+
+        ArrayList<Integer> unresolved = new ArrayList<>();
+        for (Integer messageId : event.messageIds) {
+            if (!found.contains(messageId)) unresolved.add(messageId);
+        }
+        if (unresolved.isEmpty()) return;
+
+        SQLiteCursor cursor = null;
         try {
-            String ids = TextUtils.join(",", messageIds);
-            String sql = dialogId == 0
+            String ids = TextUtils.join(",", unresolved);
+            String sql = event.dialogId == 0
                     ? "SELECT uid, data, mid FROM messages_v2 WHERE mid IN(" + ids + ") AND is_channel = 0"
-                    : "SELECT uid, data, mid FROM messages_v2 WHERE mid IN(" + ids + ") AND uid = " + dialogId;
-            archiveCursor = database.queryFinalized(sql);
-            while (archiveCursor.next()) {
-                long resolvedDialogId = archiveCursor.longValue(0);
-                int messageId = archiveCursor.intValue(2);
-                NativeByteBuffer data = archiveCursor.byteBufferValue(1);
+                    : "SELECT uid, data, mid FROM messages_v2 WHERE mid IN(" + ids + ") AND uid = " + event.dialogId;
+            cursor = database.queryFinalized(sql);
+            while (cursor.next()) {
+                long resolvedDialogId = cursor.longValue(0);
+                int messageId = cursor.intValue(2);
+                NativeByteBuffer data = cursor.byteBufferValue(1);
                 ArchiveMessageSnapshot snapshot = null;
                 if (data != null) {
                     try {
                         TLRPC.Message message = TLRPC.Message.TLdeserialize(data, data.readInt32(false), false);
                         if (message != null) {
-                            message.readAttachPath(data, accountId);
+                            message.readAttachPath(data, event.accountId);
                             if (message.dialog_id == 0) message.dialog_id = resolvedDialogId;
                             snapshot = ArchiveMessageMapper.map(currentAccount, message,
-                                    getForumTypeFlags(resolvedDialogId), accountEnvironment, accountId);
+                                    getForumTypeFlags(resolvedDialogId), event.accountEnvironment, event.accountId);
                         }
                     } finally {
                         data.reuse();
                     }
                 }
                 ArchiveMessageSnapshot key = snapshot != null ? snapshot
-                        : ArchiveMessageMapper.key(accountEnvironment, accountId, resolvedDialogId, 0, messageId);
-                ArchiveService.getInstance().saveDeletion(snapshot, key, sourceEventId, deletedAt);
+                        : ArchiveMessageMapper.key(event.accountEnvironment, event.accountId,
+                        resolvedDialogId, 0, messageId);
+                ArchiveService.getInstance().saveDeletion(snapshot, key,
+                        event.sourceEventId, event.deletedAt);
                 found.add(messageId);
             }
-            for (Integer messageId : messageIds) {
-                if (!found.contains(messageId)) {
-                    ArchiveMessageSnapshot key = ArchiveMessageMapper.key(accountEnvironment, accountId,
-                            dialogId, 0, messageId);
-                    ArchiveService.getInstance().saveDeletion(null, key, sourceEventId, deletedAt);
-                }
-            }
-        } catch (Throwable e) {
-            FileLog.e("Local archive delete capture failed: " + e.getClass().getSimpleName());
         } finally {
-            if (archiveCursor != null) archiveCursor.dispose();
+            if (cursor != null) cursor.dispose();
+        }
+
+        for (Integer messageId : event.messageIds) {
+            if (!found.contains(messageId)) {
+                ArchiveMessageSnapshot key = ArchiveMessageMapper.key(event.accountEnvironment,
+                        event.accountId, event.dialogId, 0, messageId);
+                ArchiveService.getInstance().saveDeletion(null, key,
+                        event.sourceEventId, event.deletedAt);
+            }
+        }
+    }
+
+    private static String archiveOverlayKey(ArchiveMessageSnapshot snapshot) {
+        return snapshot.accountEnvironment + ":" + snapshot.accountId + ":" + snapshot.dialogId
+                + ":" + snapshot.topicId + ":" + snapshot.messageId;
+    }
+
+    private static final class ArchiveOverlayEntry {
+        final ArchiveMessageSnapshot snapshot;
+        final boolean channelMessage;
+
+        ArchiveOverlayEntry(ArchiveMessageSnapshot snapshot, boolean channelMessage) {
+            this.snapshot = snapshot;
+            this.channelMessage = channelMessage;
         }
     }
 

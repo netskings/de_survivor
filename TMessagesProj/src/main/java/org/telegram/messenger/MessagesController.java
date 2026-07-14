@@ -2031,6 +2031,10 @@ public class MessagesController extends BaseController implements NotificationCe
 
             TLRPC.TL_messages_getPeerDialogs req4 = null;
             for (HashMap.Entry<Long, TLRPC.InputPeer> entry : dialogsToLoadMap.entrySet()) {
+                if (DialogObject.isFolderDialogId(entry.getKey()) || entry.getValue() == null
+                        || entry.getValue() instanceof TLRPC.TL_inputPeerEmpty) {
+                    continue;
+                }
                 if (req4 == null) {
                     req4 = new TLRPC.TL_messages_getPeerDialogs();
                     requests.add(req4);
@@ -2045,6 +2049,11 @@ public class MessagesController extends BaseController implements NotificationCe
             }
             if (req4 != null) {
                 sendLoadPeersRequest(req4, requests, pinnedDialogs, pinnedRemoteDialogs, users, chats, filtersToSave, filtersToDelete, filtersOrder, filterDialogRemovals, filtersUnreadCounterReset, onDone);
+            }
+            if (requests.isEmpty()) {
+                getMessagesStorage().processLoadedFilterPeers(pinnedDialogs, pinnedRemoteDialogs, users, chats,
+                        filtersToSave, filtersToDelete, filtersOrder, filterDialogRemovals,
+                        filtersUnreadCounterReset, onDone);
             }
         });
     }
@@ -9323,6 +9332,9 @@ public class MessagesController extends BaseController implements NotificationCe
                         toSend.add(mid);
                     }
                 }
+            }
+            if (!scheduled && !quickReplies) {
+                ArchiveEventObserver.captureLocalDeletion(currentAccount, dialogId, messages, forAll);
             }
             if (scheduled) {
                 getMessagesStorage().markMessagesAsDeleted(dialogId, messages, true, false, ChatActivity.MODE_SCHEDULED, 0);
@@ -17349,7 +17361,7 @@ public class MessagesController extends BaseController implements NotificationCe
 
     // must be run from Utilities.stageQueue
     public void processUpdates(final TLRPC.Updates updates, boolean fromQueue) {
-        ArchiveEventObserver.observeUpdates(currentAccount, updates);
+        ArchiveEventObserver.prepareUpdates(currentAccount, updates);
         TLRPC.Updates effectiveUpdates = updates;
         boolean suppressPayload = updates.pluginUpdatesSuppressed;
         if (!updates.pluginUpdatesHookApplied) {
@@ -17566,6 +17578,7 @@ public class MessagesController extends BaseController implements NotificationCe
                     if (!obj.isOut()) {
                         getMessagesStorage().getStorageQueue().postRunnable(() -> AndroidUtilities.runOnUIThread(() -> getNotificationsController().processNewMessages(objArr, true, false, null)));
                     }
+                    ArchiveEventObserver.captureAcceptedMessage(currentAccount, message, false);
                     getMessagesStorage().putMessages(arr, false, true, false, 0, 0, 0);
                 } else if (getMessagesStorage().getLastPtsValue() != updates.pts) {
                     if (BuildVars.LOGS_ENABLED) {
@@ -17919,7 +17932,7 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public boolean processUpdateArray(ArrayList<TLRPC.Update> updates, ArrayList<TLRPC.User> usersArr, ArrayList<TLRPC.Chat> chatsArr, boolean fromGetDifference, int date) {
-        ArchiveEventObserver.observeUpdateArray(currentAccount, updates, usersArr, chatsArr);
+        ArchiveEventObserver.captureAcceptedUpdateArray(currentAccount, updates, usersArr, chatsArr);
         if (Boolean.TRUE.equals(suppressPluginUpdatesPayload.get())) {
             return processUpdateArrayInternal(
                     new ArrayList<>(), usersArr, chatsArr, fromGetDifference, date

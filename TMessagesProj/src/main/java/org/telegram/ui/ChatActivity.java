@@ -156,9 +156,12 @@ import org.telegram.messenger.FactCheckController;
 import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.FlagSecureReason;
+import org.telegram.messenger.archive.ArchiveHiddenMessages;
+import org.telegram.messenger.archive.ArchiveSettings;
 import org.telegram.ui.Custom.CustomSettings;
 import org.telegram.ui.Custom.DeletedMessagesActivity;
 import org.telegram.ui.Custom.EditedMessagesActivity;
+import org.telegram.ui.Custom.MessageEditHistoryActivity;
 import org.telegram.messenger.HashtagSearchController;
 import org.telegram.messenger.ImageLoader;
 import org.telegram.messenger.ImageLocation;
@@ -1192,6 +1195,8 @@ public class ChatActivity extends BaseFragment implements
     public final static int OPTION_SUGGESTION_ADD_OFFER = 114;
 
     public final static int OPTION_VIEW_STATISTICS = 115;
+    public final static int OPTION_MESSAGE_EDIT_HISTORY = 116;
+    public final static int OPTION_HIDE_RECALLED_FROM_CHAT = 117;
 
     private final static int[] allowedNotificationsDuringChatListAnimations = new int[]{
             NotificationCenter.messagesRead,
@@ -3956,9 +3961,9 @@ public class ChatActivity extends BaseFragment implements
                 } else if (id == search) {
                     openSearchWithText(isSupportedTags() ? "" : null);
                 } else if (id == view_deleted) {
-                    presentFragment(new DeletedMessagesActivity(dialog_id));
+                    openLocalArchiveList(true);
                 } else if (id == view_edits) {
-                    presentFragment(new EditedMessagesActivity(dialog_id));
+                    openLocalArchiveList(false);
                 } else if (id == translate) {
                     getMessagesController().getTranslateController().setHideTranslateDialog(getDialogId(), false, true);
                     if (!getMessagesController().getTranslateController().toggleTranslatingDialog(getDialogId(), true)) {
@@ -20152,6 +20157,25 @@ public class ChatActivity extends BaseFragment implements
                 postponedScrollToLastMessageQueryIndex = 0;
             }
             ArrayList<MessageObject> messArr = (ArrayList<MessageObject>) args[2];
+            boolean hasLocallyHiddenMessages = false;
+            for (int a = 0; a < messArr.size(); a++) {
+                MessageObject message = messArr.get(a);
+                if (ArchiveHiddenMessages.isHidden(currentAccount, message.getDialogId(),
+                        message.getTopicId(), message.getId())) {
+                    hasLocallyHiddenMessages = true;
+                    break;
+                }
+            }
+            if (hasLocallyHiddenMessages) {
+                messArr = new ArrayList<>(messArr);
+                for (int a = messArr.size() - 1; a >= 0; a--) {
+                    MessageObject message = messArr.get(a);
+                    if (ArchiveHiddenMessages.isHidden(currentAccount, message.getDialogId(),
+                            message.getTopicId(), message.getId())) {
+                        messArr.remove(a);
+                    }
+                }
+            }
 
             boolean universalNotify = false;
             HashMap<Integer, MessageObject> oldMessages = null;
@@ -25862,6 +25886,9 @@ public class ChatActivity extends BaseFragment implements
     }
     private boolean shouldKeepDeletedMessageInChat(MessageObject obj) {
         if (obj == null || obj.scheduled || DialogObject.isEncryptedDialog(obj.getDialogId())) {
+            return false;
+        }
+        if (ArchiveHiddenMessages.isHidden(currentAccount, obj.getDialogId(), obj.getTopicId(), obj.getId())) {
             return false;
         }
         boolean isTemporaryMedia = obj.isSecretMedia();
@@ -33341,6 +33368,25 @@ public class ChatActivity extends BaseFragment implements
                 selectedObjectToEditCaption = null;
                 break;
             }
+            case OPTION_MESSAGE_EDIT_HISTORY: {
+                presentFragment(new MessageEditHistoryActivity(
+                        selectedObject.getDialogId(), selectedObject.getTopicId(), selectedObject.getId()));
+                break;
+            }
+            case OPTION_HIDE_RECALLED_FROM_CHAT: {
+                MessageObject hiddenMessage = selectedObject;
+                ArchiveHiddenMessages.hide(currentAccount, hiddenMessage.getDialogId(),
+                        hiddenMessage.getTopicId(), hiddenMessage.getId());
+                ArrayList<Integer> hiddenMessageIds = new ArrayList<>(1);
+                hiddenMessageIds.add(hiddenMessage.getId());
+                long hiddenChannelId = currentChat != null && ChatObject.isChannel(currentChat)
+                        ? currentChat.id : 0;
+                processDeletedMessages(hiddenMessageIds, hiddenChannelId, true, false);
+                selectedObject = null;
+                selectedObjectGroup = null;
+                selectedObjectToEditCaption = null;
+                break;
+            }
             case OPTION_EDIT_PRICE: {
                 final MessageObject msg = selectedObject;
                 TLRPC.TL_messageMediaPaidMedia paidMedia = (TLRPC.TL_messageMediaPaidMedia) selectedObject.messageOwner.media;
@@ -34597,6 +34643,31 @@ public class ChatActivity extends BaseFragment implements
                 }
             });
         }).start();
+    }
+
+    private void openLocalArchiveList(boolean deleted) {
+        Runnable open = () -> {
+            long archiveTopicId = isTopic ? getTopicId() : -1;
+            if (deleted) {
+                presentFragment(new DeletedMessagesActivity(dialog_id, archiveTopicId).setChatActivity(this));
+            } else {
+                presentFragment(new EditedMessagesActivity(dialog_id, archiveTopicId).setChatActivity(this));
+            }
+        };
+        if (ArchiveSettings.isEnabled()) {
+            open.run();
+            return;
+        }
+        if (getParentActivity() == null) return;
+        AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+        builder.setTitle(LocaleController.getString(R.string.LocalMessageArchive));
+        builder.setMessage(LocaleController.getString(R.string.LocalMessageArchiveDisabledInfo));
+        builder.setNegativeButton(LocaleController.getString(R.string.Cancel), null);
+        builder.setPositiveButton(LocaleController.getString(R.string.Enable), (dialog, which) -> {
+            ArchiveSettings.setEnabled(true);
+            open.run();
+        });
+        showDialog(builder.create());
     }
 
     public void openSearchWithText(String text) {
@@ -45549,6 +45620,19 @@ public class ChatActivity extends BaseFragment implements
                 options.add(OPTION_DELETE);
                 icons.add(deleteIconRes);
             }
+        }
+
+        if (ArchiveSettings.isEnabled() && selectedObject != null && selectedObject.isEdited()
+                && selectedObject.getId() > 0 && !isSecretChat() && chatMode != MODE_SCHEDULED) {
+            items.add(LocaleController.getString(R.string.MessageEditHistory));
+            options.add(OPTION_MESSAGE_EDIT_HISTORY);
+            icons.add(R.drawable.msg_recent);
+        }
+        if (selectedObject != null && selectedObject.isRecalled() && selectedObject.getId() > 0
+                && !isSecretChat() && chatMode != MODE_SCHEDULED) {
+            items.add(LocaleController.getString(R.string.HideRecalledMessageFromChat));
+            options.add(OPTION_HIDE_RECALLED_FROM_CHAT);
+            icons.add(R.drawable.msg_delete);
         }
     }
 

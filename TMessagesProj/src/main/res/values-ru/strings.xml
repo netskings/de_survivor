@@ -445,4 +445,13 @@
     <string name="YouHaveJoinedTooManyChannels">Вы вступили в слишком много каналов</string>
     <string name="WontRecommendThisChannel">Больше не рекомендовать этот канал</string>
     <string name="HiddenFromFeed"> скрыт из ленты</string>
+    <string name="LocalMessageArchive">Локальный архив сообщений</string>
+    <string name="LocalMessageArchiveInfo">Сохраняет снимки сообщений, правки и удаления в отдельной локальной базе. Секретные и самоуничтожающиеся сообщения не архивируются.</string>
+    <string name="LocalMessageArchiveDisabledInfo">Включите локальный архив, чтобы сохранять удалённые сообщения и историю правок. Полученные ранее сообщения не добавятся автоматически.</string>
+    <string name="ViewDeletedDeletedAt">Удалено %1$s</string>
+    <string name="ViewEditedRevisions">Правок: %1$d · последняя %2$s</string>
+    <string name="MessageEditHistory">История изменений</string>
+    <string name="MessageEditHistoryEmpty">Для этого сообщения нет сохранённых изменений.</string>
+    <string name="HideRecalledMessageFromChat">Скрыть из чата</string>
+    <string name="MessageEditVersion">Изменение %1$d · %2$s</string>
 </resources>

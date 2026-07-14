@@ -63,7 +63,7 @@ public final class ArchiveMessageMapper {
         byte[] rawPayload = serialize(message);
         long savedAt = System.currentTimeMillis() / 1000L;
         String hash = contentHash(accountEnvironment, accountId, dialogId, topicId, message.id, senderId,
-                message.date, message.edit_date, text, type, replyId, message.grouped_id,
+                message.date, text, type, replyId, message.grouped_id,
                 fingerprint(message.entities), fingerprint(message.media), fingerprint(message.reply_to),
                 fingerprint(message.fwd_from), fingerprint(message.action));
         return new ArchiveMessageSnapshot(accountEnvironment, accountId, dialogId, topicId, message.id, senderId,
@@ -130,12 +130,12 @@ public final class ArchiveMessageMapper {
     }
 
     static String contentHash(int accountEnvironment, long accountId, long dialogId, long topicId,
-                              int messageId, long senderId, int messageDate, int editDate, String text,
+                              int messageId, long senderId, int messageDate, String text,
                               String messageType, int replyToMessageId, long groupedId,
                               String entitiesFingerprint, String mediaFingerprint, String replyFingerprint,
                               String forwardFingerprint, String actionFingerprint) {
         return hash(accountEnvironment, accountId, dialogId, topicId, messageId, senderId,
-                messageDate, editDate, text, messageType, replyToMessageId, groupedId,
+                messageDate, text, messageType, replyToMessageId, groupedId,
                 entitiesFingerprint, mediaFingerprint, replyFingerprint, forwardFingerprint,
                 actionFingerprint);
     }

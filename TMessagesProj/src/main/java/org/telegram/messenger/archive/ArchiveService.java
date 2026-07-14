@@ -43,17 +43,25 @@ public final class ArchiveService {
         this.repository = repository;
     }
 
+    static ArchiveService replaceInstanceForTests(ArchiveService replacement) {
+        synchronized (ArchiveService.class) {
+            ArchiveService previous = instance;
+            instance = replacement;
+            return previous;
+        }
+    }
+
     public void saveMessage(ArchiveMessageSnapshot snapshot) {
         if (!ArchiveSettings.isEnabled() || snapshot == null || permanentlyDisabled) return;
         post(() -> repository().saveMessage(snapshot));
     }
 
     public void saveEdit(ArchiveMessageSnapshot previous, ArchiveMessageSnapshot current) {
-        if (!ArchiveSettings.isEnabled() || previous == null || current == null || permanentlyDisabled) return;
-        if (previous.contentHash.equals(current.contentHash)) return;
+        if (!ArchiveSettings.isEnabled() || current == null || permanentlyDisabled) return;
+        boolean contentChanged = previous == null || !previous.contentHash.equals(current.contentHash);
         post(() -> {
             repository().saveEdit(previous, current);
-            AndroidUtilities.runOnUIThread(() -> notifyMessageEdited(current));
+            if (contentChanged) AndroidUtilities.runOnUIThread(() -> notifyMessageEdited(current));
         });
     }
 

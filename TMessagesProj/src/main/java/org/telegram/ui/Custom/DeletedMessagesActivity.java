@@ -16,17 +16,14 @@ import androidx.recyclerview.widget.DefaultItemAnimator;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
-import org.telegram.SQLite.SQLiteCursor;
 import org.telegram.messenger.AndroidUtilities;
 import org.telegram.messenger.ContactsController;
-import org.telegram.messenger.FileLog;
 import org.telegram.messenger.LocaleController;
-import org.telegram.messenger.MessageObject;
 import org.telegram.messenger.MessagesController;
-import org.telegram.messenger.MessagesStorage;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
-import org.telegram.tgnet.NativeByteBuffer;
+import org.telegram.messenger.archive.ArchiveMessageRecord;
+import org.telegram.messenger.archive.ArchiveService;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBar;
 import org.telegram.ui.ActionBar.ActionBarMenuItem;
@@ -34,12 +31,11 @@ import org.telegram.ui.ActionBar.AlertDialog;
 import org.telegram.ui.ActionBar.BackDrawable;
 import org.telegram.ui.ActionBar.BaseFragment;
 import org.telegram.ui.ActionBar.Theme;
+import org.telegram.ui.ChatActivity;
 import org.telegram.ui.Components.LayoutHelper;
 import org.telegram.ui.Components.RecyclerListView;
 
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.HashSet;
 import java.util.Locale;
 
 public class DeletedMessagesActivity extends BaseFragment {
@@ -47,8 +43,10 @@ public class DeletedMessagesActivity extends BaseFragment {
     private static final int SEARCH_BUTTON = 1;
 
     private final long dialogId;
-    private final ArrayList<DeletedMessageItem> allItems = new ArrayList<>();
-    private final ArrayList<DeletedMessageItem> visibleItems = new ArrayList<>();
+    private final long topicId;
+    private final ArrayList<ArchiveMessageRecord> allItems = new ArrayList<>();
+    private final ArrayList<ArchiveMessageRecord> visibleItems = new ArrayList<>();
+    private ChatActivity chatActivity;
 
     private RecyclerListView listView;
     private ListAdapter adapter;
@@ -57,7 +55,17 @@ public class DeletedMessagesActivity extends BaseFragment {
     private boolean loading = true;
 
     public DeletedMessagesActivity(long dialogId) {
+        this(dialogId, -1);
+    }
+
+    public DeletedMessagesActivity(long dialogId, long topicId) {
         this.dialogId = dialogId;
+        this.topicId = topicId;
+    }
+
+    public DeletedMessagesActivity setChatActivity(ChatActivity chatActivity) {
+        this.chatActivity = chatActivity;
+        return this;
     }
 
     @Override
@@ -111,8 +119,15 @@ public class DeletedMessagesActivity extends BaseFragment {
         listView.setAdapter(adapter = new ListAdapter(context));
         listView.setOnItemClickListener((view, position) -> {
             if (position >= 0 && position < visibleItems.size()) {
-                showDeletedMessage(visibleItems.get(position));
+                openMessage(visibleItems.get(position));
             }
+        });
+        listView.setOnItemLongClickListener((view, position) -> {
+            if (position >= 0 && position < visibleItems.size()) {
+                showDeletedMessage(visibleItems.get(position));
+                return true;
+            }
+            return false;
         });
         frameLayout.addView(listView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
 
@@ -130,86 +145,19 @@ public class DeletedMessagesActivity extends BaseFragment {
     private void loadDeletedMessages() {
         loading = true;
         updateEmptyView();
-        MessagesStorage storage = MessagesStorage.getInstance(currentAccount);
-        storage.getStorageQueue().postRunnable(() -> {
-            ArrayList<DeletedMessageItem> result = new ArrayList<>();
-            HashSet<Integer> seenMessageIds = new HashSet<>();
-
-            loadMessagesFromTable(result, seenMessageIds, "messages_v2", false);
-            loadMessagesFromTable(result, seenMessageIds, "messages_topics", false);
-            loadMessagesFromTable(result, seenMessageIds, "deleted_messages_v2", true);
-
-            Collections.sort(result, (a, b) -> {
-                int firstDate = a.messageObject != null && a.messageObject.messageOwner != null ? a.messageObject.messageOwner.date : a.savedAt;
-                int secondDate = b.messageObject != null && b.messageObject.messageOwner != null ? b.messageObject.messageOwner.date : b.savedAt;
-                return Integer.compare(secondDate, firstDate);
-            });
-
-            AndroidUtilities.runOnUIThread(() -> {
-                allItems.clear();
-                allItems.addAll(result);
-                loading = false;
-                applySearch();
-            });
+        ArchiveService.getInstance().loadDeletedMessages(currentAccount, dialogId, topicId, result -> {
+            allItems.clear();
+            allItems.addAll(result);
+            loading = false;
+            applySearch();
         });
-    }
-
-    private void loadMessagesFromTable(ArrayList<DeletedMessageItem> result, HashSet<Integer> seenMessageIds, String tableName, boolean archivedTable) {
-        SQLiteCursor cursor = null;
-        try {
-            String query;
-            if (archivedTable) {
-                query = String.format(Locale.US, "SELECT mid, data, date FROM %s WHERE dialog_id = %d ORDER BY date DESC", tableName, dialogId);
-            } else {
-                query = String.format(Locale.US, "SELECT mid, data, date FROM %s WHERE uid = %d AND is_recalled = 1 ORDER BY date DESC", tableName, dialogId);
-            }
-            cursor = MessagesStorage.getInstance(currentAccount).getDatabase().queryFinalized(query);
-            while (cursor.next()) {
-                int mid = cursor.intValue(0);
-                if (seenMessageIds.contains(mid)) {
-                    continue;
-                }
-                NativeByteBuffer data = cursor.byteBufferValue(1);
-                if (data == null) {
-                    continue;
-                }
-                try {
-                    TLRPC.Message message = TLRPC.Message.TLdeserialize(data, data.readInt32(false), false);
-                    if (message != null) {
-                        message.readAttachPath(data, UserConfig.getInstance(currentAccount).clientUserId);
-                        message.id = mid;
-                        message.is_recalled = true;
-                        if (message.dialog_id == 0) {
-                            message.dialog_id = dialogId;
-                        }
-                        if (message.peer_id == null) {
-                            message.peer_id = MessagesController.getInstance(currentAccount).getPeer(dialogId);
-                        }
-                        int savedAt = cursor.intValue(2);
-                        if (message.date == 0) {
-                            message.date = savedAt;
-                        }
-                        result.add(new DeletedMessageItem(new MessageObject(currentAccount, message, false, false), savedAt));
-                        seenMessageIds.add(mid);
-                    }
-                } finally {
-                    data.reuse();
-                }
-            }
-        } catch (Exception e) {
-            FileLog.e(e);
-        } finally {
-            if (cursor != null) {
-                cursor.dispose();
-            }
-        }
     }
 
     private void applySearch() {
         visibleItems.clear();
         String query = searchQuery == null ? "" : searchQuery.trim().toLowerCase(Locale.US);
         for (int i = 0; i < allItems.size(); i++) {
-            DeletedMessageItem item = allItems.get(i);
+            ArchiveMessageRecord item = allItems.get(i);
             if (TextUtils.isEmpty(query) || getSearchText(item).contains(query)) {
                 visibleItems.add(item);
             }
@@ -220,9 +168,9 @@ public class DeletedMessagesActivity extends BaseFragment {
         updateEmptyView();
     }
 
-    private String getSearchText(DeletedMessageItem item) {
-        String author = getAuthorName(item.messageObject);
-        String text = getMessageText(item.messageObject);
+    private String getSearchText(ArchiveMessageRecord item) {
+        String author = getAuthorName(item);
+        String text = getMessageText(item);
         return (author + "\n" + text).toLowerCase(Locale.US);
     }
 
@@ -241,31 +189,35 @@ public class DeletedMessagesActivity extends BaseFragment {
         }
     }
 
-    private void showDeletedMessage(DeletedMessageItem item) {
+    private void openMessage(ArchiveMessageRecord item) {
+        ChatActivity target = chatActivity;
+        if (target == null) {
+            presentFragment(ChatActivity.of(item.dialogId, item.messageId), true);
+            return;
+        }
+        finishFragment();
+        AndroidUtilities.runOnUIThread(() -> target.scrollToMessageId(item.messageId, 0, true, 0, true, 0), 180);
+    }
+
+    private void showDeletedMessage(ArchiveMessageRecord item) {
         if (getParentActivity() == null) {
             return;
         }
-        String text = getMessageText(item.messageObject);
-        String savedAt = LocaleController.formatString(R.string.ViewDeletedSavedAt, LocaleController.formatDateTime(item.savedAt, true));
+        String text = getMessageText(item);
+        String savedAt = LocaleController.formatString(R.string.ViewDeletedSavedAt, LocaleController.formatDateTime((int) item.deletedAt, true));
         AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
-        builder.setTitle(getAuthorName(item.messageObject));
+        builder.setTitle(getAuthorName(item));
         builder.setMessage(text + "\n\n" + savedAt);
         builder.setPositiveButton(LocaleController.getString(R.string.OK), null);
         builder.setNegativeButton(LocaleController.getString(R.string.Copy), (dialog, which) -> AndroidUtilities.addToClipboard(text));
         showDialog(builder.create());
     }
 
-    private String getAuthorName(MessageObject messageObject) {
-        if (messageObject == null) {
-            return LocaleController.getString(R.string.ViewDeletedUnknownSender);
-        }
-        if (messageObject.isOutOwner() || messageObject.getFromChatId() == UserConfig.getInstance(currentAccount).getClientUserId()) {
+    private String getAuthorName(ArchiveMessageRecord item) {
+        if (item.senderId == UserConfig.getInstance(currentAccount).getClientUserId()) {
             return LocaleController.getString(R.string.ViewDeletedYou);
         }
-        if (messageObject.messageOwner != null && !TextUtils.isEmpty(messageObject.messageOwner.post_author)) {
-            return messageObject.messageOwner.post_author;
-        }
-        long fromId = messageObject.getFromChatId();
+        long fromId = item.senderId;
         if (fromId != 0) {
             Object sender = MessagesController.getInstance(currentAccount).getUserOrChat(fromId);
             if (sender instanceof TLRPC.User) {
@@ -280,23 +232,15 @@ public class DeletedMessagesActivity extends BaseFragment {
         return LocaleController.getString(R.string.ViewDeletedUnknownSender);
     }
 
-    private String getMessageText(MessageObject messageObject) {
-        if (messageObject == null) {
-            return "";
-        }
-        if (!TextUtils.isEmpty(messageObject.caption)) {
-            return messageObject.caption.toString();
-        }
-        if (!TextUtils.isEmpty(messageObject.messageText)) {
-            return messageObject.messageText.toString();
-        }
-        if (messageObject.isPhoto()) {
+    private String getMessageText(ArchiveMessageRecord item) {
+        if (!TextUtils.isEmpty(item.text)) return item.text;
+        if (item.messageType.contains("Photo")) {
             return LocaleController.getString(R.string.AttachPhoto);
         }
-        if (messageObject.isVideo()) {
+        if (item.messageType.contains("Video")) {
             return LocaleController.getString(R.string.AttachVideo);
         }
-        if (messageObject.getDocument() != null) {
+        if (item.messageType.contains("Document")) {
             return LocaleController.getString(R.string.AttachDocument);
         }
         return "";
@@ -373,22 +317,12 @@ public class DeletedMessagesActivity extends BaseFragment {
             addView(divider, LayoutHelper.createLinear(LayoutHelper.MATCH_PARENT, 1));
         }
 
-        void setItem(DeletedMessageItem item, boolean drawDivider) {
-            titleView.setText(getAuthorName(item.messageObject));
-            messageView.setText(getMessageText(item.messageObject));
-            int date = item.messageObject != null && item.messageObject.messageOwner != null ? item.messageObject.messageOwner.date : item.savedAt;
-            metaView.setText(LocaleController.formatDateTime(date, true));
+        void setItem(ArchiveMessageRecord item, boolean drawDivider) {
+            titleView.setText(getAuthorName(item));
+            messageView.setText(getMessageText(item));
+            metaView.setText(LocaleController.formatString(R.string.ViewDeletedDeletedAt,
+                    LocaleController.formatDateTime((int) item.deletedAt, true)));
             divider.setVisibility(drawDivider ? View.VISIBLE : View.GONE);
-        }
-    }
-
-    private static class DeletedMessageItem {
-        private final MessageObject messageObject;
-        private final int savedAt;
-
-        private DeletedMessageItem(MessageObject messageObject, int savedAt) {
-            this.messageObject = messageObject;
-            this.savedAt = savedAt;
         }
     }
 }

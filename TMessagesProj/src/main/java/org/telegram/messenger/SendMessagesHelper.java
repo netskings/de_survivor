@@ -52,6 +52,7 @@ import androidx.collection.LongSparseArray;
 import androidx.core.view.inputmethod.InputContentInfoCompat;
 
 import org.json.JSONObject;
+import org.telegram.messenger.archive.ArchiveEventObserver;
 import org.telegram.messenger.audioinfo.AudioInfo;
 import org.telegram.messenger.plugins.PluginManager;
 import org.telegram.messenger.support.SparseLongArray;
@@ -2942,6 +2943,8 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         if (messageObject == null) {
             return;
         }
+        final ArchiveEventObserver.OutgoingEditCapture archiveOutgoingEdit = retry ? null
+                : ArchiveEventObserver.prepareOutgoingEdit(currentAccount, messageObject.messageOwner);
         if (params == null) {
             params = new HashMap<>();
         }
@@ -3421,6 +3424,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                     if (delayedMessage != null) {
                         delayedMessage.sendRequest = request;
                     }
+                    ArchiveEventObserver.registerOutgoingEditRequest(request, archiveOutgoingEdit);
                     reqSend = request;
                 }
 
@@ -3468,6 +3472,8 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         }
 
         final TLRPC.TL_messages_editMessage req = new TLRPC.TL_messages_editMessage();
+        ArchiveEventObserver.registerOutgoingEditRequest(req,
+                ArchiveEventObserver.prepareOutgoingEdit(currentAccount, messageObject.messageOwner));
         req.peer = getMessagesController().getInputPeer(messageObject.getDialogId());
         if (message != null) {
             req.message = message;
@@ -3493,8 +3499,11 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
         }
         return getConnectionsManager().sendRequest(req, (response, error) -> {
             if (error == null) {
-                getMessagesController().processUpdates((TLRPC.Updates) response, false);
+                TLRPC.Updates updates = (TLRPC.Updates) response;
+                ArchiveEventObserver.captureOutgoingEditResponse(currentAccount, req, updates);
+                getMessagesController().processUpdates(updates, false);
             } else {
+                ArchiveEventObserver.discardOutgoingEditRequest(req);
                 AndroidUtilities.runOnUIThread(() -> AlertsCreator.processError(currentAccount, error, fragment, req));
             }
         });
@@ -7799,6 +7808,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                             updateMediaPaths(msgObj, message, message.id, originalPath, false, params);
                         }
                         Utilities.stageQueue.postRunnable(() -> {
+                            ArchiveEventObserver.captureOutgoingEditResponse(currentAccount, req, updates);
                             getMessagesController().processUpdates(updates, false);
                             AndroidUtilities.runOnUIThread(() -> {
                                 processSentMessage(newMsgObj.id);
@@ -7807,6 +7817,7 @@ public class SendMessagesHelper extends BaseController implements NotificationCe
                         });
 
                     } else {
+                        ArchiveEventObserver.discardOutgoingEditRequest(req);
                         AlertsCreator.processError(currentAccount, error, null, req);
                         removeFromSendingMessages(newMsgObj.id, scheduled);
                         revertEditingMessageObject(msgObj);
