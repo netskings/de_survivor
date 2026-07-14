@@ -1659,6 +1659,7 @@ public class DatabaseMigrationHelper {
             database.executeFast("DROP INDEX IF EXISTS last_mid_idx_dialogs;").stepThis().dispose();
             database.executeFast("DROP INDEX IF EXISTS folder_id_idx_dialogs;").stepThis().dispose();
             database.executeFast("DROP INDEX IF EXISTS flags_idx_dialogs;").stepThis().dispose();
+            database.executeFast("PRAGMA user_version = 173").stepThis().dispose();
 
             version = 173;
         }
@@ -1679,6 +1680,11 @@ public class DatabaseMigrationHelper {
             database.executeFast("CREATE INDEX IF NOT EXISTS dialog_edit_date_idx_message_edits_v2 ON message_edits_v2(dialog_id, edit_date);").stepThis().dispose();
             database.executeFast("PRAGMA user_version = 176").stepThis().dispose();
             version = 176;
+        }
+        if (version == 176) {
+            database.executeFast("CREATE TABLE IF NOT EXISTS web_browser_settings(data BLOB)").stepThis().dispose();
+            database.executeFast("PRAGMA user_version = 177").stepThis().dispose();
+            version = 177;
         }
 
         return version;
