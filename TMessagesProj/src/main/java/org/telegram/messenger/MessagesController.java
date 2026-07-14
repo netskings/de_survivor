@@ -57,6 +57,7 @@ import org.telegram.SQLite.SQLiteException;
 import org.telegram.SQLite.SQLitePreparedStatement;
 import org.telegram.messenger.browser.Browser;
 import org.telegram.messenger.plugins.PluginManager;
+import org.telegram.messenger.archive.ArchiveEventObserver;
 import org.telegram.messenger.support.LongSparseIntArray;
 import org.telegram.messenger.support.LongSparseLongArray;
 import org.telegram.messenger.voip.GroupCallMessagesController;
@@ -17348,6 +17349,7 @@ public class MessagesController extends BaseController implements NotificationCe
 
     // must be run from Utilities.stageQueue
     public void processUpdates(final TLRPC.Updates updates, boolean fromQueue) {
+        ArchiveEventObserver.observeUpdates(currentAccount, updates);
         TLRPC.Updates effectiveUpdates = updates;
         boolean suppressPayload = updates.pluginUpdatesSuppressed;
         if (!updates.pluginUpdatesHookApplied) {
@@ -17917,6 +17919,7 @@ public class MessagesController extends BaseController implements NotificationCe
     }
 
     public boolean processUpdateArray(ArrayList<TLRPC.Update> updates, ArrayList<TLRPC.User> usersArr, ArrayList<TLRPC.Chat> chatsArr, boolean fromGetDifference, int date) {
+        ArchiveEventObserver.observeUpdateArray(currentAccount, updates, usersArr, chatsArr);
         if (Boolean.TRUE.equals(suppressPluginUpdatesPayload.get())) {
             return processUpdateArrayInternal(
                     new ArrayList<>(), usersArr, chatsArr, fromGetDifference, date

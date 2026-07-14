@@ -35,6 +35,10 @@ import org.telegram.SQLite.SQLiteDatabase;
 import org.telegram.SQLite.SQLiteException;
 import org.telegram.SQLite.SQLitePreparedStatement;
 import org.telegram.messenger.support.LongSparseIntArray;
+import org.telegram.messenger.archive.ArchiveMessageMapper;
+import org.telegram.messenger.archive.ArchiveMessageSnapshot;
+import org.telegram.messenger.archive.ArchiveService;
+import org.telegram.messenger.archive.ArchiveSettings;
 import org.telegram.tgnet.NativeByteBuffer;
 import org.telegram.tgnet.RequestDelegate;
 import org.telegram.tgnet.TLObject;
@@ -15442,6 +15446,103 @@ public class MessagesStorage extends BaseController {
             if (newStoredData != null) {
                 newStoredData.reuse();
             }
+        }
+    }
+
+    /** Resolves the pre-edit value on storageQueue before Telegram can overwrite messages_v2. */
+    public void captureMessageEditForLocalArchive(ArchiveMessageSnapshot current) {
+        if (!ArchiveSettings.isEnabled() || current == null) return;
+        storageQueue.postRunnable(() -> captureMessageEditForLocalArchiveInternal(current));
+    }
+
+    private void captureMessageEditForLocalArchiveInternal(ArchiveMessageSnapshot current) {
+        if (!ArchiveSettings.isEnabled()) return;
+        SQLiteCursor archiveCursor = null;
+        try {
+            archiveCursor = database.queryFinalized("SELECT data FROM messages_v2 WHERE mid = ? AND uid = ? LIMIT 1",
+                    current.messageId, current.dialogId);
+            if (!archiveCursor.next()) return;
+            NativeByteBuffer data = archiveCursor.byteBufferValue(0);
+            if (data == null) return;
+            ArchiveMessageSnapshot previous;
+            try {
+                TLRPC.Message oldMessage = TLRPC.Message.TLdeserialize(data, data.readInt32(false), false);
+                if (oldMessage != null) oldMessage.readAttachPath(data, current.accountId);
+                if (oldMessage == null || oldMessage instanceof TLRPC.TL_messageEmpty) return;
+                if (oldMessage.dialog_id == 0) oldMessage.dialog_id = current.dialogId;
+                int forumTypeFlags = getForumTypeFlags(current.dialogId);
+                previous = ArchiveMessageMapper.map(currentAccount, oldMessage, forumTypeFlags,
+                        current.accountEnvironment, current.accountId);
+            } finally {
+                data.reuse();
+            }
+            ArchiveService.getInstance().saveEdit(previous, current);
+        } catch (Throwable e) {
+            FileLog.e("Local archive edit capture failed: " + e.getClass().getSimpleName());
+        } finally {
+            if (archiveCursor != null) archiveCursor.dispose();
+        }
+    }
+
+    /**
+     * Resolves immutable snapshots on Telegram's storage queue before deletion. The archive queue
+     * never receives a cursor, NativeByteBuffer or mutable TLRPC object.
+     */
+    public void captureMessagesForLocalArchiveDeletion(int accountEnvironment, long accountId, long dialogId,
+                                                        ArrayList<Integer> messageIds,
+                                                        String sourceEventId, long deletedAt) {
+        if (!ArchiveSettings.isEnabled() || accountId == 0 || messageIds == null || messageIds.isEmpty()) return;
+        ArrayList<Integer> ids = new ArrayList<>(messageIds);
+        storageQueue.postRunnable(() -> captureMessagesForLocalArchiveDeletionInternal(accountEnvironment,
+                accountId, dialogId, ids, sourceEventId, deletedAt));
+    }
+
+    private void captureMessagesForLocalArchiveDeletionInternal(int accountEnvironment, long accountId,
+                                                                 long dialogId, ArrayList<Integer> messageIds,
+                                                                 String sourceEventId, long deletedAt) {
+        if (!ArchiveSettings.isEnabled() || messageIds.isEmpty()) return;
+        SQLiteCursor archiveCursor = null;
+        HashSet<Integer> found = new HashSet<>();
+        try {
+            String ids = TextUtils.join(",", messageIds);
+            String sql = dialogId == 0
+                    ? "SELECT uid, data, mid FROM messages_v2 WHERE mid IN(" + ids + ") AND is_channel = 0"
+                    : "SELECT uid, data, mid FROM messages_v2 WHERE mid IN(" + ids + ") AND uid = " + dialogId;
+            archiveCursor = database.queryFinalized(sql);
+            while (archiveCursor.next()) {
+                long resolvedDialogId = archiveCursor.longValue(0);
+                int messageId = archiveCursor.intValue(2);
+                NativeByteBuffer data = archiveCursor.byteBufferValue(1);
+                ArchiveMessageSnapshot snapshot = null;
+                if (data != null) {
+                    try {
+                        TLRPC.Message message = TLRPC.Message.TLdeserialize(data, data.readInt32(false), false);
+                        if (message != null) {
+                            message.readAttachPath(data, accountId);
+                            if (message.dialog_id == 0) message.dialog_id = resolvedDialogId;
+                            snapshot = ArchiveMessageMapper.map(currentAccount, message,
+                                    getForumTypeFlags(resolvedDialogId), accountEnvironment, accountId);
+                        }
+                    } finally {
+                        data.reuse();
+                    }
+                }
+                ArchiveMessageSnapshot key = snapshot != null ? snapshot
+                        : ArchiveMessageMapper.key(accountEnvironment, accountId, resolvedDialogId, 0, messageId);
+                ArchiveService.getInstance().saveDeletion(snapshot, key, sourceEventId, deletedAt);
+                found.add(messageId);
+            }
+            for (Integer messageId : messageIds) {
+                if (!found.contains(messageId)) {
+                    ArchiveMessageSnapshot key = ArchiveMessageMapper.key(accountEnvironment, accountId,
+                            dialogId, 0, messageId);
+                    ArchiveService.getInstance().saveDeletion(null, key, sourceEventId, deletedAt);
+                }
+            }
+        } catch (Throwable e) {
+            FileLog.e("Local archive delete capture failed: " + e.getClass().getSimpleName());
+        } finally {
+            if (archiveCursor != null) archiveCursor.dispose();
         }
     }
 
