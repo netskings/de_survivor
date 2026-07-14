@@ -76,10 +76,126 @@ public final class ArchiveService {
                 (repository, environment, accountId) -> repository.listDeleted(environment, accountId, dialogId, topicId));
     }
 
+    public void loadAllDeletedMessages(int accountSlot, Callback<ArrayList<ArchiveMessageRecord>> callback) {
+        loadMessages(accountSlot, callback,
+                (repository, environment, accountId) -> repository.listAllDeleted(environment, accountId));
+    }
+
     public void loadEditedMessages(int accountSlot, long dialogId, long topicId,
                                    Callback<ArrayList<ArchiveMessageRecord>> callback) {
         loadMessages(accountSlot, callback,
                 (repository, environment, accountId) -> repository.listEdited(environment, accountId, dialogId, topicId));
+    }
+
+    public void loadAllEditedMessages(int accountSlot, Callback<ArrayList<ArchiveMessageRecord>> callback) {
+        loadMessages(accountSlot, callback,
+                (repository, environment, accountId) -> repository.listAllEdited(environment, accountId));
+    }
+
+    public void deleteLocalMessage(int accountSlot, long dialogId, long topicId, int messageId,
+                                   Callback<Boolean> callback) {
+        if (callback == null) return;
+        if (!ArchiveSettings.isEnabled() || permanentlyDisabled) {
+            AndroidUtilities.runOnUIThread(() -> callback.onResult(false));
+            return;
+        }
+        final long accountId = UserConfig.getInstance(accountSlot).getClientUserId();
+        final int environment = ConnectionsManager.getInstance(accountSlot).isTestBackend() ? 1 : 0;
+        archiveQueue.postRunnable(() -> {
+            boolean success = false;
+            if (!permanentlyDisabled && accountId != 0) {
+                try {
+                    ArrayList<String> orphaned = repository().deleteLocalMessage(
+                            environment, accountId, dialogId, topicId, messageId);
+                    ArchiveMediaStore.getInstance().deleteRelativePaths(orphaned);
+                    success = true;
+                } catch (ArchiveDatabase.UnsupportedSchemaException e) {
+                    permanentlyDisabled = true;
+                    FileLog.e("Local archive disabled because its schema is newer than this app");
+                } catch (Throwable e) {
+                    FileLog.e("Local archive remove failed: " + e.getClass().getSimpleName());
+                }
+            }
+            boolean delivered = success;
+            AndroidUtilities.runOnUIThread(() -> callback.onResult(delivered));
+        });
+    }
+
+    public void clearArchive(int accountSlot, boolean allAccounts, Callback<Boolean> callback) {
+        if (callback == null) return;
+        if (permanentlyDisabled) {
+            AndroidUtilities.runOnUIThread(() -> callback.onResult(false));
+            return;
+        }
+        final long accountId = UserConfig.getInstance(accountSlot).getClientUserId();
+        final int environment = ConnectionsManager.getInstance(accountSlot).isTestBackend() ? 1 : 0;
+        archiveQueue.postRunnable(() -> {
+            boolean success = false;
+            if (allAccounts || accountId != 0) {
+                try {
+                    ArrayList<String> orphaned = repository().clearArchive(
+                            environment, accountId, allAccounts);
+                    ArchiveMediaStore.getInstance().deleteRelativePaths(orphaned);
+                    ArchiveHiddenMessages.clear(accountSlot, allAccounts);
+                    success = true;
+                } catch (ArchiveDatabase.UnsupportedSchemaException e) {
+                    permanentlyDisabled = true;
+                    FileLog.e("Local archive disabled because its schema is newer than this app");
+                } catch (Throwable e) {
+                    FileLog.e("Local archive clear failed: " + e.getClass().getSimpleName());
+                }
+            }
+            boolean delivered = success;
+            AndroidUtilities.runOnUIThread(() -> callback.onResult(delivered));
+        });
+    }
+
+    void linkMedia(ArchiveMediaDescriptor descriptor, String contentHash, long sizeBytes,
+                   String relativePath, Callback<Boolean> callback) {
+        if (descriptor == null || callback == null || permanentlyDisabled) return;
+        archiveQueue.postRunnable(() -> {
+            boolean accepted = false;
+            try {
+                accepted = repository().linkMedia(descriptor, contentHash, sizeBytes, relativePath);
+            } catch (Throwable e) {
+                FileLog.e("Local archive media link failed: " + e.getClass().getSimpleName());
+            }
+            boolean delivered = accepted;
+            AndroidUtilities.runOnUIThread(() -> callback.onResult(delivered));
+        });
+    }
+
+    void loadMediaPath(int accountSlot, long dialogId, long topicId, int messageId,
+                       Callback<String> callback) {
+        if (callback == null) return;
+        if (!ArchiveSettings.isEnabled() || permanentlyDisabled) {
+            AndroidUtilities.runOnUIThread(() -> callback.onResult(null));
+            return;
+        }
+        long accountId = UserConfig.getInstance(accountSlot).getClientUserId();
+        int environment = ConnectionsManager.getInstance(accountSlot).isTestBackend() ? 1 : 0;
+        archiveQueue.postRunnable(() -> {
+            String path = null;
+            try {
+                if (accountId != 0) path = repository().mediaPath(
+                        environment, accountId, dialogId, topicId, messageId);
+            } catch (Throwable e) {
+                FileLog.e("Local archive media lookup failed: " + e.getClass().getSimpleName());
+            }
+            String delivered = path;
+            AndroidUtilities.runOnUIThread(() -> callback.onResult(delivered));
+        });
+    }
+
+    void cleanupExpiredMedia(long cutoffSeconds) {
+        archiveQueue.postRunnable(() -> {
+            try {
+                ArrayList<String> paths = repository().evictMediaOlderThan(cutoffSeconds);
+                ArchiveMediaStore.getInstance().deleteRelativePaths(paths);
+            } catch (Throwable e) {
+                FileLog.e("Local archive media retention failed: " + e.getClass().getSimpleName());
+            }
+        });
     }
 
     public void loadMessageHistory(int accountSlot, long dialogId, long topicId, int messageId,
@@ -155,6 +271,18 @@ public final class ArchiveService {
             repository = new ArchiveRepository(database);
         }
         return repository;
+    }
+
+    /** Package-private transfer seam; the repository is still only touched on archiveQueue. */
+    void postArchiveRunnable(Runnable runnable) {
+        archiveQueue.postRunnable(runnable);
+    }
+
+    ArchiveRepository repositoryForTransfer() throws Exception {
+        if (permanentlyDisabled) {
+            throw new IllegalStateException("local archive is disabled");
+        }
+        return repository();
     }
 
     private interface ArchiveOperation {

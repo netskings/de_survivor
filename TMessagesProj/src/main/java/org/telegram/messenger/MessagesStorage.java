@@ -38,6 +38,7 @@ import org.telegram.messenger.support.LongSparseIntArray;
 import org.telegram.messenger.archive.ArchiveEventObserver;
 import org.telegram.messenger.archive.ArchiveMessageMapper;
 import org.telegram.messenger.archive.ArchiveMessageSnapshot;
+import org.telegram.messenger.archive.ArchiveMediaStore;
 import org.telegram.messenger.archive.ArchiveService;
 import org.telegram.messenger.archive.ArchiveSettings;
 import org.telegram.tgnet.NativeByteBuffer;
@@ -15519,6 +15520,7 @@ public class MessagesStorage extends BaseController {
                     ? !entry.channelMessage
                     : snapshot.dialogId == event.dialogId;
             if (matchesScope && event.messageIds.contains(snapshot.messageId) && found.add(snapshot.messageId)) {
+                ArchiveMediaStore.getInstance().captureAvailableAtDeletion(currentAccount, snapshot);
                 ArchiveService.getInstance().saveDeletion(snapshot, snapshot,
                         event.sourceEventId, event.deletedAt);
             }
@@ -15548,6 +15550,7 @@ public class MessagesStorage extends BaseController {
                         if (message != null) {
                             message.readAttachPath(data, event.accountId);
                             if (message.dialog_id == 0) message.dialog_id = resolvedDialogId;
+                            ArchiveMediaStore.getInstance().captureAvailableAtDeletion(currentAccount, message);
                             snapshot = ArchiveMessageMapper.map(currentAccount, message,
                                     getForumTypeFlags(resolvedDialogId), event.accountEnvironment, event.accountId);
                         }

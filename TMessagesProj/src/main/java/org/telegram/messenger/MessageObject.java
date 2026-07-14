@@ -54,6 +54,7 @@ import org.telegram.messenger.browser.Browser;
 import org.telegram.ui.Custom.CustomSettings;
 import org.telegram.messenger.ringtone.RingtoneDataStore;
 import org.telegram.messenger.utils.tlutils.AmountUtils;
+import org.telegram.messenger.archive.ArchiveMediaStore;
 import org.telegram.messenger.utils.tlutils.TlUtils;
 import org.telegram.tgnet.ConnectionsManager;
 import org.telegram.tgnet.SerializedData;
@@ -216,6 +217,9 @@ public class MessageObject {
     public boolean deleted;
     public boolean deletedByThanos;
     public boolean isRecalled;
+    /** Asynchronous local-archive lookup state used by recalled media bubbles. */
+    public boolean archiveMediaLookupCompleted;
+    public boolean archiveMediaMissing;
     public float audioProgress;
     public float forceSeekTo = -1;
     public int audioProgressMs;
@@ -11408,21 +11412,22 @@ public class MessageObject {
                 if (!mediaExists) {
                     mediaExists = file.exists();
                 }
+                if (!mediaExists && !TextUtils.isEmpty(messageOwner.attachPath)) {
+                    attachPathExists = new File(messageOwner.attachPath).isFile();
+                }
             }
         }
-        if (!mediaExists && type == TYPE_GIF || type == TYPE_VIDEO || type == TYPE_FILE || type == TYPE_VOICE || type == TYPE_MUSIC || type == TYPE_ROUND_VIDEO) {
-            if (messageOwner.attachPath != null && messageOwner.attachPath.length() > 0) {
-                File f = new File(messageOwner.attachPath);
-                attachPathExists = f.exists();
+        if (!mediaExists && (type == TYPE_GIF || type == TYPE_VIDEO || type == TYPE_FILE
+                || type == TYPE_VOICE || type == TYPE_MUSIC || type == TYPE_ROUND_VIDEO)) {
+            File file = FileLoader.getInstance(currentAccount).getPathToMessage(messageOwner, useFileDatabaseQueue);
+            if (type == TYPE_VIDEO && needDrawBluredPreview() || isVoiceOnce() || isRoundOnce()) {
+                mediaExists = new File(file.getAbsolutePath() + ".enc").exists();
             }
-            if (!attachPathExists) {
-                File file = FileLoader.getInstance(currentAccount).getPathToMessage(messageOwner, useFileDatabaseQueue);
-                if (type == TYPE_VIDEO && needDrawBluredPreview() || isVoiceOnce() || isRoundOnce()) {
-                    mediaExists = new File(file.getAbsolutePath() + ".enc").exists();
-                }
-                if (!mediaExists) {
-                    mediaExists = file.exists();
-                }
+            if (!mediaExists) {
+                mediaExists = file.exists();
+            }
+            if (!mediaExists && messageOwner.attachPath != null && messageOwner.attachPath.length() > 0) {
+                attachPathExists = new File(messageOwner.attachPath).isFile();
             }
         }
         if (!mediaExists) {
@@ -11447,7 +11452,17 @@ public class MessageObject {
                 mediaExists = FileLoader.getInstance(currentAccount).getPathToAttach(photo.video_sizes.get(0), null, true, useFileDatabaseQueue).exists();
             }
         }
+        if (mediaExists && ArchiveMediaStore.isArchiveFilePath(messageOwner.attachPath)) {
+            messageOwner.attachPath = "";
+            attachPathExists = false;
+        }
         updateQualitiesCached(useFileDatabaseQueue);
+        if (mediaExists || attachPathExists) {
+            archiveMediaLookupCompleted = true;
+            archiveMediaMissing = false;
+        } else if (isRecalled()) {
+            ArchiveMediaStore.getInstance().resolveFallback(this);
+        }
     }
 
     public void setQuery(String query) {

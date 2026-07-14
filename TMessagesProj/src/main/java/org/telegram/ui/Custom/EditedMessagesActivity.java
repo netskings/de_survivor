@@ -43,6 +43,7 @@ public class EditedMessagesActivity extends BaseFragment {
 
     private final long dialogId;
     private final long topicId;
+    private final boolean allDialogs;
     private final ArrayList<ArchiveMessageRecord> allItems = new ArrayList<>();
     private final ArrayList<ArchiveMessageRecord> visibleItems = new ArrayList<>();
     private ChatActivity chatActivity;
@@ -53,13 +54,22 @@ public class EditedMessagesActivity extends BaseFragment {
     private String searchQuery = "";
     private boolean loading = true;
 
+    public EditedMessagesActivity() {
+        this(0, -1, true);
+    }
+
     public EditedMessagesActivity(long dialogId) {
         this(dialogId, -1);
     }
 
     public EditedMessagesActivity(long dialogId, long topicId) {
+        this(dialogId, topicId, false);
+    }
+
+    private EditedMessagesActivity(long dialogId, long topicId, boolean allDialogs) {
         this.dialogId = dialogId;
         this.topicId = topicId;
+        this.allDialogs = allDialogs;
     }
 
     public EditedMessagesActivity setChatActivity(ChatActivity chatActivity) {
@@ -145,12 +155,17 @@ public class EditedMessagesActivity extends BaseFragment {
     private void loadEditedMessages() {
         loading = true;
         updateEmptyView();
-        ArchiveService.getInstance().loadEditedMessages(currentAccount, dialogId, topicId, result -> {
+        ArchiveService.Callback<ArrayList<ArchiveMessageRecord>> callback = result -> {
             allItems.clear();
             allItems.addAll(result);
             loading = false;
             applySearch();
-        });
+        };
+        if (allDialogs) {
+            ArchiveService.getInstance().loadAllEditedMessages(currentAccount, callback);
+        } else {
+            ArchiveService.getInstance().loadEditedMessages(currentAccount, dialogId, topicId, callback);
+        }
     }
 
     private void applySearch() {
@@ -233,6 +248,18 @@ public class EditedMessagesActivity extends BaseFragment {
         return LocaleController.getString(R.string.ViewEditedUnsupportedMessage);
     }
 
+    private String getDialogName(ArchiveMessageRecord item) {
+        Object peer = MessagesController.getInstance(currentAccount).getUserOrChat(item.dialogId);
+        if (peer instanceof TLRPC.User) {
+            TLRPC.User user = (TLRPC.User) peer;
+            String name = ContactsController.formatName(user.first_name, user.last_name);
+            if (!TextUtils.isEmpty(name)) return name;
+        } else if (peer instanceof TLRPC.Chat && !TextUtils.isEmpty(((TLRPC.Chat) peer).title)) {
+            return ((TLRPC.Chat) peer).title;
+        }
+        return String.valueOf(item.dialogId);
+    }
+
     private class ListAdapter extends RecyclerListView.SelectionAdapter {
         private final Context context;
 
@@ -305,7 +332,9 @@ public class EditedMessagesActivity extends BaseFragment {
         }
 
         void setItem(ArchiveMessageRecord item, boolean drawDivider) {
-            titleView.setText(getAuthorName(item));
+            titleView.setText(allDialogs
+                    ? getAuthorName(item) + " · " + getDialogName(item)
+                    : getAuthorName(item));
             String text = LocaleController.getString(R.string.ViewEditedBefore) + " " + item.previousText
                     + "\n" + LocaleController.getString(R.string.ViewEditedAfter) + " " + getMessageText(item);
             messageView.setText(text);

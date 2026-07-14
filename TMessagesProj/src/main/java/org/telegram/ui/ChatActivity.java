@@ -157,6 +157,9 @@ import org.telegram.messenger.FileLoader;
 import org.telegram.messenger.FileLog;
 import org.telegram.messenger.FlagSecureReason;
 import org.telegram.messenger.archive.ArchiveHiddenMessages;
+import org.telegram.messenger.archive.ArchiveMessageMapper;
+import org.telegram.messenger.archive.ArchiveMessageRecord;
+import org.telegram.messenger.archive.ArchiveService;
 import org.telegram.messenger.archive.ArchiveSettings;
 import org.telegram.ui.Custom.CustomSettings;
 import org.telegram.ui.Custom.DeletedMessagesActivity;
@@ -933,6 +936,7 @@ public class ChatActivity extends BaseFragment implements
     private boolean premiumInvoiceBot;
     private boolean showScrollToMessageError;
     private int startLoadFromMessageId;
+    private ArchiveMessageRecord archiveNavigationRecord;
     private int startReplyTo;
     private int startLoadFromDate;
     private int startLoadFromMessageIdSaved;
@@ -1197,6 +1201,7 @@ public class ChatActivity extends BaseFragment implements
     public final static int OPTION_VIEW_STATISTICS = 115;
     public final static int OPTION_MESSAGE_EDIT_HISTORY = 116;
     public final static int OPTION_HIDE_RECALLED_FROM_CHAT = 117;
+    public final static int OPTION_DELETE_FROM_LOCAL_ARCHIVE = 118;
 
     private final static int[] allowedNotificationsDuringChatListAnimations = new int[]{
             NotificationCenter.messagesRead,
@@ -1281,6 +1286,66 @@ public class ChatActivity extends BaseFragment implements
         }
         bundle.putInt("message_id", messageId);
         return new ChatActivity(bundle);
+    }
+
+    public void setArchiveNavigationRecord(ArchiveMessageRecord record) {
+        archiveNavigationRecord = record;
+    }
+
+    public void scrollToArchivedMessage(ArchiveMessageRecord record) {
+        setArchiveNavigationRecord(record);
+        MessageObject restored = restoreArchiveNavigationMessage();
+        if (restored != null && messagesDict[0].get(restored.getId()) != null) {
+            ArrayList<MessageObject> replacement = new ArrayList<>(1);
+            replacement.add(restored);
+            replaceMessageObjects(replacement, 0, false);
+        }
+        if (record != null) {
+            scrollToMessageId(record.messageId, 0, true, 0, true, 0);
+        }
+    }
+
+    private MessageObject restoreArchiveNavigationMessage() {
+        ArchiveMessageRecord record = archiveNavigationRecord;
+        if (record == null || record.dialogId != dialog_id || !record.deleted
+                || record.accountId != UserConfig.getInstance(currentAccount).getClientUserId()
+                || ArchiveHiddenMessages.isHidden(currentAccount, record.dialogId,
+                record.topicId, record.messageId)) {
+            return null;
+        }
+        int environment = getConnectionsManager().isTestBackend() ? 1 : 0;
+        if (record.accountEnvironment != environment) return null;
+        TLRPC.Message message = ArchiveMessageMapper.restore(record);
+        if (message == null) return null;
+        message.is_recalled = true;
+        MessageObject restored = new MessageObject(currentAccount, message, true, true);
+        restored.isRecalled = true;
+        restored.deleted = false;
+        return restored;
+    }
+
+    private void overlayArchiveNavigationMessage(ArrayList<MessageObject> loaded,
+                                                  boolean addIfMissing) {
+        MessageObject restored = restoreArchiveNavigationMessage();
+        if (restored == null || loaded == null) return;
+        for (int i = 0; i < loaded.size(); i++) {
+            if (loaded.get(i).getId() == restored.getId()) {
+                loaded.set(i, restored);
+                return;
+            }
+        }
+        if (!addIfMissing) return;
+        int insertion = 0;
+        while (insertion < loaded.size()) {
+            MessageObject item = loaded.get(insertion);
+            if (item.messageOwner.date < restored.messageOwner.date
+                    || item.messageOwner.date == restored.messageOwner.date
+                    && item.getId() < restored.getId()) {
+                break;
+            }
+            insertion++;
+        }
+        loaded.add(insertion, restored);
     }
 
     public void deleteHistory(int dateSelectedStart, int dateSelectedEnd, boolean forAll) {
@@ -20176,6 +20241,10 @@ public class ChatActivity extends BaseFragment implements
                     }
                 }
             }
+            boolean loadingArchiveTarget = archiveNavigationRecord != null
+                    && (startLoadFromMessageId == archiveNavigationRecord.messageId
+                    || (Integer) args[12] == archiveNavigationRecord.messageId);
+            overlayArchiveNavigationMessage(messArr, loadingArchiveTarget);
 
             boolean universalNotify = false;
             HashMap<Integer, MessageObject> oldMessages = null;
@@ -22963,6 +23032,7 @@ public class ChatActivity extends BaseFragment implements
         } else if (id == NotificationCenter.replaceMessagesObjects) {
             long did = (long) args[0];
             final ArrayList<MessageObject> messageObjects = (ArrayList<MessageObject>) args[1];
+            if (did == dialog_id) overlayArchiveNavigationMessage(messageObjects, false);
             if (replyingMessageObject != null) {
                 for (int i = 0; i < messageObjects.size(); ++i) {
                     MessageObject messageObject = messageObjects.get(i);
@@ -33385,6 +33455,27 @@ public class ChatActivity extends BaseFragment implements
                 selectedObject = null;
                 selectedObjectGroup = null;
                 selectedObjectToEditCaption = null;
+                break;
+            }
+            case OPTION_DELETE_FROM_LOCAL_ARCHIVE: {
+                MessageObject archiveMessage = selectedObject;
+                if (archiveMessage == null || getParentActivity() == null) break;
+                AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+                builder.setTitle(LocaleController.getString(R.string.ArchiveDeleteLocal));
+                builder.setMessage(LocaleController.getString(R.string.ArchiveDeleteLocalConfirm));
+                builder.setNegativeButton(LocaleController.getString(R.string.Cancel), null);
+                builder.setPositiveButton(LocaleController.getString(R.string.Delete), (dialog, which) ->
+                        ArchiveService.getInstance().deleteLocalMessage(currentAccount,
+                                archiveMessage.getDialogId(), archiveMessage.getTopicId(), archiveMessage.getId(), success -> {
+                                    if (success) {
+                                        BulletinFactory.of(ChatActivity.this).createSimpleBulletin(R.raw.ic_delete,
+                                                LocaleController.getString(R.string.ArchiveDeletedLocal)).show();
+                                    } else {
+                                        BulletinFactory.of(ChatActivity.this).createSimpleBulletin(R.raw.error,
+                                                LocaleController.getString(R.string.ArchiveOperationFailed)).show();
+                                    }
+                                }));
+                showDialog(builder.create());
                 break;
             }
             case OPTION_EDIT_PRICE: {
@@ -45633,6 +45724,11 @@ public class ChatActivity extends BaseFragment implements
             items.add(LocaleController.getString(R.string.HideRecalledMessageFromChat));
             options.add(OPTION_HIDE_RECALLED_FROM_CHAT);
             icons.add(R.drawable.msg_delete);
+            if (ArchiveSettings.isEnabled()) {
+                items.add(LocaleController.getString(R.string.ArchiveDeleteLocal));
+                options.add(OPTION_DELETE_FROM_LOCAL_ARCHIVE);
+                icons.add(R.drawable.msg_delete);
+            }
         }
     }
 

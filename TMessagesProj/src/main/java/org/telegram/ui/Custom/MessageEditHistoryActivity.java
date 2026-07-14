@@ -8,6 +8,7 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.LinearLayoutManager;
@@ -42,6 +43,7 @@ import java.util.ArrayList;
  * The interaction model is adapted from AyuGram's AyuMessageHistory screen.
  */
 public class MessageEditHistoryActivity extends BaseFragment implements ArchiveService.EditListener {
+    private static final int DELETE_LOCAL = 1;
     private final long dialogId;
     private final long topicId;
     private final int messageId;
@@ -112,8 +114,10 @@ public class MessageEditHistoryActivity extends BaseFragment implements ArchiveS
             @Override
             public void onItemClick(int id) {
                 if (id == -1) finishFragment();
+                else if (id == DELETE_LOCAL) confirmDeleteLocal();
             }
         });
+        actionBar.createMenu().addItem(DELETE_LOCAL, R.drawable.msg_delete);
         updateActionBar();
 
         listView = new RecyclerListView(context);
@@ -137,6 +141,25 @@ public class MessageEditHistoryActivity extends BaseFragment implements ArchiveS
         frameLayout.addView(emptyView, LayoutHelper.createFrame(LayoutHelper.MATCH_PARENT, LayoutHelper.MATCH_PARENT));
         updateEmptyView();
         return fragmentView;
+    }
+
+    private void confirmDeleteLocal() {
+        if (getParentActivity() == null) return;
+        org.telegram.ui.ActionBar.AlertDialog.Builder builder =
+                new org.telegram.ui.ActionBar.AlertDialog.Builder(getParentActivity());
+        builder.setTitle(LocaleController.getString(R.string.ArchiveDeleteLocal));
+        builder.setMessage(LocaleController.getString(R.string.ArchiveDeleteLocalConfirm));
+        builder.setNegativeButton(LocaleController.getString(R.string.Cancel), null);
+        builder.setPositiveButton(LocaleController.getString(R.string.Delete), (dialog, which) ->
+                ArchiveService.getInstance().deleteLocalMessage(currentAccount, dialogId, topicId, messageId,
+                        success -> {
+                            if (getParentActivity() != null) {
+                                Toast.makeText(getParentActivity(), success ? R.string.ArchiveDeletedLocal
+                                        : R.string.ArchiveOperationFailed, Toast.LENGTH_SHORT).show();
+                            }
+                            if (success) finishFragment();
+                        }));
+        showDialog(builder.create());
     }
 
     private void updateActionBar() {

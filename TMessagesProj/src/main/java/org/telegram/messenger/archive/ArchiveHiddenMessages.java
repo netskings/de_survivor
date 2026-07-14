@@ -7,6 +7,8 @@ import org.telegram.messenger.FileLog;
 import org.telegram.messenger.UserConfig;
 import org.telegram.tgnet.ConnectionsManager;
 
+import java.util.Map;
+
 /** Persistent, account-scoped UI state for recalled messages hidden from ChatActivity. */
 public final class ArchiveHiddenMessages {
     private static final String PREFS_NAME = "local_archive_hidden_in_chat";
@@ -18,8 +20,36 @@ public final class ArchiveHiddenMessages {
         setHidden(identity(accountSlot, dialogId, topicId, messageId), true);
     }
 
+    public static void show(int accountSlot, long dialogId, long topicId, int messageId) {
+        setHidden(identity(accountSlot, dialogId, topicId, messageId), false);
+    }
+
     public static boolean isHidden(int accountSlot, long dialogId, long topicId, int messageId) {
         return isHidden(identity(accountSlot, dialogId, topicId, messageId));
+    }
+
+    public static void clear(int accountSlot, boolean allAccounts) {
+        if (ApplicationLoader.applicationContext == null) return;
+        try {
+            SharedPreferences preferences = preferences();
+            if (allAccounts) {
+                if (!preferences.edit().clear().commit()) {
+                    FileLog.e("Local archive hidden state was not cleared");
+                }
+                return;
+            }
+            long accountId = UserConfig.getInstance(accountSlot).getClientUserId();
+            if (accountId == 0) return;
+            int environment = ConnectionsManager.getInstance(accountSlot).isTestBackend() ? 1 : 0;
+            String prefix = environment + ":" + accountId + ":";
+            SharedPreferences.Editor editor = preferences.edit();
+            for (Map.Entry<String, ?> entry : preferences.getAll().entrySet()) {
+                if (entry.getKey().startsWith(prefix)) editor.remove(entry.getKey());
+            }
+            if (!editor.commit()) FileLog.e("Local archive hidden state was not cleared");
+        } catch (Throwable error) {
+            FileLog.e("Local archive hidden state clear failed: " + error.getClass().getSimpleName());
+        }
     }
 
     static void setHiddenForTests(int environment, long accountId, long dialogId,

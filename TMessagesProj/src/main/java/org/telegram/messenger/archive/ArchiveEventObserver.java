@@ -114,6 +114,7 @@ public final class ArchiveEventObserver {
     public static void captureAcceptedMessage(int accountSlot, TLRPC.Message message, boolean channelMessage) {
         if (!ArchiveSettings.isEnabled() || message == null) return;
         try {
+            ArchiveMediaStore.getInstance().maybeDownloadIfEnabled(accountSlot, message);
             int accountEnvironment = ConnectionsManager.getInstance(accountSlot).isTestBackend() ? 1 : 0;
             long accountId = UserConfig.getInstance(accountSlot).getClientUserId();
             ArchiveMessageSnapshot snapshot = map(accountSlot, message, null, null,
@@ -205,6 +206,7 @@ public final class ArchiveEventObserver {
                 } else {
                     continue;
                 }
+                if (!ArchiveMessageMapper.isVisibleEdit(currentMessage)) continue;
                 ArchiveMessageSnapshot current = map(accountSlot, currentMessage, updates.users, updates.chats,
                         capture.previous.accountEnvironment, capture.previous.accountId);
                 if (!sameMessage(capture.previous, current)) continue;
@@ -291,6 +293,9 @@ public final class ArchiveEventObserver {
                                              boolean channelMessage, ArrayList<TLRPC.User> users,
                                              ArrayList<TLRPC.Chat> chats, int accountEnvironment,
                                              long accountId) {
+        if (type == CaptureEvent.EDIT && !ArchiveMessageMapper.isVisibleEdit(message)) return null;
+        ArchiveMediaStore.getInstance().captureAlreadyAvailable(accountSlot, message);
+        ArchiveMediaStore.getInstance().maybeDownloadIfEnabled(accountSlot, message);
         ArchiveMessageSnapshot snapshot = map(accountSlot, message, users, chats,
                 accountEnvironment, accountId);
         return snapshot == null ? null : CaptureEvent.message(type, snapshot, channelMessage);

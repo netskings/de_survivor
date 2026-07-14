@@ -20,12 +20,23 @@ public final class ArchiveMessageRecord {
     public final long deletedAt;
     public final int revisionCount;
     public final int rawFormatVersion;
+    public final boolean mediaSaved;
     private final byte[] rawPayload;
 
     ArchiveMessageRecord(int accountEnvironment, long accountId, long dialogId, long topicId,
                          int messageId, long senderId, int messageDate, int editDate, long savedAt,
                          String text, String previousText, String messageType, boolean deleted,
                          long deletedAt, int revisionCount, int rawFormatVersion, byte[] rawPayload) {
+        this(accountEnvironment, accountId, dialogId, topicId, messageId, senderId, messageDate,
+                editDate, savedAt, text, previousText, messageType, deleted, deletedAt, revisionCount,
+                rawFormatVersion, rawPayload, false);
+    }
+
+    ArchiveMessageRecord(int accountEnvironment, long accountId, long dialogId, long topicId,
+                         int messageId, long senderId, int messageDate, int editDate, long savedAt,
+                         String text, String previousText, String messageType, boolean deleted,
+                         long deletedAt, int revisionCount, int rawFormatVersion, byte[] rawPayload,
+                         boolean mediaSaved) {
         this.accountEnvironment = accountEnvironment;
         this.accountId = accountId;
         this.dialogId = dialogId;
@@ -42,7 +53,12 @@ public final class ArchiveMessageRecord {
         this.deletedAt = deletedAt;
         this.revisionCount = revisionCount;
         this.rawFormatVersion = rawFormatVersion;
+        this.mediaSaved = mediaSaved;
         this.rawPayload = rawPayload == null ? null : Arrays.copyOf(rawPayload, rawPayload.length);
+    }
+
+    public boolean expectsMediaFile() {
+        return messageType.contains("MediaPhoto") || messageType.contains("MediaDocument");
     }
 
     public byte[] copyRawPayload() {

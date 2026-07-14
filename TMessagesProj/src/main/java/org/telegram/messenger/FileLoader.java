@@ -10,6 +10,8 @@ package org.telegram.messenger;
 
 import static org.telegram.ui.Custom.ViewOnceSaver.saveViewOnceMediaSafely;
 
+import org.telegram.messenger.archive.ArchiveMediaStore;
+
 import android.text.TextUtils;
 import android.util.SparseArray;
 
@@ -1011,6 +1013,7 @@ public class FileLoader extends BaseController {
                     if (shouldSaveViewOnceMedia(operation, finalFile, msgObj)) {
                         saveViewOnceMediaSafely(finalFile, msgObj);
                     }
+                    ArchiveMediaStore.getInstance().captureDownloaded(currentAccount, msgObj, finalFile);
                 }
 
                 if (!operation.isPreloadVideoOperation() && operation.isPreloadFinished()) {

@@ -10,6 +10,7 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.DefaultItemAnimator;
@@ -23,6 +24,7 @@ import org.telegram.messenger.MessagesController;
 import org.telegram.messenger.R;
 import org.telegram.messenger.UserConfig;
 import org.telegram.messenger.archive.ArchiveMessageRecord;
+import org.telegram.messenger.archive.ArchiveHiddenMessages;
 import org.telegram.messenger.archive.ArchiveService;
 import org.telegram.tgnet.TLRPC;
 import org.telegram.ui.ActionBar.ActionBar;
@@ -44,6 +46,7 @@ public class DeletedMessagesActivity extends BaseFragment {
 
     private final long dialogId;
     private final long topicId;
+    private final boolean allDialogs;
     private final ArrayList<ArchiveMessageRecord> allItems = new ArrayList<>();
     private final ArrayList<ArchiveMessageRecord> visibleItems = new ArrayList<>();
     private ChatActivity chatActivity;
@@ -54,13 +57,22 @@ public class DeletedMessagesActivity extends BaseFragment {
     private String searchQuery = "";
     private boolean loading = true;
 
+    public DeletedMessagesActivity() {
+        this(0, -1, true);
+    }
+
     public DeletedMessagesActivity(long dialogId) {
         this(dialogId, -1);
     }
 
     public DeletedMessagesActivity(long dialogId, long topicId) {
+        this(dialogId, topicId, false);
+    }
+
+    private DeletedMessagesActivity(long dialogId, long topicId, boolean allDialogs) {
         this.dialogId = dialogId;
         this.topicId = topicId;
+        this.allDialogs = allDialogs;
     }
 
     public DeletedMessagesActivity setChatActivity(ChatActivity chatActivity) {
@@ -145,12 +157,17 @@ public class DeletedMessagesActivity extends BaseFragment {
     private void loadDeletedMessages() {
         loading = true;
         updateEmptyView();
-        ArchiveService.getInstance().loadDeletedMessages(currentAccount, dialogId, topicId, result -> {
+        ArchiveService.Callback<ArrayList<ArchiveMessageRecord>> callback = result -> {
             allItems.clear();
             allItems.addAll(result);
             loading = false;
             applySearch();
-        });
+        };
+        if (allDialogs) {
+            ArchiveService.getInstance().loadAllDeletedMessages(currentAccount, callback);
+        } else {
+            ArchiveService.getInstance().loadDeletedMessages(currentAccount, dialogId, topicId, callback);
+        }
     }
 
     private void applySearch() {
@@ -192,24 +209,64 @@ public class DeletedMessagesActivity extends BaseFragment {
     private void openMessage(ArchiveMessageRecord item) {
         ChatActivity target = chatActivity;
         if (target == null) {
-            presentFragment(ChatActivity.of(item.dialogId, item.messageId), true);
+            target = ChatActivity.of(item.dialogId, item.messageId);
+            target.setArchiveNavigationRecord(item);
+            presentFragment(target, true);
             return;
         }
         finishFragment();
-        AndroidUtilities.runOnUIThread(() -> target.scrollToMessageId(item.messageId, 0, true, 0, true, 0), 180);
+        ChatActivity finalTarget = target;
+        AndroidUtilities.runOnUIThread(() -> finalTarget.scrollToArchivedMessage(item), 180);
     }
 
     private void showDeletedMessage(ArchiveMessageRecord item) {
         if (getParentActivity() == null) {
             return;
         }
-        String text = getMessageText(item);
-        String savedAt = LocaleController.formatString(R.string.ViewDeletedSavedAt, LocaleController.formatDateTime((int) item.deletedAt, true));
         AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
         builder.setTitle(getAuthorName(item));
-        builder.setMessage(text + "\n\n" + savedAt);
-        builder.setPositiveButton(LocaleController.getString(R.string.OK), null);
-        builder.setNegativeButton(LocaleController.getString(R.string.Copy), (dialog, which) -> AndroidUtilities.addToClipboard(text));
+        boolean hidden = ArchiveHiddenMessages.isHidden(currentAccount, item.dialogId, item.topicId, item.messageId);
+        ArrayList<CharSequence> labels = new ArrayList<>();
+        labels.add(LocaleController.getString(R.string.ArchiveGoToMessage));
+        labels.add(LocaleController.getString(R.string.Copy));
+        labels.add(LocaleController.getString(hidden ? R.string.ArchiveShowInChat : R.string.HideRecalledMessageFromChat));
+        labels.add(LocaleController.getString(R.string.ArchiveDeleteLocal));
+        builder.setItems(labels.toArray(new CharSequence[0]), (dialog, which) -> {
+            if (which == 0) {
+                openMessage(item);
+            } else if (which == 1) {
+                AndroidUtilities.addToClipboard(getMessageText(item));
+            } else if (which == 2) {
+                if (hidden) {
+                    ArchiveHiddenMessages.show(currentAccount, item.dialogId, item.topicId, item.messageId);
+                } else {
+                    ArchiveHiddenMessages.hide(currentAccount, item.dialogId, item.topicId, item.messageId);
+                }
+                if (adapter != null) adapter.notifyDataSetChanged();
+                Toast.makeText(getParentActivity(), hidden ? R.string.ArchiveShownInChat : R.string.ArchiveHiddenInChat,
+                        Toast.LENGTH_SHORT).show();
+            } else if (which == 3) {
+                confirmDeleteLocal(item);
+            }
+        });
+        showDialog(builder.create());
+    }
+
+    private void confirmDeleteLocal(ArchiveMessageRecord item) {
+        if (getParentActivity() == null) return;
+        AlertDialog.Builder builder = new AlertDialog.Builder(getParentActivity());
+        builder.setTitle(LocaleController.getString(R.string.ArchiveDeleteLocal));
+        builder.setMessage(LocaleController.getString(R.string.ArchiveDeleteLocalConfirm));
+        builder.setNegativeButton(LocaleController.getString(R.string.Cancel), null);
+        builder.setPositiveButton(LocaleController.getString(R.string.Delete), (dialog, which) ->
+                ArchiveService.getInstance().deleteLocalMessage(currentAccount, item.dialogId, item.topicId,
+                        item.messageId, success -> {
+                            if (getParentActivity() != null) {
+                                Toast.makeText(getParentActivity(), success ? R.string.ArchiveDeletedLocal
+                                        : R.string.ArchiveOperationFailed, Toast.LENGTH_SHORT).show();
+                            }
+                            if (success) loadDeletedMessages();
+                        }));
         showDialog(builder.create());
     }
 
@@ -244,6 +301,18 @@ public class DeletedMessagesActivity extends BaseFragment {
             return LocaleController.getString(R.string.AttachDocument);
         }
         return "";
+    }
+
+    private String getDialogName(ArchiveMessageRecord item) {
+        Object peer = MessagesController.getInstance(currentAccount).getUserOrChat(item.dialogId);
+        if (peer instanceof TLRPC.User) {
+            TLRPC.User user = (TLRPC.User) peer;
+            String name = ContactsController.formatName(user.first_name, user.last_name);
+            if (!TextUtils.isEmpty(name)) return name;
+        } else if (peer instanceof TLRPC.Chat && !TextUtils.isEmpty(((TLRPC.Chat) peer).title)) {
+            return ((TLRPC.Chat) peer).title;
+        }
+        return String.valueOf(item.dialogId);
     }
 
     private class ListAdapter extends RecyclerListView.SelectionAdapter {
@@ -318,10 +387,19 @@ public class DeletedMessagesActivity extends BaseFragment {
         }
 
         void setItem(ArchiveMessageRecord item, boolean drawDivider) {
-            titleView.setText(getAuthorName(item));
+            titleView.setText(allDialogs
+                    ? getAuthorName(item) + " · " + getDialogName(item)
+                    : getAuthorName(item));
             messageView.setText(getMessageText(item));
-            metaView.setText(LocaleController.formatString(R.string.ViewDeletedDeletedAt,
-                    LocaleController.formatDateTime((int) item.deletedAt, true)));
+            String meta = LocaleController.formatString(R.string.ViewDeletedDeletedAt,
+                    LocaleController.formatDateTime((int) item.deletedAt, true));
+            if (ArchiveHiddenMessages.isHidden(currentAccount, item.dialogId, item.topicId, item.messageId)) {
+                meta += " · " + LocaleController.getString(R.string.ArchiveHiddenLabel);
+            }
+            if (item.expectsMediaFile() && !item.mediaSaved) {
+                meta += " · " + LocaleController.getString(R.string.ArchiveMediaNotSaved);
+            }
+            metaView.setText(meta);
             divider.setVisibility(drawDivider ? View.VISIBLE : View.GONE);
         }
     }

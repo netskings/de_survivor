@@ -64,7 +64,7 @@ public final class ArchiveMessageMapper {
         long savedAt = System.currentTimeMillis() / 1000L;
         String hash = contentHash(accountEnvironment, accountId, dialogId, topicId, message.id, senderId,
                 message.date, text, type, replyId, message.grouped_id,
-                fingerprint(message.entities), fingerprint(message.media), fingerprint(message.reply_to),
+                fingerprint(message.entities), stableMediaFingerprint(message.media), fingerprint(message.reply_to),
                 fingerprint(message.fwd_from), fingerprint(message.action));
         return new ArchiveMessageSnapshot(accountEnvironment, accountId, dialogId, topicId, message.id, senderId,
                 message.date, message.edit_date, savedAt, text, entities, type, replyId, message.grouped_id,
@@ -75,6 +75,35 @@ public final class ArchiveMessageMapper {
         long accountId = UserConfig.getInstance(accountSlot).getClientUserId();
         int environment = ConnectionsManager.getInstance(accountSlot).isTestBackend() ? 1 : 0;
         return key(environment, accountId, dialogId, topicId, messageId);
+    }
+
+    /** Restores an immutable archive payload for an in-memory recalled-message UI overlay. */
+    public static TLRPC.Message restore(ArchiveMessageRecord record) {
+        if (record == null || record.messageId <= 0
+                || record.rawFormatVersion != ArchiveSchema.RAW_FORMAT_VERSION) {
+            return null;
+        }
+        byte[] raw = record.copyRawPayload();
+        if (raw == null || raw.length < 4) return null;
+        SerializedData data = null;
+        try {
+            data = new SerializedData(raw);
+            TLRPC.Message message = TLRPC.Message.TLdeserialize(
+                    data, data.readInt32(false), false);
+            if (message == null || message instanceof TLRPC.TL_messageEmpty
+                    || message.id != record.messageId) {
+                return null;
+            }
+            long payloadDialogId = MessageObject.getDialogId(message);
+            if (payloadDialogId != 0 && payloadDialogId != record.dialogId) return null;
+            message.dialog_id = record.dialogId;
+            message.is_recalled = record.deleted;
+            return message;
+        } catch (Throwable ignore) {
+            return null;
+        } finally {
+            if (data != null) data.cleanup();
+        }
     }
 
     public static ArchiveMessageSnapshot key(int accountEnvironment, long accountId, long dialogId,
@@ -142,6 +171,46 @@ public final class ArchiveMessageMapper {
 
     private static String fingerprint(TLObject object) {
         return object == null ? "" : digest(serialize(object));
+    }
+
+    /**
+     * Telegram refreshes file_reference, thumbnails and CDN metadata without a user edit. Those
+     * transport fields must not turn a photo/document into a new archive revision.
+     */
+    private static String stableMediaFingerprint(TLRPC.MessageMedia media) {
+        if (media == null) return "";
+        if (media instanceof TLRPC.TL_messageMediaPhoto) {
+            long photoId = media.photo == null ? 0 : media.photo.id;
+            long liveDocumentId = media.document == null ? 0 : media.document.id;
+            return "photo:" + photoId + ":" + media.spoiler + ":" + media.live_photo
+                    + ":" + liveDocumentId;
+        }
+        if (media instanceof TLRPC.TL_messageMediaDocument) {
+            long documentId = media.document == null ? 0 : media.document.id;
+            long coverId = media.video_cover == null ? 0 : media.video_cover.id;
+            return "document:" + documentId + ":" + media.spoiler + ":" + media.video
+                    + ":" + media.round + ":" + media.voice + ":" + media.live_photo
+                    + ":" + coverId + ":" + media.video_timestamp;
+        }
+        if (media instanceof TLRPC.TL_messageMediaWebPage) {
+            // Web-page contents are hydrated asynchronously; only user-controlled layout flags
+            // are stable edit content. The URL itself is already represented by text/entities.
+            return "webpage:" + media.force_large_media + ":" + media.force_small_media
+                    + ":" + media.manual;
+        }
+        if (media instanceof TLRPC.TL_messageMediaPoll) {
+            TLRPC.Poll poll = ((TLRPC.TL_messageMediaPoll) media).poll;
+            return "poll:" + (poll == null ? 0 : poll.id);
+        }
+        return fingerprint(media);
+    }
+
+    /** Same core condition used by MessageObject.isEdited() and Telegram's message UI. */
+    static boolean isVisibleEdit(TLRPC.Message message) {
+        return message != null
+                && (message.flags & TLRPC.MESSAGE_FLAG_EDITED) != 0
+                && message.edit_date != 0
+                && !message.edit_hide;
     }
 
     private static String fingerprint(java.util.ArrayList<? extends TLObject> objects) {

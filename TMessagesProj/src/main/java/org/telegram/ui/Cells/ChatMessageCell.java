@@ -24634,7 +24634,9 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
     private Paint srcOutPaint;
 
     private void drawRecalledMediaOverlay(Canvas canvas) {
-        if (!isRecalledMedia || currentMessageObject == null || !photoImage.getVisible()) {
+        if (!isRecalledMedia || currentMessageObject == null
+                || !photoImage.getVisible() && !(currentMessageObject.archiveMediaLookupCompleted
+                && currentMessageObject.archiveMediaMissing)) {
             return;
         }
         int[] rad = photoImage.getRoundRadius();
@@ -24648,6 +24650,20 @@ public class ChatMessageCell extends BaseCell implements SeekBar.SeekBarDelegate
         canvas.save();
         canvas.clipPath(rectPath);
         canvas.drawRect(AndroidUtilities.rectTmp, recalledOverlayPaint);
+        if (currentMessageObject.archiveMediaLookupCompleted
+                && currentMessageObject.archiveMediaMissing) {
+            String text = getString(R.string.ArchiveMediaNotSaved);
+            int oldColor = Theme.chat_timePaint.getColor();
+            int oldAlpha = Theme.chat_timePaint.getAlpha();
+            Theme.chat_timePaint.setColor(Color.WHITE);
+            Theme.chat_timePaint.setAlpha(255);
+            float x = AndroidUtilities.rectTmp.centerX() - Theme.chat_timePaint.measureText(text) / 2f;
+            float y = AndroidUtilities.rectTmp.centerY()
+                    - (Theme.chat_timePaint.ascent() + Theme.chat_timePaint.descent()) / 2f;
+            canvas.drawText(text, x, y, Theme.chat_timePaint);
+            Theme.chat_timePaint.setColor(oldColor);
+            Theme.chat_timePaint.setAlpha(oldAlpha);
+        }
         canvas.restore();
     }
 

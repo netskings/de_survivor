@@ -301,6 +301,26 @@ public class ArchiveRepositoryTest {
     }
 
     @Test
+    public void versionOneDatabaseMigratesToMediaSchemaWithoutMessageLoss() throws Exception {
+        ArchiveMessageSnapshot value = snapshot(0, 1, 10, 0, 5, 0, "preserved-v1");
+        repository.saveMessage(value);
+        database.sqlite().executeFast("DROP TABLE archive_message_media").stepThis().dispose();
+        database.sqlite().executeFast("DROP TABLE archive_media").stepThis().dispose();
+        database.sqlite().executeFast("INSERT OR REPLACE INTO archive_metadata(key,value) " +
+                "VALUES('database_schema_version','1')").stepThis().dispose();
+        database.sqlite().executeFast("PRAGMA user_version = 1").stepThis().dispose();
+        database.close();
+
+        database = new ArchiveDatabase(file);
+        repository = new ArchiveRepository(database);
+        assertTrue(database.sqlite().tableExists("archive_media"));
+        assertTrue(database.sqlite().tableExists("archive_message_media"));
+        assertEquals(ArchiveSchema.DATABASE_SCHEMA_VERSION,
+                database.sqlite().executeInt("PRAGMA user_version").intValue());
+        assertEquals(value.contentHash, repository.messageHash(value));
+    }
+
+    @Test
     public void preservesNewEditDeleteOrder() throws Exception {
         ArchiveMessageSnapshot first = snapshot(0, 1, 10, 0, 5, 0, "one");
         ArchiveMessageSnapshot second = snapshot(0, 1, 10, 0, 5, 2, "two");
@@ -356,6 +376,49 @@ public class ArchiveRepositoryTest {
         assertNotNull(firstSnapshot);
         assertNotNull(secondSnapshot);
         assertEquals(firstSnapshot.contentHash, secondSnapshot.contentHash);
+    }
+
+    @Test
+    public void photoFileReferenceRefreshDoesNotChangeContentHash() {
+        TLRPC.TL_message first = photoMessage(5, 42, 1, 0, new byte[]{1, 2, 3});
+        TLRPC.TL_message refreshed = photoMessage(5, 42, 1, 0, new byte[]{9, 8, 7});
+        ArchiveMessageSnapshot firstSnapshot = ArchiveMessageMapper.map(0, first, 0, 0, 1);
+        ArchiveMessageSnapshot refreshedSnapshot = ArchiveMessageMapper.map(0, refreshed, 0, 0, 1);
+        assertNotNull(firstSnapshot);
+        assertNotNull(refreshedSnapshot);
+        assertEquals(firstSnapshot.contentHash, refreshedSnapshot.contentHash);
+    }
+
+    @Test
+    public void deletedPhotoRawPayloadRestoresCompleteRecalledMessage() {
+        TLRPC.TL_message photo = photoMessage(5, 42, 1, 0, new byte[]{1, 2, 3});
+        photo.message = "caption";
+        ArchiveMessageSnapshot snapshot = ArchiveMessageMapper.map(0, photo, 0, 0, 1);
+        assertNotNull(snapshot);
+        ArchiveMessageRecord record = new ArchiveMessageRecord(0, 1, 42, 0, 5, 42,
+                1, 0, 10, "caption", "", "TL_messageMediaPhoto", true,
+                20, 0, ArchiveSchema.RAW_FORMAT_VERSION, snapshot.copyRawPayload());
+
+        TLRPC.Message restored = ArchiveMessageMapper.restore(record);
+        assertNotNull(restored);
+        assertEquals(5, restored.id);
+        assertEquals(42, restored.dialog_id);
+        assertEquals("caption", restored.message);
+        assertTrue(restored.media instanceof TLRPC.TL_messageMediaPhoto);
+        assertNotNull(restored.media.photo);
+        assertEquals(9001, restored.media.photo.id);
+        assertTrue(restored.is_recalled);
+    }
+
+    @Test
+    public void editEligibilityMatchesTelegramVisibleEditedFlag() {
+        TLRPC.TL_message message = message(5, 42, 1, 10, "caption");
+        message.flags &= ~TLRPC.MESSAGE_FLAG_EDITED;
+        assertFalse(ArchiveMessageMapper.isVisibleEdit(message));
+        message.flags |= TLRPC.MESSAGE_FLAG_EDITED;
+        assertTrue(ArchiveMessageMapper.isVisibleEdit(message));
+        message.edit_hide = true;
+        assertFalse(ArchiveMessageMapper.isVisibleEdit(message));
     }
 
     @Test
@@ -652,6 +715,37 @@ public class ArchiveRepositoryTest {
     }
 
     @Test
+    public void accountArchiveListsSpanDialogsWithoutMixingAccounts() throws Exception {
+        ArchiveMessageSnapshot first = snapshot(0, 1, 10, 0, 5, 0, "first");
+        ArchiveMessageSnapshot second = snapshot(0, 1, 20, 0, 6, 0, "second");
+        ArchiveMessageSnapshot otherAccount = snapshot(0, 2, 30, 0, 7, 0, "other");
+        repository.saveDeletion(first, first, "delete:first", 100);
+        repository.saveDeletion(second, second, "delete:second", 101);
+        repository.saveDeletion(otherAccount, otherAccount, "delete:other", 102);
+
+        ArrayList<ArchiveMessageRecord> result = repository.listAllDeleted(0, 1);
+        assertEquals(2, result.size());
+        assertEquals("second", result.get(0).text);
+        assertEquals("first", result.get(1).text);
+    }
+
+    @Test
+    public void deleteLocalMessageAtomicallyRemovesSnapshotRevisionsAndDeletionEvents() throws Exception {
+        ArchiveMessageSnapshot first = snapshot(0, 1, 10, 0, 5, 0, "one");
+        ArchiveMessageSnapshot second = snapshot(0, 1, 10, 0, 5, 2, "two");
+        repository.saveMessage(first);
+        repository.saveEdit(first, second);
+        repository.saveDeletion(second, second, "delete:one", 100);
+
+        repository.deleteLocalMessage(0, 1, 10, 0, 5);
+
+        assertEquals(0, repository.count("archive_messages"));
+        assertEquals(0, repository.count("archive_message_revisions"));
+        assertEquals(0, repository.count("archive_deletion_events"));
+        assertTrue(repository.messageHistory(0, 1, 10, 0, 5).isEmpty());
+    }
+
+    @Test
     public void editedListReturnsLatestSummaryAndRevisionCount() throws Exception {
         ArchiveMessageSnapshot first = snapshot(0, 1, 10, 0, 5, 0, "one");
         ArchiveMessageSnapshot second = snapshot(0, 1, 10, 0, 5, 2, "two");
@@ -665,6 +759,110 @@ public class ArchiveRepositoryTest {
         assertEquals("three", result.get(0).text);
         assertEquals("two", result.get(0).previousText);
         assertEquals(2, result.get(0).revisionCount);
+    }
+
+    @Test
+    public void technicalChannelUpdateWithoutEditDateIsNotListedAsEdited() throws Exception {
+        ArchiveMessageSnapshot original = snapshot(0, 1, -100123, 0, 5, 0, "channel post");
+        ArchiveMessageSnapshot technical = snapshot(0, 1, -100123, 0, 5, 0, "channel post metadata");
+        repository.saveMessage(original);
+        repository.saveEdit(original, technical);
+
+        assertEquals(1, repository.count("archive_message_revisions"));
+        assertTrue(repository.listEdited(0, 1, -100123, -1).isEmpty());
+        assertTrue(repository.listAllEdited(0, 1).isEmpty());
+    }
+
+    @Test
+    public void legacyPhotoRevisionWithoutVisibleEditedFlagIsHidden() throws Exception {
+        TLRPC.TL_message originalMessage = photoMessage(5, 42, 1, 0, new byte[]{1});
+        TLRPC.TL_message technicalMessage = photoMessage(5, 42, 1, 10, new byte[]{2});
+        technicalMessage.flags &= ~TLRPC.MESSAGE_FLAG_EDITED;
+        ArchiveMessageSnapshot original = ArchiveMessageMapper.map(
+                0, originalMessage, 0, 0, 1);
+        ArchiveMessageSnapshot technical = ArchiveMessageMapper.map(
+                0, technicalMessage, 0, 0, 1);
+        assertNotNull(original);
+        assertNotNull(technical);
+        original = withHash(original, "legacy-photo-before");
+        technical = withHash(technical, "legacy-photo-after");
+        repository.saveMessage(original);
+        repository.saveEdit(original, technical);
+
+        assertEquals(1, repository.count("archive_message_revisions"));
+        assertTrue(repository.listEdited(0, 1, 42, -1).isEmpty());
+    }
+
+    @Test
+    public void identicalMediaIsStoredOnceAndLinkedToMultipleMessages() throws Exception {
+        ArchiveMediaDescriptor first = new ArchiveMediaDescriptor(0, 1, 10, 0, 5,
+                ArchiveMediaSettings.PHOTO, "image/jpeg", "same.jpg", 0, "primary");
+        ArchiveMediaDescriptor second = new ArchiveMediaDescriptor(0, 1, 10, 0, 6,
+                ArchiveMediaSettings.PHOTO, "image/jpeg", "same.jpg", 0, "primary");
+        String hash = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        assertTrue(repository.linkMedia(first, hash, 12, "media/" + hash));
+        assertTrue(repository.linkMedia(second, hash, 12, "media/" + hash));
+        assertEquals(1, repository.count("archive_media"));
+        assertEquals(2, repository.count("archive_message_media"));
+
+        ArrayList<String> firstOrphans = repository.deleteLocalMessage(0, 1, 10, 0, 5);
+        assertTrue(firstOrphans.isEmpty());
+        assertEquals(1, repository.count("archive_media"));
+        ArrayList<String> finalOrphans = repository.deleteLocalMessage(0, 1, 10, 0, 6);
+        assertEquals(1, finalOrphans.size());
+        assertEquals("media/" + hash, finalOrphans.get(0));
+        assertEquals(0, repository.count("archive_media"));
+    }
+
+    @Test
+    public void clearCurrentAccountPreservesOtherAccountsAndSharedMedia() throws Exception {
+        ArchiveMessageSnapshot firstAccount = snapshot(0, 1, 10, 0, 5, 0, "account one");
+        ArchiveMessageSnapshot firstAccountEdited = snapshot(0, 1, 10, 0, 5, 2, "account one edited");
+        ArchiveMessageSnapshot secondAccount = snapshot(0, 2, 20, 0, 6, 0, "account two");
+        repository.saveMessage(firstAccount);
+        repository.saveEdit(firstAccount, firstAccountEdited);
+        repository.saveDeletion(firstAccountEdited, firstAccountEdited, "delete:one", 20);
+        repository.saveMessage(secondAccount);
+
+        String hash = "1123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        assertTrue(repository.linkMedia(new ArchiveMediaDescriptor(0, 1, 10, 0, 5,
+                ArchiveMediaSettings.PHOTO, "image/jpeg", "shared.jpg", 0, "primary"),
+                hash, 12, "media/" + hash));
+        assertTrue(repository.linkMedia(new ArchiveMediaDescriptor(0, 2, 20, 0, 6,
+                ArchiveMediaSettings.PHOTO, "image/jpeg", "shared.jpg", 0, "primary"),
+                hash, 12, "media/" + hash));
+
+        ArrayList<String> firstPaths = repository.clearArchive(0, 1, false);
+        assertTrue(firstPaths.isEmpty());
+        assertEquals(1, repository.count("archive_messages"));
+        assertEquals(0, repository.count("archive_message_revisions"));
+        assertEquals(0, repository.count("archive_deletion_events"));
+        assertEquals(1, repository.count("archive_message_media"));
+        assertEquals(1, repository.count("archive_media"));
+
+        ArrayList<String> finalPaths = repository.clearArchive(0, 2, false);
+        assertEquals(Collections.singletonList("media/" + hash), finalPaths);
+        assertEquals(0, repository.count("archive_messages"));
+        assertEquals(0, repository.count("archive_message_media"));
+        assertEquals(0, repository.count("archive_media"));
+    }
+
+    @Test
+    public void clearAllAccountsRemovesEveryArchiveRecord() throws Exception {
+        repository.saveMessage(snapshot(0, 1, 10, 0, 5, 0, "one"));
+        repository.saveMessage(snapshot(0, 2, 20, 0, 6, 0, "two"));
+        String hash = "2123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        assertTrue(repository.linkMedia(new ArchiveMediaDescriptor(0, 1, 10, 0, 5,
+                ArchiveMediaSettings.PHOTO, "image/jpeg", "one.jpg", 0, "primary"),
+                hash, 12, "media/" + hash));
+
+        assertEquals(Collections.singletonList("media/" + hash),
+                repository.clearArchive(0, 1, true));
+        assertEquals(0, repository.count("archive_messages"));
+        assertEquals(0, repository.count("archive_message_revisions"));
+        assertEquals(0, repository.count("archive_deletion_events"));
+        assertEquals(0, repository.count("archive_message_media"));
+        assertEquals(0, repository.count("archive_media"));
     }
 
     @Test
@@ -702,6 +900,7 @@ public class ArchiveRepositoryTest {
         message.id = id;
         message.date = date;
         message.edit_date = editDate;
+        if (editDate != 0) message.flags |= TLRPC.MESSAGE_FLAG_EDITED;
         message.message = text;
         message.from_id = new TLRPC.TL_peerUser();
         message.from_id.user_id = dialogId;
@@ -710,6 +909,31 @@ public class ArchiveRepositoryTest {
         message.dialog_id = dialogId;
         message.media = new TLRPC.TL_messageMediaEmpty();
         return message;
+    }
+
+    private static TLRPC.TL_message photoMessage(int id, long dialogId, int date, int editDate,
+                                                  byte[] fileReference) {
+        TLRPC.TL_message message = message(id, dialogId, date, editDate, "");
+        message.flags |= TLRPC.MESSAGE_FLAG_HAS_MEDIA;
+        TLRPC.TL_messageMediaPhoto media = new TLRPC.TL_messageMediaPhoto();
+        media.flags = 1;
+        TLRPC.TL_photo photo = new TLRPC.TL_photo();
+        photo.id = 9001;
+        photo.access_hash = 123;
+        photo.file_reference = fileReference;
+        photo.date = date;
+        photo.dc_id = 2;
+        media.photo = photo;
+        message.media = media;
+        return message;
+    }
+
+    private static ArchiveMessageSnapshot withHash(ArchiveMessageSnapshot source, String hash) {
+        return new ArchiveMessageSnapshot(source.accountEnvironment, source.accountId, source.dialogId,
+                source.topicId, source.messageId, source.senderId, source.messageDate, source.editDate,
+                source.savedAt, source.text, source.entitiesJson, source.messageType,
+                source.replyToMessageId, source.groupedId, source.rawFormatVersion,
+                source.copyRawPayload(), hash);
     }
 
     private static TLRPC.TL_updates editResponse(TLRPC.Message message) {
